@@ -36,6 +36,8 @@ const sessDir = process.argv[2], out = process.argv[3];
     const o = {}; for (const k of pick) o[k] = S[k];
     return JSON.parse(JSON.stringify({ ok, ms: performance.now() - t0, state: o }, big));
   }, { files, rel });
+  const missing = res.state.tracks.filter((t, i) => i !== res.state.refIdx && !t.auto).length;
+  if (!res.ok || missing){ console.error(`Hitline didn't finish (${missing} mics without alignment); not writing ${out}`); await b.close(); process.exit(1); }
   fs.writeFileSync(out, JSON.stringify(res, null, 1)); console.log(res.ok, Math.round(res.ms), 'ms', res.state.onsets.length, 'onsets');
   await b.close();
 })();
