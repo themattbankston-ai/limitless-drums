@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(APPLE)
+    # Visage enables Objective-C++ in its own directory; it must be on here too, or targets
+    # outside that directory can't build their .mm files.
+    enable_language(OBJC OBJCXX)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 endif()
 
