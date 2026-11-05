@@ -4,6 +4,8 @@
 #include "Theme.h"
 #include "SessionView.h"
 #include "core/Import.h"
+#include "core/Project.h"
+#include "HistoryPanel.h"
 
 namespace ld
 {
@@ -23,6 +25,7 @@ private:
     toolbar (import, transport, time, zoom, theme) and the multitrack view. */
 class MainComponent : public juce::Component,
                       public juce::FileDragAndDropTarget,
+                      public juce::MenuBarModel,
                       private juce::Timer
 {
 public:
@@ -38,8 +41,19 @@ public:
     void fileDragExit (const juce::StringArray&) override { dragOver = false; repaint(); }
     void filesDropped (const juce::StringArray&, int, int) override;
 
-    /** Opens files/folders as if dropped. */
+    /** Opens files/folders as if dropped. A .ldproj opens as a project. */
     void importItems (const juce::Array<juce::File>&);
+
+    // Menus
+    juce::StringArray getMenuBarNames() override { return { "File", "Edit", "View" }; }
+    juce::PopupMenu getMenuForIndex (int, const juce::String&) override;
+    void menuItemSelected (int itemID, int) override;
+
+    /** Called when the app wants to quit: offers to save unsaved work, then calls done(true) to quit. */
+    void confirmClose (std::function<void (bool)> done);
+    /** Offers to restore work left behind by a crash. */
+    void offerRecovery();
+    std::function<void (const juce::String&)> onTitleChanged;
 
 private:
     tracktion::Engine& engine;
@@ -56,10 +70,24 @@ private:
                      themeButton { "Day" };
     juce::ComboBox takeBox;
     std::unique_ptr<juce::FileChooser> chooser;
+    std::unique_ptr<HistoryPanel> history;
+    bool showHistory = true;
+    juce::File projectFile;
+    juce::String sessionKey = juce::String::toHexString (juce::Random::getSystemRandom().nextInt64());
+    std::vector<MicRole> currentRoles;
+    int autosaveTicks = 0;
+    bool lastDirty = false;
     juce::String deviceText, notice;
 
     theme::Palette palette() const { return dayMode ? theme::day() : theme::night(); }
     void openTake (int index);
+    void showEdit (std::unique_ptr<tracktion::Edit>, std::vector<MicRole> roles);
+    void closeEdit();
+    void openProject (const juce::File&);
+    void chooseProject();
+    void saveProject (bool saveAs, std::function<void (bool)> done = nullptr);
+    void undo (bool redo);
+    void updateTitle();
     void togglePlay();
     void chooseFiles();
     void applyTheme();

@@ -42,7 +42,8 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Session.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Naming.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Project.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
@@ -104,7 +105,8 @@ if(LD_BUILD_TESTS)
         tests/TestSignals.cpp
         tests/SpikeTests.cpp
         tests/NamingTests.cpp
-        tests/ImportTests.cpp)
+        tests/ImportTests.cpp
+        tests/ProjectTests.cpp)
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()
     add_test(NAME LDTests COMMAND LDTests --reporter console --durations yes)

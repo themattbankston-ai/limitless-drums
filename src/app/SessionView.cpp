@@ -323,6 +323,46 @@ void SessionView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWh
     repaint();
 }
 
+void SessionView::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    for (int i = 0; i < (int) lanes.size(); ++i)
+        if (laneBounds (i).withWidth (headerWidth).withHeight (34).contains (e.getPosition()))
+            return beginRename (i);
+}
+
+void SessionView::beginRename (int index)
+{
+    auto* track = lanes[(size_t) index].track;
+    const auto p = palette();
+    renameEditor = std::make_unique<juce::TextEditor>();
+    auto& ed = *renameEditor;
+    ed.setText (track->getName(), false);
+    ed.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    ed.setColour (juce::TextEditor::backgroundColourId, p.raised);
+    ed.setColour (juce::TextEditor::textColourId, p.ink);
+    ed.setColour (juce::TextEditor::outlineColourId, p.select);
+    ed.setColour (juce::TextEditor::focusedOutlineColourId, p.select);
+    ed.setBounds (laneBounds (index).getX() + 10, laneBounds (index).getY() + 7, headerWidth - 20, 24);
+    addAndMakeVisible (ed);
+    ed.selectAll();
+    ed.grabKeyboardFocus();
+
+    auto commit = [this, track]
+    {
+        if (renameEditor == nullptr) return;
+        const auto newName = renameEditor->getText().trim();
+        if (newName.isNotEmpty() && newName != track->getName())
+        {
+            edit.getUndoManager().beginNewTransaction ("Rename " + track->getName() + " to " + newName);
+            track->setName (newName);
+        }
+        juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<SessionView> (this)] { if (sp) { sp->renameEditor = nullptr; sp->repaint(); } });
+    };
+    ed.onReturnKey = commit;
+    ed.onFocusLost = commit;
+    ed.onEscapeKey = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<SessionView> (this)] { if (sp) sp->renameEditor = nullptr; }); };
+}
+
 void SessionView::mouseMagnify (const juce::MouseEvent& e, float scale)
 {
     zoomBy (scale, xToTime ((float) std::max (e.x, headerWidth)));

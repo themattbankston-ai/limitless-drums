@@ -15,6 +15,7 @@ public:
         engine = std::make_unique<tracktion::Engine> ("Limitless Drums", std::make_unique<SyncUIBehaviour>(), nullptr);
         window = std::make_unique<Window> (getApplicationName(), *engine);
         openFromCommandLine (commandLine);
+        juce::MessageManager::callAsync ([this] { if (auto* mc = content()) mc->offerRecovery(); });
     }
 
     void anotherInstanceStarted (const juce::String& commandLine) override { openFromCommandLine (commandLine); }
@@ -30,7 +31,7 @@ public:
                 items.add (juce::File (path));
         }
         if (! items.isEmpty())
-            if (auto* mc = dynamic_cast<MainComponent*> (window->getContentComponent()))
+            if (auto* mc = content())
                 mc->importItems (items);
     }
 
@@ -40,7 +41,15 @@ public:
         engine = nullptr;
     }
 
-    void systemRequestedQuit() override { quit(); }
+    void systemRequestedQuit() override
+    {
+        if (auto* mc = content())
+            mc->confirmClose ([] (bool ok) { if (ok) juce::JUCEApplication::getInstance()->quit(); });
+        else
+            quit();
+    }
+
+    MainComponent* content() const { return window ? dynamic_cast<MainComponent*> (window->getContentComponent()) : nullptr; }
 
 private:
     struct Window : public juce::DocumentWindow
@@ -49,7 +58,9 @@ private:
             : DocumentWindow (name, theme::night().ground, DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new MainComponent (e), true);
+            auto* mc = new MainComponent (e);
+            mc->onTitleChanged = [this] (const juce::String& t) { setName (t); };
+            setContentOwned (mc, true);
             setResizable (true, true);
             setResizeLimits (900, 560, 4000, 3000);
             centreWithSize (getWidth(), getHeight());

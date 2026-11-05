@@ -22,6 +22,7 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseMagnify (const juce::MouseEvent&, float scaleFactor) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
 
     void zoomToFit();
     void zoomBy (double factor, double anchorTime);
@@ -42,6 +43,8 @@ private:
     double pixelsPerSecond = 50.0, viewStart = 0.0;
     int laneHeight = 76, scrollY = 0;
     double lastPlayheadX = -1;
+    std::unique_ptr<juce::TextEditor> renameEditor;
+    void beginRename (int index);
 
     void timerCallback() override;
     double xToTime (float x) const;

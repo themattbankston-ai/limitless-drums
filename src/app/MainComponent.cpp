@@ -68,6 +68,9 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
         deviceText = "No audio output";
 
     setWantsKeyboardFocus (true);
+#if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu (this);
+#endif
     applyTheme();
     startTimerHz (20);
     setSize (1280, 800);
@@ -76,6 +79,10 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
 MainComponent::~MainComponent()
 {
     stopTimer();
+#if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu (nullptr);
+#endif
+    history = nullptr;
     view = nullptr;
     if (edit) edit->getTransport().stop (false, true);
     edit = nullptr;
@@ -116,6 +123,10 @@ void MainComponent::filesDropped (const juce::StringArray& paths, int, int)
 
 void MainComponent::importItems (const juce::Array<juce::File>& items)
 {
+    for (auto& f : items)
+        if (f.hasFileExtension (project::extension))
+            return openProject (f);
+
     auto planned = planImport (items);
 
     if (planned.empty())
@@ -134,21 +145,66 @@ void MainComponent::importItems (const juce::Array<juce::File>& items)
     openTake (0);
 }
 
+void MainComponent::closeEdit()
+{
+    history = nullptr;
+    view = nullptr;
+    if (edit)
+    {
+        edit->getTransport().stop (false, true);
+        project::autosaveFileFor (projectFile, sessionKey).deleteFile();
+    }
+    edit = nullptr;
+}
+
+void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<MicRole> roles)
+{
+    edit = std::move (newEdit);
+    currentRoles = std::move (roles);
+    project::storeRoles (*edit, currentRoles);
+    edit->resetChangedStatus();
+    edit->getUndoManager().clearUndoHistory();
+
+    view = std::make_unique<SessionView> (*edit, currentRoles, [this] { return palette(); });
+    addAndMakeVisible (*view);
+    history = std::make_unique<HistoryPanel> (edit->getUndoManager(), [this] { return palette(); });
+    addChildComponent (*history);
+    history->setVisible (showHistory);
+    resized();
+    view->zoomToFit();
+    grabKeyboardFocus();
+    updateTitle();
+    repaint();
+
+    // The engine settles a few internal values just after loading; drop those from the
+    // history so it starts clean and only lists your own edits.
+    juce::Timer::callAfterDelay (500, [sp = juce::Component::SafePointer<MainComponent> (this), e = edit.get()]
+    {
+        if (sp == nullptr || sp->edit.get() != e) return;
+        auto& um = e->getUndoManager();
+        bool onlyUnnamed = true;
+        for (auto& d : um.getUndoDescriptions()) if (d.isNotEmpty()) onlyUnnamed = false;
+        if (onlyUnnamed) um.clearUndoHistory();
+        e->resetChangedStatus();
+        sp->updateTitle();
+    });
+}
+
 void MainComponent::openTake (int index)
 {
     if (index < 0 || index >= (int) takes.size())
         return;
 
-    view = nullptr;
-    if (edit) edit->getTransport().stop (false, true);
-    edit = nullptr;
+    closeEdit();
+    projectFile = juce::File();
+    sessionKey = juce::String::toHexString (juce::Random::getSystemRandom().nextInt64());
 
     auto& take = takes[(size_t) index];
-    edit = createSessionEdit (engine, take.mics, 120.0, te::Edit::EditRole::forEditing);
+    auto newEdit = createSessionEdit (engine, take.mics, 120.0, te::Edit::EditRole::forEditing);
     currentTake = index;
     takeBox.setSelectedItemIndex (index, juce::dontSendNotification);
 
-    if (edit == nullptr)
+    if (newEdit == nullptr)
     {
         notice = "Couldn't open " + take.title + ".";
         repaint();
@@ -160,12 +216,199 @@ void MainComponent::openTake (int index)
         notice = (notice.isNotEmpty() ? notice + "  " : juce::String())
                  + juce::String ((int) take.references.size()) + " one-shot reference found (used later for reference matching).";
 
-    view = std::make_unique<SessionView> (*edit, take.roles, [this] { return palette(); });
-    addAndMakeVisible (*view);
-    resized();
-    view->zoomToFit();
-    grabKeyboardFocus();
+    showEdit (std::move (newEdit), take.roles);
+}
+
+void MainComponent::openProject (const juce::File& f)
+{
+    std::vector<MicRole> roles;
+    juce::StringArray missing;
+    auto loaded = project::open (engine, f, roles, missing);
+    if (loaded == nullptr)
+    {
+        notice = "Couldn't open " + f.getFileName() + ".";
+        repaint();
+        return;
+    }
+
+    closeEdit();
+    takes.clear();
+    takeBox.setVisible (false);
+    projectFile = f;
+    notice = missing.isEmpty() ? juce::String()
+                               : juce::String (missing.size()) + " audio file(s) are missing: " + missing.joinIntoString (", ");
+    showEdit (std::move (loaded), roles);
+}
+
+void MainComponent::chooseProject()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Open a Limitless Drums project",
+                                                   juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+                                                   juce::String ("*") + project::extension);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) openProject (fc.getResult()); });
+}
+
+void MainComponent::saveProject (bool saveAs, std::function<void (bool)> done)
+{
+    if (! edit) { if (done) done (true); return; }
+
+    auto write = [this, done] (juce::File f)
+    {
+        f = f.withFileExtension (project::extension);
+        project::storeRoles (*edit, currentRoles);
+        const auto oldAutosave = project::autosaveFileFor (projectFile, sessionKey);
+        const bool ok = project::save (*edit, f);
+        if (ok)
+        {
+            oldAutosave.deleteFile();
+            projectFile = f;
+            notice = "Saved " + f.getFileName();
+        }
+        else
+        {
+            notice = "Couldn't save to " + f.getFullPathName();
+        }
+        updateTitle();
+        repaint();
+        if (done) done (ok);
+    };
+
+    if (! saveAs && projectFile != juce::File())
+        return write (projectFile);
+
+    auto suggested = projectFile != juce::File() ? projectFile
+                   : (currentTake >= 0 && currentTake < (int) takes.size()
+                          ? takes[(size_t) currentTake].folder.getSiblingFile (takes[(size_t) currentTake].folder.getFileName() + project::extension)
+                          : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (juce::String ("Untitled") + project::extension));
+
+    chooser = std::make_unique<juce::FileChooser> ("Save project", suggested, juce::String ("*") + project::extension);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [write, done] (const juce::FileChooser& fc)
+                          {
+                              if (fc.getResult() != juce::File()) write (fc.getResult());
+                              else if (done) done (false);
+                          });
+}
+
+void MainComponent::undo (bool redo)
+{
+    if (! edit) return;
+    auto& um = edit->getUndoManager();
+    if (redo) um.redo(); else um.undo();
     repaint();
+    if (view) view->repaint();
+}
+
+void MainComponent::updateTitle()
+{
+    juce::String t = "Limitless Drums";
+    if (edit)
+    {
+        const auto name = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
+                        : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
+        t = name + (edit->hasChangedSinceSaved() || projectFile == juce::File() ? " •" : "") + "  —  Limitless Drums";
+    }
+    if (onTitleChanged) onTitleChanged (t);
+}
+
+void MainComponent::confirmClose (std::function<void (bool)> done)
+{
+    if (! edit || (projectFile != juce::File() && ! edit->hasChangedSinceSaved()))
+    {
+        closeEdit();
+        return done (true);
+    }
+
+    auto options = juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon)
+                       .withTitle ("Save changes?")
+                       .withMessage ("Do you want to save this session before quitting?")
+                       .withButton ("Save", 1).withButton ("Don't Save", 2).withButton ("Cancel", 0);
+    juce::AlertWindow::showAsync (options, [this, done] (int result)
+    {
+        if (result == 1) saveProject (false, [this, done] (bool ok) { if (ok) { closeEdit(); done (true); } else done (false); });
+        else if (result == 2) { closeEdit(); done (true); }
+        else done (false);
+    });
+}
+
+void MainComponent::offerRecovery()
+{
+    auto files = project::findRecoverableAutosaves();
+    if (files.isEmpty()) return;
+
+    files.sort();
+    auto newest = files.getLast();
+    for (auto& f : files) if (f.getLastModificationTime() > newest.getLastModificationTime()) newest = f;
+
+    auto options = juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
+                       .withTitle ("Restore unsaved work?")
+                       .withMessage ("Limitless Drums didn't close properly last time. Restore the session autosaved "
+                                     + newest.getLastModificationTime().toString (true, true, false) + "?")
+                       .withButton ("Restore", 1).withButton ("Discard", 0);
+    juce::AlertWindow::showAsync (options, [this, newest, files] (int result)
+    {
+        if (result == 1)
+        {
+            juce::File original;
+            if (auto xml = juce::parseXML (newest)) original = juce::File (xml->getStringAttribute ("ldProjectFile"));
+            openProject (newest);
+            projectFile = original.existsAsFile() ? original : juce::File();
+            if (edit) edit->markAsChanged();
+            notice = "Restored unsaved work. Save to keep it.";
+            updateTitle();
+            repaint();
+        }
+        for (auto& f : files) if (f != newest || result != 1) f.deleteFile();
+    });
+}
+
+//==============================================================================
+enum MenuIDs { miNew = 1, miOpen, miImport, miSave, miSaveAs, miUndo, miRedo, miHistory, miTheme, miFit };
+
+juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
+{
+    juce::PopupMenu m;
+    const bool hasEdit = edit != nullptr;
+    if (index == 0)
+    {
+        m.addItem (miOpen, "Open Project\u2026\tCmd+O");
+        m.addItem (miImport, "Import Tracks\u2026\tCmd+I");
+        m.addSeparator();
+        m.addItem (miSave, "Save\tCmd+S", hasEdit);
+        m.addItem (miSaveAs, "Save As\u2026\tShift+Cmd+S", hasEdit);
+    }
+    else if (index == 1)
+    {
+        const bool canUndo = hasEdit && edit->getUndoManager().canUndo();
+        const bool canRedo = hasEdit && edit->getUndoManager().canRedo();
+        m.addItem (miUndo, canUndo ? "Undo " + edit->getUndoManager().getUndoDescription() + "\tCmd+Z" : juce::String ("Undo\tCmd+Z"), canUndo);
+        m.addItem (miRedo, canRedo ? "Redo " + edit->getUndoManager().getRedoDescription() + "\tShift+Cmd+Z" : juce::String ("Redo\tShift+Cmd+Z"), canRedo);
+    }
+    else
+    {
+        m.addItem (miHistory, "Show History", true, showHistory);
+        m.addItem (miTheme, dayMode ? "Night Mode" : "Day Mode");
+        m.addItem (miFit, "Zoom to Fit\tF", hasEdit);
+    }
+    return m;
+}
+
+void MainComponent::menuItemSelected (int id, int)
+{
+    switch (id)
+    {
+        case miOpen:    chooseProject(); break;
+        case miImport:  chooseFiles(); break;
+        case miSave:    saveProject (false); break;
+        case miSaveAs:  saveProject (true); break;
+        case miUndo:    undo (false); break;
+        case miRedo:    undo (true); break;
+        case miHistory: showHistory = ! showHistory; if (history) history->setVisible (showHistory); resized(); break;
+        case miTheme:   dayMode = ! dayMode; applyTheme(); break;
+        case miFit:     if (view) view->zoomToFit(); break;
+        default: break;
+    }
 }
 
 void MainComponent::togglePlay()
@@ -183,7 +426,15 @@ bool MainComponent::keyPressed (const juce::KeyPress& k)
     if (k.getTextCharacter() == '=' && view)   { view->zoomBy (1.5, edit->getTransport().getPosition().inSeconds()); return true; }
     if (k.getTextCharacter() == '-' && view)   { view->zoomBy (1.0 / 1.5, edit->getTransport().getPosition().inSeconds()); return true; }
     if (k.getTextCharacter() == 'f' && view)   { view->zoomToFit(); return true; }
-    if (k.getModifiers().isCommandDown() && k.getKeyCode() == 'O') { chooseFiles(); return true; }
+    const auto mods = k.getModifiers();
+    if (mods.isCommandDown())
+    {
+        const int c = juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) k.getKeyCode());
+        if (c == 'O') { chooseProject(); return true; }
+        if (c == 'I') { chooseFiles(); return true; }
+        if (c == 'S') { saveProject (mods.isShiftDown()); return true; }
+        if (c == 'Z') { undo (mods.isShiftDown()); return true; }
+    }
     return false;
 }
 
@@ -193,6 +444,17 @@ void MainComponent::timerCallback()
     playButton.setToggleState (playing, juce::dontSendNotification);
     playButton.setButtonText (playing ? "Stop" : "Play");
     if (edit) repaint (0, 0, getWidth(), 56);
+
+    if (edit)
+    {
+        const bool dirty = edit->hasChangedSinceSaved();
+        if (dirty != lastDirty) { lastDirty = dirty; updateTitle(); }
+        if (++autosaveTicks >= 20 * 30)   // every 30 s
+        {
+            autosaveTicks = 0;
+            project::autosave (*edit, project::autosaveFileFor (projectFile, sessionKey));
+        }
+    }
 }
 
 //==============================================================================
@@ -276,8 +538,11 @@ void MainComponent::resized()
     playButton.setVisible (edit != nullptr);
     fitButton.setVisible (edit != nullptr);
 
+    auto content = getLocalBounds().withTrimmedTop (56).withTrimmedBottom (26);
+    if (history && showHistory)
+        history->setBounds (content.removeFromRight (240));
     if (view)
-        view->setBounds (getLocalBounds().withTrimmedTop (56).withTrimmedBottom (26));
+        view->setBounds (content);
 }
 
 } // namespace ld
