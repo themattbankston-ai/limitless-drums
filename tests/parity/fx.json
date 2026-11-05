@@ -1,0 +1,230 @@
+{
+ "sr": 44100,
+ "cases": [
+  {
+   "name": "eq_mono_lin",
+   "fn": "eqRender",
+   "input": "top",
+   "p": {
+    "phase": "lin",
+    "out": -1.5,
+    "bands": [
+     {
+      "type": "lowcut",
+      "f": 70,
+      "slope": 24
+     },
+     {
+      "type": "bell",
+      "f": 220,
+      "g": 4,
+      "q": 1.2
+     },
+     {
+      "type": "highshelf",
+      "f": 6000,
+      "g": 3,
+      "q": 0.7
+     },
+     {
+      "type": "notch",
+      "f": 900,
+      "q": 6
+     }
+    ]
+   },
+   "channels": 1,
+   "offset": 0,
+   "len": 15435
+  },
+  {
+   "name": "eq_stereo_ms_dyn",
+   "fn": "eqRender",
+   "input": "oh",
+   "p": {
+    "phase": "min",
+    "bands": [
+     {
+      "type": "bell",
+      "f": 400,
+      "g": -3,
+      "q": 1,
+      "place": "mid"
+     },
+     {
+      "type": "highshelf",
+      "f": 8000,
+      "g": 4,
+      "place": "side"
+     },
+     {
+      "type": "bell",
+      "f": 2500,
+      "g": 0,
+      "q": 2,
+      "dyn": {
+       "on": true,
+       "thr": -36,
+       "range": -6,
+       "atk": 2,
+       "rel": 60
+      }
+     }
+    ]
+   },
+   "channels": 2,
+   "offset": 15435,
+   "len": 15435
+  },
+  {
+   "name": "pultec",
+   "fn": "pultecRender",
+   "input": "top",
+   "p": {
+    "lf": 60,
+    "lfBoost": 6,
+    "lfAtten": 4,
+    "hf": 10,
+    "hfBoost": 5,
+    "bw": 4,
+    "hfa": 20,
+    "hfAtten": 2,
+    "meq": true,
+    "lpk": 3,
+    "lpf": 200,
+    "dip": 4,
+    "dipf": 700,
+    "hpk": 2,
+    "hpf": 5,
+    "drive": 1.5
+   },
+   "channels": 1,
+   "offset": 46305,
+   "len": 15435
+  },
+  {
+   "name": "width",
+   "fn": "widthRender",
+   "input": "oh",
+   "p": {
+    "width": 1.6,
+    "bassMono": 160,
+    "keep": true
+   },
+   "channels": 2,
+   "offset": 61740,
+   "len": 15435
+  },
+  {
+   "name": "gate",
+   "fn": "gateRender",
+   "input": "top",
+   "p": {
+    "thr": -30,
+    "hyst": 6,
+    "range": -50,
+    "hold": 30,
+    "atk": 0.2,
+    "rel": 90,
+    "hpf": 120,
+    "lpf": 9000,
+    "look": 1.5
+   },
+   "channels": 1,
+   "offset": 92610,
+   "len": 15435
+  },
+  {
+   "name": "comp_dist",
+   "fn": "compRender",
+   "input": "top",
+   "p": {
+    "model": "dist",
+    "dist": {
+     "input": 7,
+     "ratio": "6",
+     "attack": 4,
+     "release": 5,
+     "dist": "d2",
+     "hp": true
+    },
+    "mix": 0.8,
+    "out": -2
+   },
+   "channels": 1,
+   "offset": 108045,
+   "len": 15435
+  },
+  {
+   "name": "comp_76_all",
+   "fn": "compRender",
+   "input": "top",
+   "p": {
+    "76": {
+     "input": 10,
+     "ratio": "all",
+     "attack": 4,
+     "release": 6
+    },
+    "model": "76",
+    "mix": 1
+   },
+   "channels": 1,
+   "offset": 123480,
+   "len": 15435
+  },
+  {
+   "name": "comp_fair",
+   "fn": "compRender",
+   "input": "oh",
+   "p": {
+    "model": "fair",
+    "fair": {
+     "input": 4,
+     "thresh": 6,
+     "tc": 5
+    },
+    "scHpf": 80
+   },
+   "channels": 2,
+   "offset": 138915,
+   "len": 15435
+  },
+  {
+   "name": "comp_160",
+   "fn": "compRender",
+   "input": "top",
+   "p": {
+    "160": {
+     "thresh": -30,
+     "ratio": 5,
+     "overEasy": true
+    },
+    "model": "160"
+   },
+   "channels": 1,
+   "offset": 169785,
+   "len": 15435
+  },
+  {
+   "name": "comp_chan",
+   "fn": "compRender",
+   "input": "top",
+   "p": {
+    "model": "chan",
+    "chan": {
+     "thresh": -28,
+     "ratio": 4,
+     "knee": 8,
+     "attack": 6,
+     "release": 100
+    }
+   },
+   "channels": 1,
+   "offset": 185220,
+   "len": 15435
+  }
+ ],
+ "start": 776093,
+ "len": 15435
+}

@@ -279,3 +279,39 @@ TEST_CASE ("Parity: levels match Hitline 4.8")
         CHECK_THAT (R.trimDb, WithinAbs ((double) kr["trimDb"], 1e-12));
     }
 }
+
+#include "hl/FxInserts.h"
+TEST_CASE ("Parity: inserts match Hitline 4.8 (EQ, Tube EQ, Width, Gate, Comps)")
+{
+    const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
+    if (root.isEmpty()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
+    const auto meta = juce::JSON::parse (parityDir().getChildFile ("fx.json"));
+    juce::MemoryBlock mb;
+    REQUIRE (parityDir().getChildFile ("fx.f32").loadFileAsData (mb));
+    const auto* golden = static_cast<const float*> (mb.getData());
+    const auto dir = juce::File (root).getChildFile ("SNARE 2 - BB/Center");
+    const auto top = ld::hl::readWav (dir.getChildFile ("SNARE_CENTER_TOP_RR06_V06.wav")), oh = ld::hl::readWav (dir.getChildFile ("SNARE_CENTER_OH_RR06_V06.wav"));
+    const long start = (int) meta["start"], len = (int) meta["len"];
+    auto cut = [&] (const ld::hl::WavData& w) { ld::hl::Chs c; for (auto& x : w.channels) c.push_back (ld::hl::F32 (x.begin() + start, x.begin() + start + len)); return c; };
+    const auto T = cut (top), O = cut (oh);
+    const double sr = meta["sr"];
+    for (auto& cs : *meta["cases"].getArray())
+    {
+        const auto name = cs["name"].toString(), fn = cs["fn"].toString();
+        INFO (name);
+        const auto& in = cs["input"].toString() == "oh" ? O : T;
+        const auto p = cs["p"];
+        ld::hl::Chs out;
+        if (fn == "eqRender") out = ld::hl::eqRender (in, sr, p);
+        else if (fn == "pultecRender") out = ld::hl::pultecRender (in, sr, p);
+        else if (fn == "widthRender") out = ld::hl::widthRender (in, sr, p);
+        else if (fn == "gateRender") out = ld::hl::gateRender (in, sr, p);
+        else if (fn == "compRender") out = ld::hl::compRender (in, sr, p);
+        REQUIRE ((int) out.size() == (int) cs["channels"]);
+        double worst = 0;
+        long off = (int) cs["offset"];
+        for (auto& y : out) { for (long i = 0; i < len; ++i) worst = std::max (worst, (double) std::abs (y[(size_t) i] - golden[off + i])); off += len; }
+        INFO ("largest difference " << worst << " (" << 20 * std::log10 (worst + 1e-300) << " dB)");
+        CHECK (worst < 1e-5);   // float rounding (-100 dB)
+    }
+}
