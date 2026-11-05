@@ -102,7 +102,7 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
             const auto& tr = S->tracks[(size_t) map[i]];
             mono = tr.mono; info.stereo = tr.ch.size() > 1;
             info.name = tr.mic;
-            const auto r = classifyMic (juce::String (tr.mic));
+            const auto r = classifyMic (juce::String (S->drum == "kit" ? std::string() : S->drum + " ") + juce::String (tr.mic));   // "Top" alone is ambiguous: "Snare Top"
             info.isRoom = isRoom (r.kind);
             std::tie (info.colourA, info.colourB) = roleColours (r);
         }
@@ -120,12 +120,38 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
         info.blocksPerSecond = sr / block;
         const size_t nb = mono.size() / (size_t) block;
         info.peaks.resize (nb);
-        for (size_t b = 0; b < nb; ++b)
+        const bool leveled = map[i] >= 0 && es->mix && es->levels && es->levels->valid;
+        if (leveled)
         {
-            float pk = 0;
-            for (size_t n = b * (size_t) block, e = n + (size_t) block; n < e; ++n) pk = std::max (pk, std::abs (mono[n]));
-            info.peaks[b] = pk;
+            // what gets exported (Hitline's B view): the processed mic, at its alignment, each hit at its Level gain
+            const int t = map[i];
+            const auto& L = *es->levels;
+            const auto& proc = es->mix->proc[(size_t) t];
+            const long lagInt = (long) std::lround (t == S->refIdx ? 0.0 : S->tracks[(size_t) t].lag);
+            const double trim = std::pow (10.0, L.trimDb / 20);
+            size_t k = 0;
+            for (size_t b = 0; b < nb; ++b)
+            {
+                float pk = 0;
+                for (size_t n = b * (size_t) block, e = n + (size_t) block; n < e; ++n)
+                {
+                    while (k + 1 < L.regions.size() && (long) n >= L.regions[k + 1].start) ++k;
+                    const long src = (long) n + lagInt;
+                    if (src < 0 || src >= (long) proc[0].size()) continue;
+                    float a = 0;
+                    for (auto& c : proc) a = std::max (a, std::abs (c[(size_t) src]));
+                    pk = std::max (pk, a * (float) (std::pow (10.0, L.gainsDbT[(size_t) t][k] / 20) * trim));
+                }
+                info.peaks[b] = pk;
+            }
         }
+        else
+            for (size_t b = 0; b < nb; ++b)
+            {
+                float pk = 0;
+                for (size_t n = b * (size_t) block, e = n + (size_t) block; n < e; ++n) pk = std::max (pk, std::abs (mono[n]));
+                info.peaks[b] = pk;
+            }
         m.length = std::max (m.length, (double) mono.size() / sr);
         m.tracks.push_back (std::move (info));
     }

@@ -573,28 +573,28 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     const bool hasEdit = edit != nullptr;
     if (index == 0)
     {
-        m.addItem (miOpen, "Open Project…\tCmd+O");
-        m.addItem (miImport, "Import Tracks…\tCmd+I");
+        m.addItem (miOpen, juce::String (juce::CharPointer_UTF8 ("Open Project\xe2\x80\xa6")));
+        m.addItem (miImport, juce::String (juce::CharPointer_UTF8 ("Import Tracks\xe2\x80\xa6")));
         m.addSeparator();
-        m.addItem (miSave, "Save\tCmd+S", hasEdit);
-        m.addItem (miSaveAs, "Save As…\tShift+Cmd+S", hasEdit);
+        m.addItem (miSave, "Save", hasEdit);
+        m.addItem (miSaveAs, juce::String (juce::CharPointer_UTF8 ("Save As\xe2\x80\xa6")), hasEdit);
         m.addSeparator();
         const bool ready = hasEdit && engineState && engineState->mix && ! exporting;
-        m.addItem (miExport, "Export…\tCmd+E", ready);
-        m.addItem (miOneShot, "Export One-Shot…", ready && engineState->levels.has_value());
+        m.addItem (miExport, juce::String (juce::CharPointer_UTF8 ("Export\xe2\x80\xa6")), ready);
+        m.addItem (miOneShot, juce::String (juce::CharPointer_UTF8 ("Export One-Shot\xe2\x80\xa6")), ready && engineState->levels.has_value());
     }
     else if (index == 1)
     {
         const bool canUndo = hasEdit && edit->getUndoManager().canUndo();
         const bool canRedo = hasEdit && edit->getUndoManager().canRedo();
-        m.addItem (miUndo, canUndo ? "Undo " + edit->getUndoManager().getUndoDescription() + "\tCmd+Z" : juce::String ("Undo\tCmd+Z"), canUndo);
-        m.addItem (miRedo, canRedo ? "Redo " + edit->getUndoManager().getRedoDescription() + "\tShift+Cmd+Z" : juce::String ("Redo\tShift+Cmd+Z"), canRedo);
+        m.addItem (miUndo, canUndo ? "Undo " + edit->getUndoManager().getUndoDescription() + "" : juce::String ("Undo"), canUndo);
+        m.addItem (miRedo, canRedo ? "Redo " + edit->getUndoManager().getRedoDescription() + "" : juce::String ("Redo"), canRedo);
     }
     else
     {
         m.addItem (miHistory, "Show History", true, studio.isHistoryVisible());
         m.addItem (miTheme, dayMode ? "Night Mode" : "Day Mode");
-        m.addItem (miFit, "Zoom to Fit\tF", hasEdit);
+        m.addItem (miFit, "Zoom to Fit", hasEdit);
     }
     return m;
 }
