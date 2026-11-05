@@ -281,7 +281,8 @@ TEST_CASE ("Parity: levels match Hitline 4.8")
 }
 
 #include "hl/FxInserts.h"
-TEST_CASE ("Parity: inserts match Hitline 4.8 (EQ, Tube EQ, Width, Gate, Comps)")
+#include "hl/FxSat.h"
+TEST_CASE ("Parity: inserts match Hitline 4.8")
 {
     const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
     if (root.isEmpty()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
@@ -295,6 +296,7 @@ TEST_CASE ("Parity: inserts match Hitline 4.8 (EQ, Tube EQ, Width, Gate, Comps)"
     auto cut = [&] (const ld::hl::WavData& w) { ld::hl::Chs c; for (auto& x : w.channels) c.push_back (ld::hl::F32 (x.begin() + start, x.begin() + start + len)); return c; };
     const auto T = cut (top), O = cut (oh);
     const double sr = meta["sr"];
+    ld::hl::setReverbLibrary (juce::JSON::parse (juce::File (LD_SOURCE_DIR).getChildFile ("assets/irlib.json")));
     for (auto& cs : *meta["cases"].getArray())
     {
         const auto name = cs["name"].toString(), fn = cs["fn"].toString();
@@ -307,6 +309,9 @@ TEST_CASE ("Parity: inserts match Hitline 4.8 (EQ, Tube EQ, Width, Gate, Comps)"
         else if (fn == "widthRender") out = ld::hl::widthRender (in, sr, p);
         else if (fn == "gateRender") out = ld::hl::gateRender (in, sr, p);
         else if (fn == "compRender") out = ld::hl::compRender (in, sr, p);
+        else if (fn == "satRender") out = ld::hl::satRender (in, sr, p);
+        else if (fn == "verbRender") out = ld::hl::verbRender (in, sr, p);
+        else if (fn == "insRender") { ld::hl::InsertOptions io; io.trim = -2; out = ld::hl::insRender (in, sr, p, io); }
         REQUIRE ((int) out.size() == (int) cs["channels"]);
         double worst = 0;
         long off = (int) cs["offset"];

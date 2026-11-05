@@ -19,12 +19,24 @@ const cases = [
   ['comp_76_all', 'compRender', T, { model: '76', '76': { input: 10, ratio: 'all', attack: 4, release: 6 }, mix: 1 }],
   ['comp_fair', 'compRender', O, { model: 'fair', fair: { input: 4, thresh: 6, tc: 5 }, scHpf: 80 }],
   ['comp_160', 'compRender', T, { model: '160', '160': { thresh: -30, ratio: 5, overEasy: true } }],
+  ['sat_decap_A', 'satRender', T, { model: 'decap', decap: { style: 'A', drive: 5, tone: 1.5, lowcut: 60, thump: true, highcut: 14000 }, mix: 0.9 }],
+  ['sat_decap_T_punish', 'satRender', O, { model: 'decap', decap: { style: 'T', drive: 3, punish: true, steep: true, lowcut: 40 }, out: -3 }],
+  ['sat_devil', 'satRender', T, { model: 'devil', devil: { crush: 6, darkness: 4, lowcut: true }, mix: 0.5 }],
+  ['sat_saturn_tape', 'satRender', T, { model: 'saturn', saturn: { style: 'tape', drive: 6, tone: -1 } }],
+  ['sat_saturn_transformer', 'satRender', O, { model: 'saturn', saturn: { style: 'transformer', drive: 8 } }],
+  ['sat_fatso', 'satRender', T, { model: 'fatso', fatso: { input: 6, warmth: 4, comp: 'gp' }, auto: false, out: -6 }],
+  ['verb_emt', 'verbRender', O, { model: 'emt', prog: 'A', decay: 0.6, pre: 12, hpf: 200, lpf: 9000, width: 1.3, mix: 0.3 }],
+  ['verb_lex_room', 'verbRender', T, { model: 'lex', prog: 'Room A', decay: 0.4, early: 1.4, mix: 0.25 }],
+  ['verb_city', 'verbRender', O, { model: 'city', prog: 'Re-mic', mix: 0.35 }],
+  ['verb_vv_hall', 'verbRender', O, { model: 'vv', prog: 'Concert Hall', decay: 0.3, era: '1980s', mix: 0.2 }],
+  ['verb_vv_nonlin', 'verbRender', T, { model: 'vv', prog: 'Nonlin', mix: 0.4 }],
+  ['chain', 'insRender', T, [{ type: 'gate', p: { thr: -32, range: -30 } }, { type: 'eq', p: { bands: [{ type: 'bell', f: 200, g: 3, q: 1 }] } }, { type: 'comp', p: { model: '76', '76': { input: 8, ratio: '8' } } }, { type: 'sat', on: false, p: {} }, { type: 'sat', p: { model: 'saturn', saturn: { style: 'gentle', drive: 3 } } }]],
   ['comp_chan', 'compRender', T, { model: 'chan', chan: { thresh: -28, ratio: 4, knee: 8, attack: 6, release: 100 } }],
 ];
 const meta = { sr, cases: [] }, bufs = [];
 let off = 0;
 for (const [name, fn, input, p] of cases){
-  const out = DSP[fn](input.map(x => Float32Array.from(x)), sr, p);
+  const out = fn === 'insRender' ? DSP.insRender(input.map(x => Float32Array.from(x)), sr, p, { trim: -2 }) : DSP[fn](input.map(x => Float32Array.from(x)), sr, p);
   meta.cases.push({ name, fn, input: input === O ? 'oh' : 'top', p, channels: out.length, offset: off, len });
   for (const y of out){ bufs.push(Buffer.from(Float32Array.from(y).buffer)); off += y.length; }
 }
