@@ -52,6 +52,7 @@ juce::Rectangle<int> SessionView::muteBox (int i) const
 
 juce::Colour SessionView::roleColour (const MicRole& r, const theme::Palette& p) const
 {
+    auto c = [&]() -> juce::Colour {
     using K = MicRole::Kind;
     switch (r.kind)
     {
@@ -64,6 +65,9 @@ juce::Colour SessionView::roleColour (const MicRole& r, const theme::Palette& p)
         case K::roomCrush: case K::ambient:                                  return p.reference;
         default:                                                             return p.inkQuiet;
     }
+    }();
+    // On the light theme, deepen the colours so waveforms keep their contrast.
+    return p.ground.getPerceivedBrightness() > 0.5f ? c.darker (0.6f) : c;
 }
 
 void SessionView::clampView()
