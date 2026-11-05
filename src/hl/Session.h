@@ -3,7 +3,9 @@
 #include "Clean.h"
 #include "FxSat.h"
 #include "Levels.h"
+#include "Resolve.h"
 #include "Shape.h"
+#include "Tune.h"
 #include <functional>
 #include <optional>
 #include <string>
@@ -57,6 +59,12 @@ struct SessionTrack
     std::optional<LrFix> lr;
     double autoAsis = NAN;
     Strip strip;
+    // alignment state (Hitline's track fields)
+    double amount = 1;
+    bool apOn = true, manualLag = false, manualPol = false;
+    std::optional<AlignResult> autoResult, grp;
+    std::optional<int> proPol;
+    std::string label;                ///< "24-bit" etc.
 };
 
 struct ExportSettings
@@ -92,6 +100,19 @@ struct Session
     juce::var busIns;                 ///< bus insert slots
     RoomSettings room;
     std::optional<TuneState> tinfo;
+    // detection, alignment and tuning settings and results (Hitline's det, phase, groupAnchors, tune, pitch)
+    double minGapMs = 180, thrDb = -40;
+    bool thrAuto = true, detRan = false;
+    bool phaseAnalyzed = false, phaseStale = false, flipped = false, leadFlipAuto = true;
+    std::array<std::string, 4> groupAnchors { "auto", "auto", "auto", "auto" };
+    TuneSettings tune;
+    PitchOptions pitchOpt;            ///< fmin, fmax, skip and window, per drum
+    std::string tuneMic = "ref";
+    bool tuneAnalyzed = false, tuneAutoWin = true;
+    SessionPitch pitch;
+    std::optional<TuneInfo> tuneInfo;
+    std::vector<long> kitOn;          ///< whole-kit takes: the strong hits alignment is measured on
+    double kitBleed = 0;
     int tameWorkers = 3;              ///< Hitline splits the tame pass into this many stretches of hits
     std::vector<SessionTrack> tracks;
 
