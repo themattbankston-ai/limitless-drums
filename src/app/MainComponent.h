@@ -64,12 +64,19 @@ private:
     juce::File projectFile;
     juce::String sessionKey = juce::String::toHexString (juce::Random::getSystemRandom().nextInt64());
     std::vector<MicRole> currentRoles;
+    std::shared_ptr<struct EngineState> engineState;   ///< the ported Hitline engine's view of the open take
+    int prepGeneration = 0;
+    bool exporting = false;
     int autosaveTicks = 0;
     bool lastDirty = false;
     juce::String deviceText;
 
     theme::Palette palette() const { return dayMode ? theme::day() : theme::night(); }
     void openTake (int index);
+    void startPrep();
+    void refreshModel();
+    void exportTake();
+    void exportOneShotFile();
     void showEdit (std::unique_ptr<tracktion::Edit>, std::vector<MicRole> roles);
     void closeEdit();
     void openProject (const juce::File&);

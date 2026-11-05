@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "SessionModel.h"
+#include <thread>
 
 namespace ld
 {
@@ -177,6 +178,8 @@ void MainComponent::closeEdit()
         project::autosaveFileFor (projectFile, sessionKey).deleteFile();
     }
     edit = nullptr;
+    engineState = nullptr;
+    ++prepGeneration;
     studio.setModel ({});
     studio.setHistory ({}, 0);
 }
@@ -192,8 +195,9 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
 
     const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
                      : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
-    studio.setModel (buildStudioModel (*edit, currentRoles, title));
-    studio.setStep (studio.model().layers.empty() ? ui::Step::align : ui::Step::levels);
+    studio.setModel (buildStudioModel (*edit, currentRoles, title, nullptr));
+    studio.setStep (ui::Step::align);
+    startPrep();
     updateHistory();
     grabKeyboardFocus();
     updateTitle();
@@ -210,6 +214,124 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
         e->resetChangedStatus();
         sp->updateTitle();
         sp->updateHistory();
+    });
+}
+
+void MainComponent::refreshModel()
+{
+    if (! edit) return;
+    const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
+                     : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
+    const auto view = studio.view;
+    studio.setModel (buildStudioModel (*edit, currentRoles, title, engineState.get()));
+    studio.view = view;
+}
+
+/** Hitline's Auto prep on the open take, off the message thread: hits, alignment and tuning first (shown as
+    soon as they are ready), then the processing chain and the levels measured on it. */
+void MainComponent::startPrep()
+{
+    if (! edit) return;
+    const auto files = editFiles (*edit);
+    if (files.empty() || std::any_of (files.begin(), files.end(), [] (auto& f) { return ! f.existsAsFile(); })) return;
+    const int gen = ++prepGeneration;
+    const auto folder = files[0].getParentDirectory().getFileName();
+    setNotice (juce::CharPointer_UTF8 ("Finding the hits and lining up the mics\xe2\x80\xa6"));
+    std::thread ([files, folder, gen, sp = juce::Component::SafePointer<MainComponent> (this)]
+    {
+        std::shared_ptr<EngineState> st = prepareTake (files, folder);
+        juce::MessageManager::callAsync ([sp, st, gen]
+        {
+            if (sp == nullptr || sp->prepGeneration != gen) return;
+            sp->engineState = st;
+            sp->refreshModel();
+            const auto& S = st->session;
+            if (! st->errors.empty()) sp->setNotice (juce::String (st->errors.front()));
+            else if (! st->prepared) sp->setNotice (juce::String (st->advice.empty() ? "Couldn't find the hits." : st->advice));
+            else
+            {
+                int moved = 0;
+                for (auto& t : S.tracks) if (t.autoResult && ! t.autoResult->kept && (t.lag != 0 || t.pol < 0 || ! t.ap.empty())) ++moved;
+                sp->setNotice (juce::String (S.onsets.size()) + " hits found, " + juce::String (moved) + " mic" + (moved == 1 ? "" : "s") + " realigned"
+                               + (S.flipped ? ", " + juce::String (S.tracks[(size_t) S.refIdx].mic) + " polarity flipped" : juce::String())
+                               + juce::String (juce::CharPointer_UTF8 (". Rendering the mix and setting the levels\xe2\x80\xa6")));
+            }
+        });
+        if (! st->prepared && st->session.mode != "kit") return;
+        auto mix = std::make_shared<hl::MixRender> (hl::renderMix (st->session));
+        auto lv = std::make_shared<std::optional<hl::LevelResult>>();
+        if (st->session.mode != "kit") *lv = hl::measureLevels (st->session, *mix);
+        juce::MessageManager::callAsync ([sp, st, gen, mix, lv]
+        {
+            if (sp == nullptr || sp->prepGeneration != gen || sp->engineState != st) return;
+            st->mix = std::move (*mix);
+            st->levels = std::move (*lv);
+            sp->refreshModel();
+            sp->setNotice ("Ready. Every hit is on the level standard. File > Export writes the samples.");
+        });
+    }).detach();
+}
+
+void MainComponent::exportTake()
+{
+    if (! engineState || ! engineState->mix || exporting) { setNotice ("Still preparing the take."); return; }
+    const bool kit = engineState->session.mode == "kit";
+    if (! kit && ! (engineState->levels && engineState->levels->valid)) { setNotice ("Export needs every hit found: the levels need the full count."); return; }
+    chooser = std::make_unique<juce::FileChooser> ("Export to a folder", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory));
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [this, kit] (const juce::FileChooser& fc)
+    {
+        const auto dir = fc.getResult();
+        if (! dir.isDirectory()) return;
+        exporting = true;
+        setNotice (juce::CharPointer_UTF8 ("Exporting\xe2\x80\xa6"));
+        std::thread ([st = engineState, dir, kit, sp = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            int n = 0; juce::String err;
+            try
+            {
+                auto sink = [&] (const std::string& path, const juce::MemoryBlock& bytes)
+                {
+                    const auto f = dir.getChildFile (juce::String (path));
+                    f.getParentDirectory().createDirectory();
+                    if (! f.replaceWithData (bytes.getData(), bytes.getSize())) throw std::runtime_error ("Couldn't write " + f.getFullPathName().toStdString());
+                };
+                n = kit ? hl::writeKit (st->session, *st->mix, sink) : hl::writeSession (st->session, *st->mix, *st->levels, sink);
+            }
+            catch (const std::exception& e) { err = e.what(); }
+            juce::MessageManager::callAsync ([sp, n, err, dir]
+            {
+                if (sp == nullptr) return;
+                sp->exporting = false;
+                sp->setNotice (err.isNotEmpty() ? "Export failed: " + err : "Exported " + juce::String (n) + " files to " + dir.getFileName() + ".");
+                if (err.isEmpty()) dir.revealToUser();
+            });
+        }).detach();
+    });
+}
+
+void MainComponent::exportOneShotFile()
+{
+    if (! engineState || ! engineState->mix || ! engineState->levels) { setNotice ("Still preparing the take."); return; }
+    // the console as it stands in the edit: faders, mute, solo, pan
+    auto& S = engineState->session;
+    const auto files = editFiles (*edit);
+    auto tracks = tracktion::getAudioTracks (*edit);
+    for (size_t i = 0; i < tracks.size(); ++i)
+        for (auto& tr : S.tracks)
+            if (tr.name == files[i].getFileNameWithoutExtension().toStdString())
+            {
+                tr.mute = tracks[i]->isMuted (false); tr.solo = tracks[i]->isSolo (false);
+                if (auto* vp = tracks[i]->getVolumePlugin()) { tr.fader = vp->getVolumeDb(); tr.strip.pan = vp->getPan(); }
+            }
+    const auto shot = hl::exportOneShot (S, *engineState->mix, *engineState->levels);
+    if (shot.name.empty()) { setNotice ("The bus is silent: every channel is muted or down."); return; }
+    chooser = std::make_unique<juce::FileChooser> ("Save the one-shot", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (juce::String (shot.name)), "*.wav");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [this, wav = shot.wav, hit = shot.hit] (const juce::FileChooser& fc)
+    {
+        const auto f = fc.getResult();
+        if (f == juce::File()) return;
+        setNotice (f.replaceWithData (wav.getData(), wav.getSize()) ? "Saved the one-shot (hit " + juce::String ((int) hit + 1) + ") as " + f.getFileName() + "."
+                                                                       : "Couldn't write " + f.getFullPathName());
     });
 }
 
@@ -443,7 +565,7 @@ void MainComponent::offerRecovery()
 }
 
 //==============================================================================
-enum MenuIDs { miOpen = 1, miImport, miSave, miSaveAs, miUndo, miRedo, miHistory, miTheme, miFit };
+enum MenuIDs { miOpen = 1, miImport, miSave, miSaveAs, miUndo, miRedo, miHistory, miTheme, miFit, miExport, miOneShot };
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 {
@@ -456,6 +578,10 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         m.addSeparator();
         m.addItem (miSave, "Save\tCmd+S", hasEdit);
         m.addItem (miSaveAs, "Save As…\tShift+Cmd+S", hasEdit);
+        m.addSeparator();
+        const bool ready = hasEdit && engineState && engineState->mix && ! exporting;
+        m.addItem (miExport, "Export…\tCmd+E", ready);
+        m.addItem (miOneShot, "Export One-Shot…", ready && engineState->levels.has_value());
     }
     else if (index == 1)
     {
@@ -486,6 +612,8 @@ void MainComponent::menuItemSelected (int id, int)
         case miHistory: studio.setHistoryVisible (! studio.isHistoryVisible()); break;
         case miTheme:   dayMode = ! dayMode; applyTheme(); break;
         case miFit:     studio.zoomToFit(); break;
+        case miExport:  exportTake(); break;
+        case miOneShot: exportOneShotFile(); break;
         default: break;
     }
 }
@@ -509,6 +637,7 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
         if (code == KC::I) { chooseFiles(); return true; }
         if (code == KC::S) { saveProject (k.isShiftDown()); return true; }
         if (code == KC::Z) { undo (k.isShiftDown()); return true; }
+        if (code == KC::E) { exportTake(); return true; }
         return false;
     }
     if (code == KC::Space)  { togglePlay(); return true; }

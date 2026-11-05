@@ -1,28 +1,9 @@
 #include "SessionModel.h"
-#include "core/Layers.h"
 
 namespace ld
 {
 namespace te = tracktion;
 using K = MicRole::Kind;
-
-juce::String defaultMicModel (const MicRole& r)
-{
-    switch (r.kind)
-    {
-        case K::kickIn:      return "Beta 91A";
-        case K::kickOut:     return "NS10";
-        case K::snareTop:    return "SM57";
-        case K::snareBottom: return "Beta 57A";
-        case K::tom: case K::floorTom: return "MD 421";
-        case K::overheads:   return "C414";
-        case K::roomMono:    return "U47";
-        case K::roomClose:   return "U67";
-        case K::roomFar:     return "Coles 4038";
-        case K::roomCrush:   return "Earthworks";
-        default:             return {};
-    }
-}
 
 static std::pair<unsigned, unsigned> roleColours (const MicRole& r)
 {
@@ -43,127 +24,150 @@ static std::pair<unsigned, unsigned> roleColours (const MicRole& r)
 }
 
 static bool isRoom (K k) { return k == K::roomMono || k == K::roomClose || k == K::room || k == K::roomFar || k == K::roomCrush || k == K::ambient; }
-static bool isClose (K k) { return (int) k <= (int) K::cymbal; }
 
-ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& roles, const juce::String& title)
+std::vector<juce::File> editFiles (te::Edit& edit)
+{
+    std::vector<juce::File> out;
+    for (auto* t : te::getAudioTracks (edit))
+    {
+        juce::File f;
+        if (auto* clip = dynamic_cast<te::AudioClipBase*> (t->getClips().getFirst())) f = clip->getOriginalFile();
+        out.push_back (f);
+    }
+    return out;
+}
+
+std::shared_ptr<EngineState> prepareTake (const std::vector<juce::File>& files, const juce::String& folderName)
+{
+    auto st = std::make_shared<EngineState>();
+    std::vector<std::string> rel;
+    for (auto& f : files) rel.push_back ((folderName + "/" + f.getFileName()).toStdString());
+    const auto recs = hl::groupSessions (rel);
+    const auto drum = recs.empty() ? std::string ("snare") : recs[0].drum;
+    const auto artic = recs.empty() ? std::string ("Hit") : recs[0].artic;
+    std::vector<hl::SourceFile> src;
+    for (size_t i = 0; i < files.size(); ++i) src.push_back ({ files[i].getFileName().toStdString(), rel[i], hl::readWav (files[i]) });
+    auto opened = hl::openSession (std::move (src), drum, artic);
+    st->session = std::move (opened.session);
+    st->errors = std::move (opened.errors);
+    if (st->session.tracks.empty()) return st;
+    st->prepared = hl::autoPrep (st->session);
+    if (! st->prepared) st->advice = hl::hitCountAdvice (st->session);
+    return st;
+}
+
+void renderAndMeasure (EngineState& st)
+{
+    if (st.session.tracks.empty()) return;
+    st.mix = hl::renderMix (st.session);
+    if (st.session.mode != "kit") st.levels = hl::measureLevels (st.session, *st.mix);
+}
+
+ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& roles, const juce::String& title, const EngineState* es)
 {
     ui::StudioModel m;
     m.hasSession = true;
     m.title = title.toStdString();
     m.bpm = edit.tempoSequence.getTempos()[0]->getBpm();
 
+    const auto files = editFiles (edit);
+    auto tracks = te::getAudioTracks (edit);
+    const hl::Session* S = es ? &es->session : nullptr;
+    // the engine keeps its own track order (lead first); match by file name
+    std::vector<int> map (tracks.size(), -1);
+    if (S)
+        for (size_t i = 0; i < tracks.size(); ++i)
+            for (size_t t = 0; t < S->tracks.size(); ++t)
+                if (S->tracks[t].name == files[i].getFileNameWithoutExtension().toStdString()) map[i] = (int) t;
+
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
-
-    std::vector<juce::AudioBuffer<float>> mono;
-    double sr = 48000.0;
-    auto tracks = te::getAudioTracks (edit);
+    double sr = S ? S->sr : 48000.0;
     for (size_t i = 0; i < tracks.size(); ++i)
     {
         auto* t = tracks[i];
         const MicRole role = i < roles.size() ? roles[i] : MicRole {};
         ui::TrackInfo info;
         info.name = t->getName().toStdString();
-        info.model = defaultMicModel (role).toStdString();
         info.isRoom = isRoom (role.kind);
-        info.isDrumIcon = false;
         std::tie (info.colourA, info.colourB) = roleColours (role);
         info.solo = t->isSolo (false);
         info.mute = t->isMuted (false);
         if (auto* vp = t->getVolumePlugin()) { info.volumeDb = vp->getVolumeDb(); info.pan = vp->getPan(); }
 
-        juce::AudioBuffer<float> buf;
-        if (auto* clip = dynamic_cast<te::AudioClipBase*> (t->getClips().getFirst()))
-            if (std::unique_ptr<juce::AudioFormatReader> r { formats.createReaderFor (clip->getOriginalFile()) })
-            {
-                sr = r->sampleRate;
-                info.stereo = r->numChannels > 1;
-                juce::AudioBuffer<float> raw ((int) r->numChannels, (int) r->lengthInSamples);
-                r->read (&raw, 0, (int) r->lengthInSamples, 0, true, true);
-                buf.setSize (1, raw.getNumSamples());
-                buf.clear();
-                for (int ch = 0; ch < raw.getNumChannels(); ++ch)
-                    buf.addFrom (0, 0, raw, ch, 0, raw.getNumSamples(), 1.0f / (float) raw.getNumChannels());
-                // the clip's start in the edit (normally 0)
-                const int offset = (int) (clip->getPosition().getStart().inSeconds() * sr);
-                if (offset > 0)
-                {
-                    juce::AudioBuffer<float> shifted (1, buf.getNumSamples() + offset);
-                    shifted.clear();
-                    shifted.copyFrom (0, offset, buf, 0, 0, buf.getNumSamples());
-                    buf = std::move (shifted);
-                }
-            }
-
+        hl::F32 mono;
+        if (map[i] >= 0) { const auto& tr = S->tracks[(size_t) map[i]]; mono = tr.mono; info.stereo = tr.ch.size() > 1; }
+        else if (std::unique_ptr<juce::AudioFormatReader> r { formats.createReaderFor (files[i]) })
+        {
+            sr = r->sampleRate;
+            info.stereo = r->numChannels > 1;
+            juce::AudioBuffer<float> raw ((int) r->numChannels, (int) r->lengthInSamples);
+            r->read (&raw, 0, (int) r->lengthInSamples, 0, true, true);
+            mono.assign ((size_t) raw.getNumSamples(), 0.0f);
+            for (int ch = 0; ch < raw.getNumChannels(); ++ch)
+                for (int n = 0; n < raw.getNumSamples(); ++n) mono[(size_t) n] += raw.getSample (ch, n) / (float) raw.getNumChannels();
+        }
         const int block = std::max (1, (int) (sr / 750.0));
         info.blocksPerSecond = sr / block;
-        const int nb = buf.getNumSamples() / block;
-        info.peaks.resize ((size_t) std::max (0, nb));
-        for (int b = 0; b < nb; ++b)
-            info.peaks[(size_t) b] = buf.getMagnitude (0, b * block, block);
-        m.length = std::max (m.length, buf.getNumSamples() / sr);
+        const size_t nb = mono.size() / (size_t) block;
+        info.peaks.resize (nb);
+        for (size_t b = 0; b < nb; ++b)
+        {
+            float pk = 0;
+            for (size_t n = b * (size_t) block, e = n + (size_t) block; n < e; ++n) pk = std::max (pk, std::abs (mono[n]));
+            info.peaks[b] = pk;
+        }
+        m.length = std::max (m.length, (double) mono.size() / sr);
         m.tracks.push_back (std::move (info));
-        mono.push_back (std::move (buf));
     }
-    if (mono.empty()) return m;
+    if (! S || S->onsets.empty()) return m;
 
-    // Reference: the first close mic (tracks are already in kit order), else the first track.
-    int ref = 0;
-    for (size_t i = 0; i < roles.size() && i < mono.size(); ++i)
-        if (isClose (roles[i].kind)) { ref = (int) i; break; }
-    m.referenceTrack = ref;
+    for (size_t i = 0; i < map.size(); ++i) if (map[i] == S->refIdx) m.referenceTrack = (int) i;
 
-    // Hits, velocity layers, round robins
-    // (Hit::peakDb holds the 50 ms RMS here: close mics often clip, which flattens peaks.)
-    std::vector<Hit> hits;
-    for (auto t : detectOneShots (mono[(size_t) ref], sr))
-        hits.push_back ({ t, rmsDbAt (mono[(size_t) ref], sr, t), 0, 0, estimatePitch (mono[(size_t) ref], sr, t) });
-    int velocities = 0, roundRobins = 0;
-    if (auto* clip = dynamic_cast<te::AudioClipBase*> (tracks[(size_t) ref]->getClips().getFirst()))
-        parseLayerCounts (clip->getOriginalFile().getFileName(), velocities, roundRobins);
-    auto layers = velocities > 0 ? groupLayersKnown (hits, m.length, velocities) : groupLayers (hits, m.length);
-    for (auto& h : hits) m.hits.push_back ({ h.time, h.layer, h.roundRobin });
-    for (auto& L : layers)
+    // the hits, each on its velocity layer and round robin (only meaningful when the count matches)
+    const bool ok = hl::countsOk (*S);
+    for (size_t k = 0; k < S->onsets.size(); ++k)
+        m.hits.push_back ({ (double) S->onsets[k] / sr, ok ? S->velOfHit (k) : 0, ok ? (int) (k % (size_t) S->det.RR) : (int) k });
+
+    if (ok)
     {
-        ui::LayerInfo li;
-        li.start = L.start; li.end = L.end;
-        li.midiLow = L.midiLow; li.midiHigh = L.midiHigh; li.numHits = L.numHits;
-        li.note = noteName (L.pitchHz).toStdString();
-        for (auto& b : mono)
+        const int V = S->det.V;
+        const auto* L = es->levels && es->levels->valid ? &*es->levels : nullptr;
+        for (int v = 0; v < V; ++v)
         {
-            double sum = 0.0;
-            for (int i = L.firstHit; i < L.firstHit + L.numHits; ++i) sum += rmsDbAt (b, sr, hits[(size_t) i].time);
-            li.micDb.push_back ((float) (sum / std::max (1, L.numHits)));
+            ui::LayerInfo li;
+            std::vector<size_t> hs;
+            for (size_t k = 0; k < S->onsets.size(); ++k) if (S->velOfHit (k) == v) hs.push_back (k);
+            if (hs.empty()) continue;
+            li.start = (double) S->onsets[hs.front()] / sr;
+            const size_t after = hs.back() + 1;
+            li.end = after < S->onsets.size() ? (double) S->onsets[after] / sr : m.length;
+            if (li.end < li.start) std::swap (li.start, li.end);
+            li.midiLow = (int) std::floor (v * 127.0 / V) + 1;
+            li.midiHigh = (int) std::floor ((v + 1) * 127.0 / V);
+            li.numHits = (int) hs.size();
+            if (S->tuneInfo && (size_t) v < S->tuneInfo->layerMed.size() && std::isfinite (S->tuneInfo->layerMed[(size_t) v]))
+                li.note = hl::noteName (std::round (hl::hzToMidi (S->tuneInfo->layerMed[(size_t) v], S->tune.a4)));
+            for (size_t i = 0; i < map.size(); ++i)
+            {
+                double sum = 0;
+                if (L && map[i] >= 0) for (auto k : hs) sum += L->lvlRaw[(size_t) map[i]][k] + L->gainsDbT[(size_t) map[i]][k];
+                li.micDb.push_back (L && map[i] >= 0 ? (float) (sum / (double) hs.size()) : NAN);
+            }
+            m.layers.push_back (std::move (li));
         }
-        m.layers.push_back (std::move (li));
+        // layers are listed from the first hit in the take
+        std::sort (m.layers.begin(), m.layers.end(), [] (auto& a, auto& b) { return a.start < b.start; });
     }
-    // A session with only a handful of hits is a song take, not one-shots: no layers.
-    if (hits.size() < 4) { m.layers.clear(); }
 
-    // Arrival of each mic relative to the reference: where the direct sound of the loudest hit
-    // first reaches a fifth of its peak on that mic.
-    m.arrivalMs.assign (mono.size(), NAN);
-    if (! hits.empty())
+    // where each mic sits after the lead, as measured
+    m.arrivalMs.assign (map.size(), NAN);
+    for (size_t i = 0; i < map.size(); ++i)
     {
-        const auto loudest = *std::max_element (hits.begin(), hits.end(), [] (auto& a, auto& b) { return a.peakDb < b.peakDb; });
-        auto onsetNear = [&] (const juce::AudioBuffer<float>& b) -> double
-        {
-            const int a0 = std::max (0, (int) ((loudest.time - 0.005) * sr));
-            const int a1 = std::min (b.getNumSamples(), (int) ((loudest.time + 0.12) * sr));
-            if (a1 <= a0) return -1.0;
-            const float peak = b.getMagnitude (0, a0, a1 - a0);
-            if (peak <= 0.0f) return -1.0;
-            const float* d = b.getReadPointer (0);
-            for (int i = a0; i < a1; ++i)
-                if (std::abs (d[i]) >= 0.2f * peak) return i / sr;
-            return -1.0;
-        };
-        const double refOnset = onsetNear (mono[(size_t) ref]);
-        for (size_t i = 0; i < mono.size(); ++i)
-        {
-            const double o = onsetNear (mono[i]);
-            if (o >= 0 && refOnset >= 0) m.arrivalMs[i] = (float) ((o - refOnset) * 1000.0);
-        }
+        if (map[i] < 0) continue;
+        const auto& tr = S->tracks[(size_t) map[i]];
+        if (map[i] == S->refIdx) m.arrivalMs[i] = 0;
+        else if (tr.autoResult) m.arrivalMs[i] = (float) ((std::isfinite (tr.autoResult->arrival) ? tr.autoResult->arrival : tr.autoResult->lag) / sr * 1000.0);
     }
     return m;
 }

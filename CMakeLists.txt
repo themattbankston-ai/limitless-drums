@@ -41,13 +41,12 @@ endif()
 # --- Shared code: everything except the app shell, used by the app and the tests ----------
 add_library(LDShared INTERFACE)
 target_sources(LDShared INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Conform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Session.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Naming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Project.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Layers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Wav.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Detect.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Fft.cpp
@@ -149,7 +148,6 @@ if(LD_BUILD_TESTS)
         tests/NamingTests.cpp
         tests/ImportTests.cpp
         tests/ProjectTests.cpp
-        tests/LayerTests.cpp
         tests/ParityTests.cpp
         tests/ExportParityTests.cpp
         tests/PrepParityTests.cpp)

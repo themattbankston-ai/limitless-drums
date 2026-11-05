@@ -121,3 +121,20 @@ TEST_CASE ("Parity: a whole-kit take opens like Hitline 4.8")
     CHECK (ld::hl::autoPrep (S));
     CHECK (S.phaseAnalyzed);
 }
+
+TEST_CASE ("A take opened from files goes through the whole chain")
+{
+    const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
+    if (root.isEmpty()) { WARN ("LD_PARITY_SESSIONS not set; skipped"); return; }
+    const auto folder = juce::File (root).getChildFile ("SNARE 1 - MH/Center");
+    auto files = folder.findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::vector<ld::hl::SourceFile> src;
+    for (auto& f : files) src.push_back ({ f.getFileName().toStdString(), ("Center/" + f.getFileName()).toStdString(), ld::hl::readWav (f) });
+    auto opened = ld::hl::openSession (std::move (src), "snare", "Center");
+    auto& S = opened.session;
+    REQUIRE (ld::hl::autoPrep (S));
+    const auto M = ld::hl::renderMix (S);
+    const auto L = ld::hl::measureLevels (S, M);
+    CHECK (L.valid);
+}
+

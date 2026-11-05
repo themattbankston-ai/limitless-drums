@@ -85,11 +85,15 @@ std::optional<NoisePrint> noisePrint (const F32& x, double sr, const std::vector
         {
             const long k = jsRoundI (base * h * (double) N / sr);
             if (k + 20 >= (long) K) break;
+            // bins below 0 are undefined in Hitline: they sort to the end, so the "median" can land on one,
+            // and a comparison with undefined is false
             F64 loc;
-            for (int j = -20; j <= 20; ++j) if (std::abs (j) > 2) loc.push_back (np.psd[(size_t) (k + j)]);
+            size_t total = 0;
+            for (int j = -20; j <= 20; ++j) if (std::abs (j) > 2) { ++total; if (k + j >= 0) loc.push_back (np.psd[(size_t) (k + j)]); }
             std::sort (loc.begin(), loc.end());
             const double pk = std::max ({ np.psd[(size_t) k - 1], np.psd[(size_t) k], np.psd[(size_t) k + 1] });
-            if (pk > loc[loc.size() >> 1] * 10 && trustK[(size_t) k] > 0.5) ++hits;
+            const size_t mid = total >> 1;
+            if (mid < loc.size() && pk > loc[mid] * 10 && trustK[(size_t) k] > 0.5) ++hits;
         }
         if (hits >= 3) np.hum.push_back (base);
     }
