@@ -5,3 +5,4 @@ cmake-build-*/
 *.xcodeproj
 .vscode/
 .idea/
+tools/parity/harness.html

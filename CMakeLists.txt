@@ -47,7 +47,9 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Naming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Project.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Layers.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Layers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Wav.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Detect.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
@@ -135,7 +137,9 @@ if(LD_BUILD_TESTS)
         tests/NamingTests.cpp
         tests/ImportTests.cpp
         tests/ProjectTests.cpp
-        tests/LayerTests.cpp)
+        tests/LayerTests.cpp
+        tests/ParityTests.cpp)
+    target_compile_definitions(LDTests PRIVATE LD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()
     add_test(NAME LDTests COMMAND LDTests --reporter console --durations yes)
