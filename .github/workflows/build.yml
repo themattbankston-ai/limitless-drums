@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package app
+        run: |
+          APP="build/LimitlessDrums_artefacts/Release/Limitless Drums.app"
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --keepParent "$APP" "Limitless-Drums-macOS.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Limitless-Drums-macOS
+          path: Limitless-Drums-macOS.zip
+          retention-days: 30
