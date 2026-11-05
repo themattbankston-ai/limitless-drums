@@ -1,0 +1,288 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--cyan:#2ee6ff;--mag:#ff3da8;--vio:#8b5cff;--amb:#ffb23e;--lime:#7cff6b;--blue:#4c8dff;--red:#ff4d5e;--ink:#f2efe8;--q:#9aa0a8;--qq:#5f6670}
+*{box-sizing:border-box}
+body{margin:0;width:1680px;height:1050px;overflow:hidden;font-family:'Inter Display','Inter',sans-serif;color:var(--ink);background:#0b0a0c;position:relative}
+.studio{position:absolute;inset:0;filter:blur(38px);opacity:.85}
+.studio i{position:absolute;border-radius:50%}
+.wood{position:absolute;inset:auto 0 0 0;height:46%;background:linear-gradient(180deg,#2a1a10,#160d08);filter:blur(30px);opacity:.75}
+.slats{position:absolute;left:0;right:0;top:4%;height:40%;background:repeating-linear-gradient(90deg,#3a2414 0 26px,#1d120a 26px 40px);filter:blur(16px);opacity:.5}
+.vign{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,transparent 30%,rgba(0,0,0,.78) 100%)}
+.chassis{position:absolute;border-radius:10px;box-shadow:0 30px 60px rgba(0,0,0,.65),0 2px 0 rgba(255,255,255,.06) inset,0 -2px 0 rgba(0,0,0,.6) inset}
+.brushed{background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.022) 0 1px,rgba(0,0,0,.03) 1px 2px),linear-gradient(180deg,var(--c1,#262930),var(--c2,#15161a))}
+.screw{position:absolute;width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d8dce2,#5a5e66 70%);box-shadow:0 1px 2px rgba(0,0,0,.8)}
+.screw:after{content:'';position:absolute;left:2px;right:2px;top:5px;height:1.5px;background:#2a2d33;transform:rotate(35deg)}
+.glass{position:absolute;background:radial-gradient(ellipse at 50% 0%,#0b0e16,#04050a 70%);border-radius:9px;box-shadow:inset 0 3px 16px rgba(0,0,0,.95),inset 0 0 0 1px #1c1f27,0 1px 0 rgba(255,255,255,.07);overflow:hidden}
+.glass:after{content:'';position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.06),transparent 26%,transparent 72%,rgba(255,255,255,.02));pointer-events:none}
+.sil{font-size:10.5px;font-weight:800;letter-spacing:.2em;color:rgba(242,239,232,.6);text-transform:uppercase}
+.mono{font-family:'DejaVu Sans Mono',monospace}
+/* header */
+.steps{position:absolute;left:300px;top:17px;display:flex;gap:6px}
+.steps span{padding:10px 13px;border-radius:7px;font-size:11px;font-weight:800;letter-spacing:.14em;color:#8d939c;background:linear-gradient(180deg,#30333a,#1c1d22);box-shadow:0 2px 0 rgba(255,255,255,.06) inset,0 3px 6px rgba(0,0,0,.6)}
+.steps span i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;background:#0a0b0d;vertical-align:1px}
+.steps span.done i{background:var(--lime);box-shadow:0 0 6px var(--lime)}
+.steps span.on{color:#08161a;background:linear-gradient(180deg,#8ef6ff,#15b5d0);box-shadow:0 0 18px rgba(46,230,255,.6),0 2px 0 rgba(255,255,255,.5) inset}
+.steps span.on i{background:#053039}
+.btn{height:34px;min-width:38px;padding:0 12px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;
+ background:linear-gradient(180deg,#3a3d45,#202227);box-shadow:0 2px 0 rgba(255,255,255,.08) inset,0 -1px 0 rgba(0,0,0,.6) inset,0 3px 6px rgba(0,0,0,.6);color:#dcdfe5}
+.seg{display:inline-flex;border-radius:8px;overflow:hidden;box-shadow:0 0 0 1px #0b0c0f,0 3px 6px rgba(0,0,0,.5)}
+.seg span{padding:8px 12px;font-size:11px;font-weight:800;letter-spacing:.12em;background:linear-gradient(180deg,#2c2e34,#1b1c20);color:var(--q)}
+.seg span.on{color:#071216;background:linear-gradient(180deg,#7ff3ff,#16b9d4);box-shadow:0 0 14px rgba(46,230,255,.5)}
+.led{display:inline-block;width:7px;height:7px;border-radius:50%;vertical-align:1px}
+/* sidebar */
+.side .sess{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;font-size:12.5px;color:#c9ced6}
+.side .sess.on{background:linear-gradient(180deg,rgba(46,230,255,.18),rgba(46,230,255,.06));box-shadow:inset 0 0 0 1px rgba(46,230,255,.35);color:#fff}
+.side .chk{display:flex;align-items:center;gap:9px;font-size:12px;color:#c9ced6;padding:5px 0}
+/* rack */
+.rail{position:absolute;top:0;bottom:0;width:22px;background:linear-gradient(90deg,#2a2c31,#3c3f46 45%,#1c1d21);border-radius:3px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.rail:before{content:'';position:absolute;left:7px;width:8px;top:6px;bottom:6px;background:radial-gradient(circle,#0c0d10 2.6px,transparent 3px) 0 0/8px 19px repeat-y}
+.unit{position:absolute;left:26px;right:26px;border-radius:8px;padding:14px 16px}
+.urow{display:grid;grid-template-columns:14px 1fr 78px 34px 70px;align-items:center;gap:8px;height:30px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.05)}
+.pol{width:30px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;background:linear-gradient(180deg,#3a3d45,#24262b);color:#8f949c;box-shadow:0 1px 0 rgba(255,255,255,.08) inset}
+.pol.on{background:linear-gradient(180deg,#ffd27a,#e08a12);color:#2a1702;box-shadow:0 0 10px rgba(255,178,62,.6)}
+.tag{font-size:9.5px;font-weight:800;letter-spacing:.1em;padding:4px 6px;border-radius:4px;text-align:center}
+</style></head><body>
+<div class="studio">
+  <div class="slats"></div><div class="wood"></div>
+  <i style="left:6%;top:8%;width:260px;height:260px;background:#ffab4a;opacity:.5"></i>
+  <i style="left:62%;top:2%;width:220px;height:200px;background:#ff8a3c;opacity:.3"></i>
+  <i style="left:80%;top:30%;width:300px;height:300px;background:#8b5cff;opacity:.14"></i>
+</div>
+<div class="vign"></div>
+
+<!-- HEADER -->
+<div class="chassis brushed" style="left:18px;top:18px;width:1644px;height:68px">
+  <span class="screw" style="left:8px;top:8px"></span><span class="screw" style="left:8px;bottom:8px"></span><span class="screw" style="right:8px;top:8px"></span><span class="screw" style="right:8px;bottom:8px"></span>
+  <div style="position:absolute;left:30px;top:15px;display:flex;align-items:center;gap:12px">
+    <svg width="38" height="38" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="none" stroke="#ffb23e" stroke-width="3.2"/><g stroke="#ffb23e" stroke-width="3" stroke-linecap="round"><line x1="32" y1="2" x2="32" y2="8"/><line x1="32" y1="56" x2="32" y2="62"/><line x1="2" y1="32" x2="8" y2="32"/><line x1="56" y1="32" x2="62" y2="32"/><line x1="10.8" y1="10.8" x2="15" y2="15"/><line x1="49" y1="49" x2="53.2" y2="53.2"/><line x1="10.8" y1="53.2" x2="15" y2="49"/><line x1="49" y1="15" x2="53.2" y2="10.8"/></g><path d="M32 32c-4.5-6-9-8.5-13-8.5a8.5 8.5 0 0 0 0 17c4 0 8.5-2.5 13-8.5s9-8.5 13-8.5a8.5 8.5 0 0 1 0 17c-4 0-8.5-2.5-13-8.5z" fill="none" stroke="#ffb23e" stroke-width="3.6"/></svg>
+    <div><div style="font-weight:800;letter-spacing:.3em;font-size:18px">LIMITLESS</div><div style="font-size:9px;letter-spacing:.9em;color:var(--q);margin-top:3px">DRUMS</div></div>
+  </div>
+  <div class="steps"><span class="done"><i></i>SESSION</span><span class="done"><i></i>HITS</span><span class="on"><i></i>ALIGN</span><span><i></i>TUNE</span><span><i></i>MIX</span><span><i></i>LEVEL</span><span><i></i>EXPORT</span></div>
+  <div style="position:absolute;left:1000px;top:17px"><span class="btn" style="background:linear-gradient(180deg,#ffd27a,#e08a12);color:#2a1702;box-shadow:0 0 14px rgba(255,178,62,.45),0 2px 0 rgba(255,255,255,.4) inset">✦ AUTO PREP</span></div>
+  <div style="position:absolute;left:1132px;top:9px;height:50px;display:flex;align-items:center;gap:7px;padding:0 10px 0 6px;border-radius:10px;background:rgba(0,0,0,.3);box-shadow:inset 0 1px 3px rgba(0,0,0,.8)">
+    <div style="width:10px;height:30px;background:radial-gradient(circle,#6b7078 1.3px,transparent 1.6px) 0 0/5px 5px"></div>
+    <span class="btn">◀</span><span class="btn" style="width:56px;background:linear-gradient(180deg,#9dff8f,#3fae35);color:#0d1a0b">▶</span><span class="btn">▶|</span>
+    <div class="glass" style="position:relative;padding:4px 14px"><span class="mono" style="font-size:24px;color:var(--amb);text-shadow:0 0 10px rgba(255,178,62,.75)">0:12.304</span></div>
+    <div class="glass" style="position:relative;padding:4px 10px;text-align:center;line-height:15px"><span class="mono" style="font-size:12px;color:#cfe9ff">HIT 13</span><br><span class="mono" style="font-size:9.5px;color:#6f8aa6">VEL 3 · RR 1</span></div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<div class="chassis brushed side" style="left:18px;top:100px;width:220px;height:932px;padding:18px 14px">
+  <div class="sil" style="margin-bottom:6px">Project</div>
+  <div style="font-size:15px;font-weight:700;margin-bottom:2px">Snare 2 · Black Beauty</div>
+  <div style="font-size:11px;color:var(--q);margin-bottom:16px">Library: Limitless Core</div>
+  <div class="sil" style="margin-bottom:6px">Articulations</div>
+  <div class="sess on"><span class="led" style="background:var(--cyan);box-shadow:0 0 8px var(--cyan)"></span>Center<span style="margin-left:auto;color:var(--q);font-size:11px">7 mics</span></div>
+  <div class="sess"><span class="led" style="background:#2a2d33"></span>Rimshot<span style="margin-left:auto;color:var(--qq);font-size:11px">7 mics</span></div>
+  <div class="sess"><span class="led" style="background:#2a2d33"></span>Edge<span style="margin-left:auto;color:var(--qq);font-size:11px">7 mics</span></div>
+  <div class="sess"><span class="led" style="background:#2a2d33"></span>Cross stick<span style="margin-left:auto;color:var(--qq);font-size:11px">7 mics</span></div>
+  <div class="glass" style="position:relative;height:150px;margin:18px 0;display:flex;align-items:center;justify-content:center">
+    <svg width="170" height="120" viewBox="0 0 170 120"><defs><linearGradient id="shell" x1="0" x2="1"><stop offset="0" stop-color="#0d0e10"/><stop offset=".35" stop-color="#3a3c42"/><stop offset=".5" stop-color="#15161a"/><stop offset=".8" stop-color="#2b2d33"/><stop offset="1" stop-color="#0a0a0c"/></linearGradient></defs>
+      <ellipse cx="85" cy="92" rx="66" ry="14" fill="#000" opacity=".5"/>
+      <rect x="20" y="42" width="130" height="48" fill="url(#shell)"/>
+      
+      <ellipse cx="85" cy="42" rx="65" ry="14" fill="#e9e6df"/><ellipse cx="85" cy="42" rx="65" ry="14" fill="none" stroke="#9aa0a8" stroke-width="3"/>
+      <ellipse cx="85" cy="90" rx="65" ry="14" fill="none" stroke="#6b7078" stroke-width="3"/>
+      <g fill="#d8dce2"><rect x="30" y="50" width="6" height="30" rx="2"/><rect x="58" y="54" width="6" height="30" rx="2"/><rect x="106" y="54" width="6" height="30" rx="2"/><rect x="134" y="50" width="6" height="30" rx="2"/></g>
+      <rect x="76" y="58" width="18" height="12" rx="2" fill="#ffb23e"/><text x="85" y="67" font-size="7" text-anchor="middle" fill="#2a1702" font-weight="800">∞</text>
+    </svg>
+  </div>
+  <div class="sil" style="margin-bottom:6px">Ready to export</div>
+  <div class="chk"><span class="led" style="background:var(--lime);box-shadow:0 0 6px var(--lime)"></span>All 36 hits found</div>
+  <div class="chk"><span class="led" style="background:var(--lime);box-shadow:0 0 6px var(--lime)"></span>Mics in phase</div>
+  <div class="chk"><span class="led" style="background:#3a3d45"></span>Tuned</div>
+  <div class="chk"><span class="led" style="background:#3a3d45"></span>Velocities on the standard</div>
+  <div class="chk"><span class="led" style="background:#3a3d45"></span>Round robins matched</div>
+  <div class="chk"><span class="led" style="background:#3a3d45"></span>Soft layers soft enough</div>
+</div>
+
+<!-- MAIN -->
+<div class="chassis brushed" style="left:252px;top:100px;width:944px;height:932px">
+  <span class="screw" style="left:8px;top:8px"></span><span class="screw" style="right:8px;top:8px"></span><span class="screw" style="left:8px;bottom:8px"></span><span class="screw" style="right:8px;bottom:8px"></span>
+  <div style="position:absolute;left:26px;top:16px;display:flex;align-items:center;gap:14px">
+    <span style="font-weight:800;letter-spacing:.22em;font-size:13px;color:var(--cyan);text-shadow:0 0 10px rgba(46,230,255,.5)">PHASE</span>
+    <span style="font-size:12px;color:var(--q)">Lead: <b style="color:var(--ink)">Snare Top</b> · 6 mics measured on 36 hits</span>
+  </div>
+  <div style="position:absolute;right:26px;top:12px" class="seg"><span>AS RECORDED</span><span class="on">ALIGNED</span></div>
+
+  <!-- arrival -->
+  <div class="glass" style="left:18px;top:50px;width:470px;height:560px">
+    <div class="sil" style="position:absolute;left:16px;top:14px;color:var(--cyan)">Arrival</div>
+    <div style="position:absolute;right:16px;top:12px;font-size:11px;color:var(--q)">distance = travel time from the drum</div>
+    <svg id="arr" width="470" height="560" style="position:absolute;left:0;top:0"></svg>
+  </div>
+  <!-- rings -->
+  <div class="glass" style="left:500px;top:50px;width:426px;height:560px">
+    <div class="sil" style="position:absolute;left:16px;top:14px;color:var(--cyan)">How each mic sums with the lead</div>
+    <div style="position:absolute;left:16px;top:34px;font-size:11px;color:var(--q)">left half before · right half after · lows inside, highs outside</div>
+    <svg id="rings" width="426" height="560" style="position:absolute;left:0;top:0"></svg>
+  </div>
+  <!-- body gained -->
+  <div class="glass" style="left:18px;top:624px;width:908px;height:290px">
+    <div class="sil" style="position:absolute;left:16px;top:14px;color:var(--cyan)">Body gained · Overheads</div>
+    <div style="position:absolute;right:16px;top:12px" class="seg"><span>WHOLE KIT</span><span class="on">OVERHEADS</span><span>BOTTOM</span></div>
+    <svg id="body" width="908" height="290" style="position:absolute;left:0;top:0"></svg>
+  </div>
+</div>
+
+<!-- RACK -->
+<div style="position:absolute;left:1210px;top:100px;width:452px;height:932px">
+  <div class="rail" style="left:0"></div><div class="rail" style="right:0"></div>
+  <div class="unit chassis brushed" style="--c1:#2c2f36;--c2:#1a1c20;top:0;height:470px">
+    <span class="screw" style="left:-21px;top:14px"></span><span class="screw" style="right:-21px;top:14px"></span><span class="screw" style="left:-21px;bottom:14px"></span><span class="screw" style="right:-21px;bottom:14px"></span>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-weight:800;letter-spacing:.22em;font-size:13px;color:var(--cyan)">ALIGN</span><span class="sil" style="font-size:9.5px">delay · polarity · phase EQ</span></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px"><span class="sil" style="font-size:9.5px;width:58px">Rooms</span><div class="seg"><span>TIGHT</span><span>STANDARD</span><span class="on">AS RECORDED</span></div></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span class="sil" style="font-size:9.5px;width:58px">Units</span><div class="seg"><span class="on">MS</span><span>SAMPLES</span><span>FEET</span></div></div>
+    <div class="urow" style="color:var(--q);font-size:9.5px;font-weight:800;letter-spacing:.12em;height:22px"><span></span><span>MIC</span><span style="text-align:right">DELAY</span><span>Ø</span><span>PHASE EQ</span></div>
+    <div id="rows"></div>
+    <div style="display:flex;gap:6px;margin-top:14px"><span class="btn" style="font-size:11px">◀ ¼</span><span class="btn" style="font-size:11px">◀ 1</span><span class="btn" style="font-size:11px">1 ▶</span><span class="btn" style="font-size:11px">¼ ▶</span><span class="btn" style="font-size:11px;margin-left:auto">SNAP TO BEST</span></div>
+  </div>
+  <div class="unit chassis brushed" style="--c1:#1c1d20;--c2:#0f1012;top:484px;height:300px">
+    <span class="screw" style="left:-21px;top:14px"></span><span class="screw" style="right:-21px;top:14px"></span><span class="screw" style="left:-21px;bottom:14px"></span><span class="screw" style="right:-21px;bottom:14px"></span>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-weight:800;letter-spacing:.22em;font-size:13px;color:var(--amb)">MONO CHECK</span><span class="sil" style="font-size:9.5px">aligned mics vs the lead</span></div>
+    <svg id="vu" width="352" height="200"></svg>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--q);margin-top:4px"><span>As recorded <b class="mono" style="color:#e8ebef">+0.02</b></span><span>Aligned <b class="mono" style="color:var(--lime)">+0.44</b></span></div>
+  </div>
+  <div class="unit chassis brushed" style="--c1:#1c1e22;--c2:#101114;top:798px;height:134px">
+    <span class="screw" style="left:-21px;top:14px"></span><span class="screw" style="right:-21px;top:14px"></span>
+    <div id="meters"></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, parent, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; parent && parent.appendChild(e); return e; };
+const coh = v => v >= 0 ? `rgba(124,255,107,${0.18 + 0.82*Math.min(1, v/0.8)})` : `rgba(255,77,94,${0.18 + 0.82*Math.min(1, -v/0.8)})`;
+
+/* ---------- arrival: sonar view, distance = arrival time (square-root scale so close mics spread out) ---------- */
+(function(){
+  const s = document.getElementById('arr'), cx = 235, cy = 296, R = ms => 34 + 32*Math.sqrt(ms);
+  const d = el('defs', {}, s);
+  const g1 = el('radialGradient', { id: 'ripple' }, d); el('stop', { offset: '0.80', 'stop-color': '#2ee6ff', 'stop-opacity': 0 }, g1); el('stop', { offset: '0.975', 'stop-color': '#2ee6ff', 'stop-opacity': .5 }, g1); el('stop', { offset: '1', 'stop-color': '#2ee6ff', 'stop-opacity': 0 }, g1);
+  const gl = el('filter', { id: 'glow', x: '-50%', y: '-50%', width: '200%', height: '200%' }, d); el('feGaussianBlur', { stdDeviation: 4, result: 'b' }, gl); const m = el('feMerge', {}, gl); el('feMergeNode', { in: 'b' }, m); el('feMergeNode', { in: 'SourceGraphic' }, m);
+  [1, 5, 10, 20, 30].forEach(ms => { const r = R(ms);
+    el('circle', { cx, cy, r, fill: 'none', stroke: 'rgba(255,255,255,0.075)', 'stroke-dasharray': ms === 1 || ms === 5 ? '2 5' : '' }, s);
+    el('text', { x: cx + 5, y: cy - r + 12, 'font-size': 9.5, fill: '#56606c', 'font-family': 'DejaVu Sans Mono' }, s, ms + ' ms'); });
+  // a frozen frame of the animation: the wavefront has just reached the near rooms
+  el('circle', { cx, cy, r: R(12.4), fill: 'url(#ripple)', opacity: .95 }, s);
+  el('circle', { cx, cy, r: R(5), fill: 'url(#ripple)', opacity: .35 }, s);
+  el('circle', { cx, cy, r: 30, fill: '#0b0c10', stroke: '#e9e6df', 'stroke-width': 2.5 }, s);
+  el('circle', { cx, cy, r: 23, fill: 'none', stroke: 'rgba(255,178,62,.9)', 'stroke-width': 1.5, filter: 'url(#glow)' }, s);
+  el('text', { x: cx, y: cy - 1, 'text-anchor': 'middle', 'font-size': 9.5, 'font-weight': 800, fill: '#e9e6df', 'letter-spacing': '.08em' }, s, 'SNARE');
+  el('text', { x: cx, y: cy + 10, 'text-anchor': 'middle', 'font-size': 7.5, 'font-weight': 700, fill: '#ffb23e', 'letter-spacing': '.04em' }, s, 'TOP · LEAD');
+  // angle and label side per mic, chosen so nothing overlaps
+  const place = { 'Overheads': [-90, 'r', -4], 'Room Mono': [-12, 'r', 0], 'Bottom': [160, 'l', 0], 'Room Close': [-128, 'r', 0], 'Room Crush': [22, 'l', 26], 'Room Far': [96, 'r', -6] };
+  MICS.forEach(mm => {
+    const [ang, side, dy] = place[mm.mic], r = R(mm.arrMs), a = ang*Math.PI/180;
+    const x = cx + r*Math.cos(a), y = cy + r*Math.sin(a), lit = mm.applied, c = mm.col[0];
+    el('line', { x1: cx + 32*Math.cos(a), y1: cy + 32*Math.sin(a), x2: x - 10*Math.cos(a), y2: y - 10*Math.sin(a), stroke: c, 'stroke-opacity': .4, 'stroke-dasharray': '3 4' }, s);
+    if (lit) el('circle', { cx: x, cy: y, r: 14, fill: c, opacity: .25, filter: 'url(#glow)' }, s);
+    el('circle', { cx: x, cy: y, r: 7.5, fill: lit ? c : '#11131a', stroke: c, 'stroke-width': 2.2, filter: lit ? 'url(#glow)' : '' }, s);
+    const right = side === 'r', lx = x + (right ? 15 : -15), ly = y + dy, anc = right ? 'start' : 'end';
+    el('text', { x: lx, y: ly - 6, 'text-anchor': anc, 'font-size': 12.5, 'font-weight': 700, fill: '#f2efe8' }, s, mm.mic);
+    const ft = (mm.arrMs/1000*343*3.281).toFixed(1);
+    el('text', { x: lx, y: ly + 9, 'text-anchor': anc, 'font-size': 10.5, fill: c, 'font-family': 'DejaVu Sans Mono' }, s, `+${mm.arrMs.toFixed(2)} ms · ${ft} ft`);
+    el('text', { x: lx, y: ly + 22, 'text-anchor': anc, 'font-size': 9, fill: lit ? '#7cff6b' : '#8a919c', 'font-weight': 800, 'letter-spacing': '.1em' }, s, lit ? 'ALIGNED TO LEAD' : 'NATURAL TIMING');
+  });
+  el('text', { x: 16, y: 540, 'font-size': 10.5, fill: '#8a919c' }, s, 'Each mic sits as far out as the sound had to travel to reach it.');
+})();
+
+/* ---------- phase rings: before (left half) and after (right half) per band ---------- */
+(function(){
+  const s = document.getElementById('rings');
+  const d = el('defs', {}, s); const gl = el('filter', { id: 'g2', x: '-30%', y: '-30%', width: '160%', height: '160%' }, d); el('feGaussianBlur', { stdDeviation: 2.4, result: 'b' }, gl); const m = el('feMerge', {}, gl); el('feMergeNode', { in: 'b' }, m); el('feMergeNode', { in: 'SourceGraphic' }, m);
+  const tone = v => Math.abs(v) < 0.1 ? 'rgba(140,148,160,.28)' : v > 0 ? `rgba(124,255,107,${0.35 + 0.65*Math.min(1, v/0.7)})` : `rgba(255,77,94,${0.35 + 0.65*Math.min(1, -v/0.7)})`;
+  const arc = (cx, cy, r, a0, a1) => { const p = a => [cx + r*Math.cos(a), cy + r*Math.sin(a)]; const [x0, y0] = p(a0), [x1, y1] = p(a1); return `M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}`; };
+  MICS.forEach((mm, i) => {
+    const col = i % 3, row = Math.floor(i/3), cx = 76 + col*137, cy = 158 + row*192, R0 = 22, step = 5.4, gap = 0.2;
+    const after = mm.applied ? mm.after : mm.before;
+    for (let b = 0; b < 8; b++){
+      const r = R0 + b*step;
+      el('path', { d: arc(cx, cy, r, Math.PI/2 + gap, 3*Math.PI/2 - gap), fill: 'none', stroke: tone(mm.before[b]), 'stroke-width': 3.8, 'stroke-linecap': 'round' }, s);
+      el('path', { d: arc(cx, cy, r, -Math.PI/2 + gap, Math.PI/2 - gap), fill: 'none', stroke: tone(after[b]), 'stroke-width': 3.8, 'stroke-linecap': 'round', filter: after[b] > 0.35 ? 'url(#g2)' : '' }, s);
+    }
+    el('text', { x: cx - R0 - 7*step - 2, y: cy + 66, 'text-anchor': 'start', 'font-size': 8.5, fill: '#6f7680', 'font-weight': 800, 'letter-spacing': '.12em' }, s, 'BEFORE');
+    el('text', { x: cx + R0 + 7*step + 2, y: cy + 66, 'text-anchor': 'end', 'font-size': 8.5, fill: mm.applied ? '#9fe8b0' : '#6f7680', 'font-weight': 800, 'letter-spacing': '.12em' }, s, 'AFTER');
+    const gain = Math.round((mm.score - mm.asis)*100);
+    el('text', { x: cx, y: cy + 5, 'text-anchor': 'middle', 'font-size': 14, 'font-weight': 800, fill: mm.applied ? '#7cff6b' : '#8a919c', 'font-family': 'DejaVu Sans Mono' }, s, mm.applied ? '+' + gain : '—');
+    el('text', { x: cx, y: cy + 88, 'text-anchor': 'middle', 'font-size': 12.5, 'font-weight': 700, fill: '#f2efe8' }, s, mm.mic);
+    const note = mm.applied ? [mm.pol < 0 ? 'flipped' : null, mm.ap ? 'phase EQ ' + mm.ap : null].filter(Boolean).join(' · ') || 'delay only' : 'natural timing';
+    el('text', { x: cx, y: cy + 103, 'text-anchor': 'middle', 'font-size': 10, fill: mm.applied ? '#2ee6ff' : '#8a919c' }, s, note);
+    if (!mm.applied) el('text', { x: cx, y: cy + 116, 'text-anchor': 'middle', 'font-size': 10, fill: '#5f6670' }, s, `aligning would add +${gain}`);
+  });
+  const ky = 520; el('text', { x: 16, y: ky, 'font-size': 10.5, fill: '#8a919c' }, s, 'fights the lead');
+  [-0.7, -0.45, -0.2, 0, 0.2, 0.45, 0.7].forEach((v, k) => el('rect', { x: 100 + k*24, y: ky - 10, width: 22, height: 10, rx: 2, fill: tone(v) }, s));
+  el('text', { x: 278, y: ky, 'font-size': 10.5, fill: '#8a919c' }, s, 'adds to the lead');
+  el('text', { x: 16, y: ky + 22, 'font-size': 10.5, fill: '#8a919c' }, s, 'Centre: how much better it sums with the lead, in points out of 100.');
+})();
+
+/* ---------- body gained: dB of body brought back per band ---------- */
+(function(){
+  const s = document.getElementById('body'), mm = MICS[1], L = 70, Rr = 870, T = 52, B = 238, mid = 145, dbMax = 9;
+  const d = el('defs', {}, s);
+  const gu = el('linearGradient', { id: 'up', x1: 0, y1: 0, x2: 0, y2: 1 }, d); el('stop', { offset: 0, 'stop-color': '#7cff6b', 'stop-opacity': .55 }, gu); el('stop', { offset: 1, 'stop-color': '#7cff6b', 'stop-opacity': 0 }, gu);
+  const gd = el('linearGradient', { id: 'dn', x1: 0, y1: 1, x2: 0, y2: 0 }, d); el('stop', { offset: 0, 'stop-color': '#ff4d5e', 'stop-opacity': .5 }, gd); el('stop', { offset: 1, 'stop-color': '#ff4d5e', 'stop-opacity': 0 }, gd);
+  const gl = el('filter', { id: 'g3', x: '-10%', y: '-30%', width: '120%', height: '160%' }, d); el('feGaussianBlur', { stdDeviation: 3, result: 'b' }, gl); const m = el('feMerge', {}, gl); el('feMergeNode', { in: 'b' }, m); el('feMergeNode', { in: 'SourceGraphic' }, m);
+  const y = db => mid - db/dbMax*(mid - T);
+  for (let db = -9; db <= 9; db += 3){ el('line', { x1: L, x2: Rr, y1: y(db), y2: y(db), stroke: db === 0 ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.05)' }, s);
+    el('text', { x: L - 10, y: y(db) + 3.5, 'text-anchor': 'end', 'font-size': 10, fill: '#56606c', 'font-family': 'DejaVu Sans Mono' }, s, (db > 0 ? '+' : '') + db); }
+  const bw = (Rr - L)/8;
+  BANDS.forEach((f, i) => { const x = L + i*bw; el('line', { x1: x, x2: x, y1: T, y2: B, stroke: 'rgba(255,255,255,.04)' }, s); el('text', { x, y: B + 18, 'text-anchor': 'middle', 'font-size': 10, fill: '#6f7680', 'font-family': 'DejaVu Sans Mono' }, s, f); });
+  el('text', { x: (L + Rr)/2, y: B + 36, 'text-anchor': 'middle', 'font-size': 10, fill: '#56606c' }, s, 'Hz');
+  const gains = mm.before.map((b, i) => 10*Math.log10(Math.max(0.05, 1 + mm.after[i])/Math.max(0.05, 1 + b)));
+  const pts = gains.map((g, i) => [L + (i + 0.5)*bw, y(Math.max(-dbMax, Math.min(dbMax, g)))]);
+  // smooth curve (Catmull-Rom)
+  const path = (P) => { let dd = `M${L} ${P[0][1]} L${P[0][0]} ${P[0][1]}`; for (let i = 0; i < P.length - 1; i++){ const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2;
+    dd += ` C${p1[0] + (p2[0] - p0[0])/6} ${p1[1] + (p2[1] - p0[1])/6} ${p2[0] - (p3[0] - p1[0])/6} ${p2[1] - (p3[1] - p1[1])/6} ${p2[0]} ${p2[1]}`; } return dd + ` L${Rr} ${P[P.length - 1][1]}`; };
+  const c = path(pts);
+  const clipU = el('clipPath', { id: 'cu' }, d); el('rect', { x: L, y: T - 10, width: Rr - L, height: mid - T + 10 }, clipU);
+  const clipD = el('clipPath', { id: 'cd' }, d); el('rect', { x: L, y: mid, width: Rr - L, height: B - mid }, clipD);
+  el('path', { d: c + ` L${Rr} ${mid} L${L} ${mid} Z`, fill: 'url(#up)', 'clip-path': 'url(#cu)' }, s);
+  el('path', { d: c + ` L${Rr} ${mid} L${L} ${mid} Z`, fill: 'url(#dn)', 'clip-path': 'url(#cd)' }, s);
+  el('path', { d: c, fill: 'none', stroke: '#eafff0', 'stroke-width': 2.2, filter: 'url(#g3)' }, s);
+  // callout at the biggest gain
+  let bi = 0; gains.forEach((g, i) => { if (g > gains[bi]) bi = i; });
+  const [px, py] = pts[bi];
+  el('circle', { cx: px, cy: py, r: 5, fill: '#7cff6b', filter: 'url(#g3)' }, s);
+  el('rect', { x: px + 12, y: py - 34, width: 176, height: 42, rx: 6, fill: 'rgba(5,8,10,.85)', stroke: 'rgba(124,255,107,.5)' }, s);
+  el('text', { x: px + 24, y: py - 15, 'font-size': 16, 'font-weight': 800, fill: '#7cff6b', 'font-family': 'DejaVu Sans Mono' }, s, '+' + gains[bi].toFixed(1) + ' dB');
+  el('text', { x: px + 24, y: py + 1, 'font-size': 10.5, fill: '#c9ced6' }, s, `fuller at ${BANDS[bi]}–${BANDS[bi + 1]} Hz`);
+})();
+
+/* ---------- rack rows ---------- */
+(function(){
+  const rows = document.getElementById('rows');
+  rows.innerHTML = MICS.map(mm => {
+    const ms = mm.applied ? (mm.lagS/SR*1000).toFixed(2) + ' ms' : '0.00 ms';
+    const tag = mm.ap ? `<span class="tag" style="background:rgba(46,230,255,.14);color:var(--cyan)">${mm.ap}</span>` : `<span class="tag" style="color:var(--qq)">—</span>`;
+    return `<div class="urow"><span class="led" style="background:${mm.applied ? 'var(--lime)' : '#3a3d45'};${mm.applied ? 'box-shadow:0 0 6px var(--lime)' : ''}"></span><span>${mm.mic}</span><span class="mono" style="text-align:right;color:${mm.applied ? 'var(--cyan)' : '#8a919c'}">${ms}</span><span class="pol ${mm.applied && mm.pol < 0 ? 'on' : ''}">Ø</span>${tag}</div>`;
+  }).join('');
+})();
+
+/* ---------- mono check VU ---------- */
+(function(){
+  const s = document.getElementById('vu'), cx = 176, cy = 182, R = 150;
+  const d = el('defs', {}, s); const g = el('linearGradient', { id: 'face', x1: 0, y1: 0, x2: 0, y2: 1 }, d); el('stop', { offset: 0, 'stop-color': '#fbe7b0' }, g); el('stop', { offset: 1, 'stop-color': '#e2b55c' }, g);
+  el('rect', { x: 6, y: 6, width: 340, height: 180, rx: 10, fill: 'url(#face)' }, s);
+  el('rect', { x: 6, y: 6, width: 340, height: 180, rx: 10, fill: 'none', stroke: 'rgba(0,0,0,.4)', 'stroke-width': 2 }, s);
+  const ang = v => -Math.PI/2 + v*0.95;
+  for (let k = -10; k <= 10; k++){ const v = k/10, a = ang(v), r1 = R - 18, r2 = R - (k % 5 ? 8 : 2);
+    el('line', { x1: cx + r1*Math.cos(a), y1: cy + r1*Math.sin(a), x2: cx + r2*Math.cos(a), y2: cy + r2*Math.sin(a), stroke: v < 0 ? '#b3261e' : '#3a2a10', 'stroke-width': k % 5 ? 1.2 : 2.2 }, s); }
+  [['-1', -1], ['0', 0], ['+1', 1]].forEach(([t, v]) => { const a = ang(v); el('text', { x: cx + (R - 32)*Math.cos(a), y: cy + (R - 32)*Math.sin(a) + 4, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 800, fill: v < 0 ? '#b3261e' : '#3a2a10' }, s, t); });
+  el('text', { x: cx, y: 120, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 800, fill: '#3a2a10', 'letter-spacing': '.2em' }, s, 'PHASE');
+  const needle = (v, col, w, op) => { const a = ang(v); el('line', { x1: cx, y1: cy, x2: cx + (R - 6)*Math.cos(a), y2: cy + (R - 6)*Math.sin(a), stroke: col, 'stroke-width': w, opacity: op, 'stroke-linecap': 'round' }, s); };
+  needle(0.02, '#3a2a10', 1.6, .35); needle(0.44, '#141006', 2, 1);
+  el('circle', { cx, cy, r: 9, fill: '#2a2d33' }, s);
+})();
+
+/* ---------- meters ---------- */
+(function(){
+  const m = document.getElementById('meters');
+  const bar = (label, lv, col) => `<div style="display:flex;align-items:center;gap:10px;margin:6px 0"><span class="sil" style="width:62px;font-size:9.5px">${label}</span><div style="display:flex;gap:2px">${Array.from({ length: 28 }, (_, i) => { const c = i >= 25 ? '#ff4d5e' : i >= 21 ? '#ffd85a' : col; return `<i style="display:block;width:9px;height:12px;border-radius:2px;background:${c};opacity:${i < lv ? 1 : .12};${i < lv ? 'box-shadow:0 0 6px ' + c : ''}"></i>`; }).join('')}</div></div>`;
+  m.innerHTML = bar('Room', 15, '#8b5cff') + bar('Room', 14, '#8b5cff') + bar('Master', 19, '#7cff6b') + bar('Master', 18, '#7cff6b');
+})();
+</script>
+</body></html>

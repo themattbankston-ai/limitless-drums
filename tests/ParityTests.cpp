@@ -8,6 +8,7 @@
 #include "hl/Wav.h"
 #include "hl/Align.h"
 #include "hl/Resolve.h"
+#include "hl/Tune.h"
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 using Catch::Matchers::WithinAbs;
 
@@ -139,5 +140,83 @@ TEST_CASE ("Parity: alignment matches Hitline 4.8")
             CHECK (mics[(size_t) t].pol == (int) kt["pol"]);
             CHECK ((int) mics[(size_t) t].ap.size() == kt["ap"].getArray()->size());
         }
+    }
+}
+
+TEST_CASE ("Parity: pitch reading matches Hitline 4.8")
+{
+    auto all = cases();
+    if (all.empty()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
+    for (auto& c : all)
+    {
+        INFO (c.name);
+        const auto tune = c.key["tune"];
+        REQUIRE (tune["mic"].toString() == "ref");
+        const int ref = c.key["refIdx"];
+        const auto wav = trackWav (c, ref);
+        std::vector<long> onsets;
+        for (auto& v : *c.key["onsets"].getArray()) onsets.push_back ((long) (int) v);
+        ld::hl::PitchOptions o;
+        o.skipMs = tune["skipMs"]; o.winMs = tune["winMs"]; o.fmin = tune["fmin"]; o.fmax = tune["fmax"];
+        const auto sp = ld::hl::sessionPitch (ld::hl::monoOf (wav.channels), onsets, wav.sampleRate, o);
+        CHECK_THAT (sp.est, WithinAbs ((double) c.key["pitchEst"], 1e-9));
+        const auto* kp = c.key["pitch"].getArray();
+        REQUIRE ((int) sp.hits.size() == kp->size());
+        for (int i = 0; i < kp->size(); ++i)
+        {
+            INFO ("hit " << i);
+            const auto k = (*kp)[i];
+            REQUIRE (sp.hits[(size_t) i].has_value() == k.isObject());
+            if (! k.isObject()) continue;
+            CHECK_THAT (sp.hits[(size_t) i]->f, WithinAbs ((double) k["f"], 1e-9));
+            CHECK_THAT (sp.hits[(size_t) i]->conf, WithinAbs ((double) k["conf"], 1e-9));
+        }
+        // computeTune
+        const auto det = c.key["det"];
+        const int V = det["V"], RR = det["RR"];
+        std::vector<int> velOf;
+        for (int i = 0; i < kp->size(); ++i) { const int g = i / RR; velOf.push_back (det["order"].toString() == "loud" ? V - 1 - g : g); }
+        ld::hl::TuneSettings ts;
+        ts.on = tune["on"]; ts.mode = tune["mode"].toString().toStdString(); ts.target = tune["target"].toString().toStdString();
+        ts.cents = tune["cents"]; ts.a4 = tune["a4"];
+        const auto ti = ld::hl::computeTune (sp, ts, V, velOf);
+        const auto kt = c.key["tinfo"];
+        REQUIRE (ti.valid == kt.isObject());
+        if (! ti.valid) continue;
+        CHECK_THAT (ti.medF, WithinAbs ((double) kt["medF"], 1e-9));
+        CHECK (ti.nearest == (int) kt["nearest"]);
+        CHECK_THAT (ti.targetF, WithinAbs ((double) kt["targetF"], 1e-9));
+        for (int v = 0; v < V; ++v)
+        {
+            const auto km = kt["layerMed"][v];
+            if (km.isVoid() || ! std::isfinite ((double) km)) continue;
+            CHECK_THAT (ti.layerMed[(size_t) v], WithinAbs ((double) km, 1e-9));
+        }
+        INFO ("Hitline reads this drum at " << ti.medF << " Hz, nearest " << ld::hl::noteName (ti.nearest));
+        CHECK (true);
+    }
+}
+
+TEST_CASE ("Parity: tuned renders match Hitline 4.8's resampler")
+{
+    const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
+    if (root.isEmpty()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
+    const auto meta = juce::JSON::parse (parityDir().getChildFile ("tuned.json"));
+    const auto wav = ld::hl::readWav (juce::File (root).getChildFile ("SNARE 2 - BB/Center/SNARE_CENTER_TOP_RR06_V06.wav"));
+    REQUIRE (wav.error.empty());
+    for (auto& cs : *meta["cases"].getArray())
+    {
+        INFO (cs["name"].toString());
+        juce::MemoryBlock mb;
+        REQUIRE (parityDir().getChildFile (cs["name"].toString() + ".f32").loadFileAsData (mb));
+        const auto* golden = static_cast<const float*> (mb.getData());
+        const auto out = ld::hl::renderTuned (wav.channels[0], (double) meta["onset"], (long) (int) meta["pre"], (long) (int) meta["outLen"],
+                                              (double) meta["lag"], (int) meta["pol"], (double) meta["g"], (double) cs["step"],
+                                              (long) (int) meta["lo"], (long) (int) meta["hi"], (long) (int) meta["fadeN"], 32);
+        REQUIRE (out.size() * 4 == mb.getSize());
+        double worst = 0;
+        for (size_t i = 0; i < out.size(); ++i) worst = std::max (worst, (double) std::abs (out[i] - golden[i]));
+        INFO ("largest difference " << worst);
+        CHECK (worst < 1e-6);   // float rounding only (-120 dB)
     }
 }
