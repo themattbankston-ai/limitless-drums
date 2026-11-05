@@ -1,7 +1,8 @@
 // Runs a whole Hitline 4.8 export headless, with the Mix step switched on (clean-up, tone, shape, tame, inserts,
 // bus, shared room, tuning), and records every file it writes. The C++ export is tested against it.
 // Usage: serve PARITY_ROOT (holding harness.html and the session folders) on PARITY_PORT, then
-//   node golden_export.js <session folder under PARITY_ROOT> <config A|B> <out.json> [answer key json]
+//   node golden_export.js <session folder under PARITY_ROOT> <config A|B|K> <out.json> [answer key json]
+// K opens the session as a whole-kit take and runs the kit export.
 // Each file is kept as its byte length, CRC-32, energy per channel and every STEP-th sample per channel; the
 // analysis state Hitline exported from (onsets, alignment, tuning, settings) is stored with it.
 const { chromium } = require('playwright');
@@ -24,7 +25,7 @@ const STEP = 211;
     const H = window.__HL;
     const list = [];
     for (const f of files){ const r = await fetch('/' + rel.split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(f)); const blob = await r.blob(); const file = new File([blob], f); Object.defineProperty(file, '_rel', { value: rel.split('/').pop() + '/' + f }); list.push(file); }
-    H.addSessionsFromFiles(list);
+    H.addSessionsFromFiles(list, cfgName === 'K' ? 'kit' : undefined);
     for (let i = 0; i < 600 && !H.S.tracks.length; i++) await new Promise(r => setTimeout(r, 100));
     await new Promise(r => setTimeout(r, 500));
     const ok0 = await H.autoPrep(true);
@@ -58,6 +59,10 @@ const STEP = 211;
       S.mix.room = { type: 'verb', on: true, ret: -6, p: { model: 'lex', prog: 'Chamber', decay: 1, pre: 0, early: 1, era: 'Now', hpf: 100, lpf: 14000, width: 1, mix: 1, out: 0 } };
       S.tune.on = true;
       Object.assign(S.exp, { mode: 'both', tailMode: 'natural', tailFloor: -90, bits: 32, rate: 'same', maxLenS: 8 });
+    } else if (cfgName === 'K'){
+      // a whole-kit take (the snare mics opened as a kit): strong hits, kit alignment, bleed gate on the close mics, clean-up
+      S.kitBleed = 12; S.dn.on = true; S.dn.db = 14;
+      Object.assign(S.exp, { bits: 24, rate: '48000' });
     } else {
       // the other paths: the Panda reference set, kit levels with the peak trim, gated tails, 48 kHz 24-bit
       S.dn.on = false;
@@ -83,12 +88,24 @@ const STEP = 211;
         Object.assign(e, { nch, sr, bits, n, energy: [], s: [] });
         for (let c = 0; c < nch; c++){ let en = 0; const s = []; for (let i = 0; i < n; i++){ const v = rd(i, c); en += v*v; if (i % STEP === 0) s.push(v); } e.energy.push(en); e.s.push(s); } }
       got.push(e); return p; } };
-    const r = await H.writeSession(sink, '', null);
-    const pick = ['sr', 'refIdx', 'onsets', 'drum', 'artic', 'mode', 'det', 'phase', 'lev', 'preset', 'tune', 'tinfo', 'exp', 'dn', 'tone', 'shape', 'mix', 'rejects'];
+    const r = cfgName === 'K' ? await H.writeKit(sink, null) : await H.writeSession(sink, '', null);
+    const stTracks = S.tracks.map(t => ({ mic: t.mic, name: t.name, len: t.len, chans: t.ch.length, alignTo: t.alignTo, lag: t.lag, pol: t.pol, ap: t.ap, clip: t.clip, fader: t.fader, mute: t.mute, solo: t.solo, lrLock: t.lrLock, lr: t.lr, auto: t.auto ? { asis: t.auto.asis, arrival: t.auto.arrival } : null, strip: JSON.parse(JSON.stringify(t.strip)) }));
+    const stMix = JSON.parse(JSON.stringify(S.mix));
+    // the one-shot: one hit mixed as the console stands (faders, mute, solo, pan, bus fader, room return)
+    let oneShot = null;
+    if (cfgName !== 'K'){
+      const con = cfgName === 'A' ? { Top: { fader: -2 }, Bottom: { mute: true }, Overheads: { pan: -0.3 }, 'Room Mono': { pan: 0.4, fader: -4 } } : { Top: { solo: true }, Overheads: { solo: true, pan: 0.5 } };
+      S.tracks.forEach(tr => { const c = con[tr.mic] || {}; if (c.fader != null) tr.fader = c.fader; if (c.mute) tr.mute = true; if (c.solo) tr.solo = true; if (c.pan != null) tr.strip.pan = c.pan; });
+      S.mix.fader = cfgName === 'A' ? -1 : 0;
+      const i = H.defaultOneShot(), h = H.renderHitStems0(i, true, null, {}), [L, R] = H.mixToStereo(h);
+      const pack = y => { let en = 0; const s = []; for (let q = 0; q < y.length; q++){ en += y[q]*y[q]; if (q % STEP === 0) s.push(y[q]); } return { n: y.length, energy: en, s }; };
+      oneShot = { i, console: { tracks: S.tracks.map(t => ({ fader: t.fader, mute: !!t.mute, solo: !!t.solo, pan: t.strip.pan || 0 })), busFader: S.mix.fader, busMute: !!S.mix.mute }, L: pack(L), R: pack(R) };
+    }
+    const pick = ['sr', 'refIdx', 'onsets', 'drum', 'artic', 'mode', 'det', 'phase', 'lev', 'preset', 'tune', 'tinfo', 'exp', 'dn', 'tone', 'shape', 'rejects', 'kitOn', 'kitBleed'];
     const st = {}; for (const k of pick) st[k] = S[k];
-    st.tracks = S.tracks.map(t => ({ mic: t.mic, name: t.name, len: t.len, chans: t.ch.length, alignTo: t.alignTo, lag: t.lag, pol: t.pol, ap: t.ap, clip: t.clip, fader: t.fader, mute: t.mute, lrLock: t.lrLock, lr: t.lr, auto: t.auto ? { asis: t.auto.asis, arrival: t.auto.arrival } : null, strip: t.strip }));
-    st.res = { gainsDbT: S.res.gainsDbT, trimDb: S.res.trimDb, regions: S.res.regions, lvlRaw: S.res.lvlRaw };
-    return { ok, total: r.total, state: st, files: got, STEP };
+    st.mix = stMix; st.tracks = stTracks;
+    st.res = S.res ? { gainsDbT: S.res.gainsDbT, trimDb: S.res.trimDb, regions: S.res.regions, lvlRaw: S.res.lvlRaw } : null;
+    return { ok, total: r.total, state: st, files: got, oneShot, STEP };
   }, { files, rel, cfgName, STEP, keyAl });
   fs.writeFileSync(out, JSON.stringify(res)); console.log(res.ok, res.total, 'files', fs.statSync(out).size, 'bytes');
   await b.close();

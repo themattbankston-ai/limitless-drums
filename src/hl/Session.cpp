@@ -104,6 +104,34 @@ F32 fxMono (const Chs& chs)
         for (size_t n = 0; n < m.size(); ++n) m[n] = (float) ((double) m[n] + (double) x[n] / (double) chs.size());
     return m;
 }
+/** Hitline's micKind, for the kit bleed gate: which mics are close mics. */
+std::string micKind (const SessionTrack& tr)
+{
+    const auto n = lower (tr.mic + " " + tr.name);
+    auto h = [&] (const char* re) { return std::regex_search (n, std::regex (re)); };
+    if (h (R"(\bsub\b|subkick)")) return "sub";
+    if (h (R"(kick|\bbd\b)") && h (R"(\bin\b|inside)")) return "kickIn";
+    if (h (R"(kick|\bbd\b)") && h (R"(\bout\b|front|reso)")) return "kickOut";
+    if (h (R"(kick in|^in\b)") || (h (R"(\bin\b)") && ! h ("room"))) return "kickIn";
+    if (h (R"(\bout\b)")) return "kickOut";
+    if (h ("crush|crsh|trash|smash")) return "crush";
+    if (h ("mono") && h ("room|rm|mono")) return "roomMono";
+    if (h ("far")) return "roomFar";
+    if (h (R"(room|\brm\b|amb|hall)")) return "roomClose";
+    if (h (R"(\boh\b|overhead|ovh)")) return "oh";
+    if (h (R"(bottom|btm|\bbot\b|reso)")) return "bottom";
+    if (h (R"(hat|hh\b)")) return "hat";
+    if (h ("ride|crash|china|splash|cym")) return "cym";
+    if (h ("tom|floor|rack")) return "tom";
+    if (h ("spot|clip")) return "spot";
+    return "top";
+}
+bool isCloseKind (const SessionTrack& tr)
+{
+    const auto k = micKind (tr);
+    return k == "kickIn" || k == "kickOut" || k == "top" || k == "bottom" || k == "tom" || k == "spot";
+}
+
 LevelTrack levelTrack (const Session& S, int t)
 {
     const auto& tr = S.tracks[(size_t) t];
@@ -632,10 +660,23 @@ MixRender renderMix (const Session& S)
     M.scan.resize ((size_t) nT);
     // clean-up
     for (auto& tr : S.tracks) M.dn.push_back (baseCh (tr));
-    if (S.dnOn && ! S.onsets.empty())
+    const bool kit = S.mode == "kit";
+    const auto& dnOns = kit ? S.kitOn : S.onsets;
+    if (S.dnOn && ! dnOns.empty())
     {
         std::vector<F32*> chans; for (auto& c : M.dn) for (auto& x : c) chans.push_back (&x);
-        parallelFor (chans.size(), [&] (size_t j) { auto& x = *chans[j]; const auto p = noisePrint (x, sr, S.onsets); x = denoise (x, sr, p ? &*p : nullptr, S.dnDb); });
+        parallelFor (chans.size(), [&] (size_t j) { auto& x = *chans[j]; const auto p = noisePrint (x, sr, dnOns); x = denoise (x, sr, p ? &*p : nullptr, S.dnDb); });
+    }
+    if (kit)
+    {
+        // whole kit: close mics can be gated against bleed from the rest of the kit; nothing else is touched
+        M.tone = M.dn;
+        if (S.kitBleed != 0)
+            parallelFor ((size_t) nT, [&] (size_t t) { if (isCloseKind (S.tracks[t])) M.tone[t] = bleedGate (M.dn[t], sr, S.kitBleed); });
+        M.ins = M.bus = M.tone;
+        M.proc = M.bus;
+        parallelFor ((size_t) nT, [&] (size_t t) { const auto& tr = S.tracks[t]; if (! tr.ap.empty()) for (auto& x : M.proc[t]) x = applyAllpass (x, sr, tr.ap); });
+        return M;
     }
     // tone and shape, then tame
     M.tone = M.dn;
@@ -1029,6 +1070,144 @@ int writeSession (const Session& S, const MixRender& M, const LevelResult& L,
     return done;
 }
 
+int writeKit (const Session& S, const MixRender& M, const std::function<void (const std::string&, const juce::MemoryBlock&)>& sink)
+{
+    const double srOut = S.exp.rate == "same" ? S.sr : std::stod (S.exp.rate), k = srOut / S.sr;
+    int n = 0;
+    for (int t = 0; t < (int) S.tracks.size(); ++t)
+    {
+        const auto& tr = S.tracks[(size_t) t];
+        const auto path = fillTokens (S, S.exp.kitTemplate.empty() ? "{ARTIC}/{MIC}.wav" : S.exp.kitTemplate, t, std::nullopt);
+        Chs chs;
+        for (auto& x : M.proc[(size_t) t])
+            chs.push_back (std::abs (k - 1) < 1e-9 ? renderSeg (x, 0, tr.len, lagOf (S, t), polR (S, t), 1, true)
+                                                   : renderTuned (x, 0, 0, (long) jsRound ((double) tr.len * k), lagOf (S, t), polR (S, t), 1, 1 / k, 0, (long) x.size(), 0));
+        sink (path, encodeWav (chs, srOut, S.exp.bits));
+        ++n;
+    }
+    return n;
+}
+
+HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult& L, size_t i, int taps)
+{
+    HitStems h;
+    const long pre = (long) jsRound (S.det.prerollMs * S.sr / 1000), cap = (long) jsRound (S.exp.maxLenS * S.sr);
+    const auto r = sliceRegions (S.onsets, pre, cap, S.maxLen())[i];
+    const double ratio = ratioOf (S, i);
+    const long len = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
+    auto gainAt = [&] (int t) { return L.valid ? std::pow (10.0, L.gainsDbT[(size_t) t][i] / 20) : std::pow (10.0, (i < S.tracks[(size_t) t].clip.size() ? S.tracks[(size_t) t].clip[i] : 0.0) / 20); };
+    auto fit = [] (F32 c, long n) { c.resize ((size_t) n, 0.0f); return c; };
+    for (int t = 0; t < (int) S.tracks.size(); ++t)
+    {
+        // renderHitMic with the hit's own ratio at the session rate
+        const double step = ratio, on = (double) S.onsets[i], lag = lagOf (S, t);
+        const long preOut = (long) jsRound ((on - r.start) / step), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
+        const long lo = r.start + (long) std::floor (lag), hi = r.end + (long) std::ceil (lag);
+        Chs s;
+        for (auto& x : M.proc[(size_t) t]) s.push_back (fit (renderTuned (x, on, preOut, outLen, lag, polR (S, t), gainAt (t), step, lo, hi, 0, taps), len));
+        h.stems.push_back (std::move (s));
+    }
+    Chs all; for (auto& s : h.stems) for (auto& c : s) all.push_back (c);
+    if (! all.empty())
+    {
+        const auto plan = tailPlan (all, S.sr, 0, S.exp.tailFloor);
+        for (auto& s : h.stems) s = applyTail (s, plan, S.sr);
+    }
+    const long n = h.stems.empty() ? len : (long) h.stems[0][0].size();
+    for (auto& s : h.stems)
+        if (s.size() == 1)
+        {
+            F32 m ((size_t) n, 0.0f);
+            for (auto& c : s) for (long q = 0; q < n; ++q) m[(size_t) q] = (float) ((double) m[(size_t) q] + (double) c[(size_t) q] * 0.7071);
+            s = { m };
+        }
+    if (! M.room.empty() && roomLive (S))
+    {
+        const double on = (double) S.onsets[i];
+        const long preOut = (long) jsRound ((on - r.start) / ratio), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
+        for (auto& x : M.room) h.room.push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, taps), n));
+    }
+    h.i = i; h.ratio = ratio; h.start = r.start; h.len = n;
+    return h;
+}
+
+static std::array<double, 4> panGains (double p, bool stereo)
+{
+    const double pi = juce::MathConstants<double>::pi;
+    if (! stereo) { const double x = (p + 1) * pi / 4; return { std::cos (x), 0, std::sin (x), 0 }; }
+    if (p <= 0) { const double x = (p + 1) * pi / 2; return { 1, std::cos (x), 0, std::sin (x) }; }
+    const double x = p * pi / 2;
+    return { std::cos (x), 0, std::sin (x), 1 };
+}
+
+std::pair<F32, F32> mixToStereo (const Session& S, const HitStems& h)
+{
+    const size_t n = (size_t) h.len;
+    F32 L (n, 0.0f), R (n, 0.0f);
+    const double bus = S.busMute ? 0 : S.busFader <= -60 ? 0 : std::pow (10.0, S.busFader / 20);
+    const bool anySolo = std::any_of (S.tracks.begin(), S.tracks.end(), [] (auto& t) { return t.solo; });
+    for (size_t t = 0; t < h.stems.size(); ++t)
+    {
+        const auto& s = h.stems[t];
+        const auto& tr = S.tracks[t];
+        const bool audible = anySolo ? tr.solo : ! tr.mute;
+        const double g = (audible ? (tr.fader <= -60 ? 0 : std::pow (10.0, tr.fader / 20)) : 0) * bus;
+        if (g == 0) continue;
+        const bool st = s.size() > 1;
+        const auto P = panGains (jclamp (tr.strip.pan, -1, 1), st);
+        const auto& x = s[0]; const auto& y = st ? s[1] : s[0];
+        for (size_t q = 0; q < n; ++q)
+        {
+            const double l = x[q], r = y[q];
+            L[q] = (float) ((double) L[q] + (l * P[0] + (st ? r * P[1] : 0)) * g);
+            R[q] = (float) ((double) R[q] + (l * P[2] + (st ? r * P[3] : 0)) * g);
+        }
+    }
+    if (! h.room.empty())
+    {
+        const double g = roomLin (S) * bus;
+        if (g != 0) for (size_t q = 0; q < n; ++q) { L[q] = (float) ((double) L[q] + (double) h.room[0][q] * g); R[q] = (float) ((double) R[q] + (double) h.room[1][q] * g); }
+    }
+    return { std::move (L), std::move (R) };
+}
+
+size_t defaultOneShot (const Session& S, const LevelResult& L)
+{
+    const bool ok = S.mode != "kit" && ! S.onsets.empty() && (int) S.onsets.size() == S.det.V * S.det.RR;
+    if (! L.valid || ! ok) return 0;
+    const auto& lv = L.lvlRaw[(size_t) S.refIdx];
+    std::vector<size_t> top;
+    for (size_t i = 0; i < S.onsets.size(); ++i) if (S.velOfHit (i) == S.det.V - 1) top.push_back (i);
+    F64 v; for (auto i : top) v.push_back (lv[i]);
+    const double med = median1 (v);
+    size_t b = top[0];
+    for (auto i : top) if (std::abs (lv[i] - med) < std::abs (lv[b] - med)) b = i;
+    return b;
+}
+
+OneShot exportOneShot (const Session& S, const MixRender& M, const LevelResult& L)
+{
+    OneShot o;
+    if (S.tracks.empty() || S.onsets.empty()) return o;
+    const size_t i = S.oneShot >= 0 && S.oneShot < (int) S.onsets.size() ? (size_t) S.oneShot : defaultOneShot (S, L);
+    const auto h = renderHitStems (S, M, L, i);
+    auto [Lc, Rc] = mixToStereo (S, h);
+    double pk = 0;
+    for (size_t q = 0; q < Lc.size(); ++q) pk = std::max ({ pk, (double) std::abs (Lc[q]), (double) std::abs (Rc[q]) });
+    if (! (pk > 0)) return o;   // the bus is silent
+    const double ceil = std::pow (10.0, S.exp.ceilDb / 20), k = S.oneShotNorm || pk > ceil ? ceil / pk : 1;
+    if (k != 1) for (size_t q = 0; q < Lc.size(); ++q) { Lc[q] = (float) ((double) Lc[q] * k); Rc[q] = (float) ((double) Rc[q] * k); }
+    const bool ok = (int) S.onsets.size() == S.det.V * S.det.RR && S.mode != "kit";
+    const int v = ok ? S.velOfHit (i) + 1 : 0, rr = ok ? (int) (i % (size_t) S.det.RR) + 1 : 0;
+    const auto di = DRUM_NAMES.find (S.drum);
+    std::string base = ! S.artic.empty() ? S.artic : di != DRUM_NAMES.end() ? di->second : "Drum";
+    base = std::regex_replace (base, std::regex (R"([^\w-]+)"), "_");
+    o.name = base + "_OneShot" + (v ? "_V" + p2 (v) + "_RR" + p2 (rr) : std::string()) + ".wav";
+    o.wav = encodeWav ({ Lc, Rc }, S.sr, S.exp.bits);
+    o.hit = i; o.scale = k;
+    return o;
+}
+
 //==============================================================================
 static ToneMoves toneOf (const juce::var& v)
 {
@@ -1073,6 +1252,10 @@ Session sessionFromHitline (const juce::var& st, std::vector<Chs> audio)
     S.shape = shapeOf (st["shape"]);
     const auto mix = st["mix"];
     S.busIns = mix["busIns"].isArray() ? mix["busIns"] : juce::var (juce::Array<juce::var>());
+    S.busFader = nn (mix, "fader", 0); S.busMute = truthy (mix, "mute"); S.oneShot = (int) nn (mix, "oneShot", -1);
+    S.oneShotNorm = mix.hasProperty ("norm") ? truthy (mix, "norm") : true;
+    S.kitBleed = nn (st, "kitBleed", 0);
+    if (auto* k = st["kitOn"].getArray()) for (auto& v : *k) S.kitOn.push_back ((long) (double) v);
     if (mix["room"].isObject()) { S.room.on = truthy (mix["room"], "on"); S.room.ret = nn (mix["room"], "ret", 0); S.room.p = mix["room"]["p"]; }
     if (st["tinfo"].isObject())
     {
@@ -1093,7 +1276,7 @@ Session sessionFromHitline (const juce::var& st, std::vector<Chs> audio)
         tr.lag = nn (kt, "lag", 0); tr.pol = (int) nn (kt, "pol", 1);
         if (auto* a = kt["ap"].getArray()) for (auto& b : *a) tr.ap.push_back ({ (double) b["fc"], (double) b["Q"] });
         if (auto* c = kt["clip"].getArray()) for (auto& v : *c) tr.clip.push_back (v.isVoid() ? 0.0 : (double) v);
-        tr.fader = nn (kt, "fader", 0); tr.mute = truthy (kt, "mute"); tr.lrLock = truthy (kt, "lrLock");
+        tr.fader = nn (kt, "fader", 0); tr.mute = truthy (kt, "mute"); tr.solo = truthy (kt, "solo"); tr.lrLock = truthy (kt, "lrLock");
         if (kt["lr"].isObject()) tr.lr = LrFix { (double) kt["lr"]["lag"], (int) kt["lr"]["pol"], truthy (kt["lr"], "kept") };
         if (kt["auto"].isObject()) tr.autoAsis = nn (kt["auto"], "asis", NAN);
         const auto sv = kt["strip"];

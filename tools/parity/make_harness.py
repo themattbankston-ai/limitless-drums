@@ -6,6 +6,6 @@ here = pathlib.Path(__file__).parent
 s = (here / 'hitline-4.8.html').read_text()
 i = s.rfind("})();\n</script>")
 assert i > 0, 'end of the app script not found'
-hook = "window.__HL = { get S(){ return S; }, get P(){ return P; }, addSessionsFromFiles, autoPrep, runDetect, computeAll, runDenoise, readyMix, writeSession, exportList, get LIBREF(){ return LIBREF; } };\n"
+hook = "window.__HL = { get S(){ return S; }, get P(){ return P; }, addSessionsFromFiles, autoPrep, runDetect, computeAll, runDenoise, readyMix, writeSession, exportList, writeKit, renderHitStems0, mixToStereo, defaultOneShot, get LIBREF(){ return LIBREF; } };\n"
 (here / 'harness.html').write_text(s[:i] + hook + s[i:])
 print('wrote harness.html')

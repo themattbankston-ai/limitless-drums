@@ -55,7 +55,7 @@ struct SessionTrack
     std::vector<AllPass> ap;          ///< phase EQ
     F64 clip;                         ///< clip gain per hit (dB)
     double fader = 0;
-    bool mute = false, lrLock = false;
+    bool mute = false, solo = false, lrLock = false;
     std::optional<LrFix> lr;
     double autoAsis = NAN;
     Strip strip;
@@ -112,7 +112,12 @@ struct Session
     SessionPitch pitch;
     std::optional<TuneInfo> tuneInfo;
     std::vector<long> kitOn;          ///< whole-kit takes: the strong hits alignment is measured on
-    double kitBleed = 0;
+    double kitBleed = 0;              ///< whole-kit takes: close mics ease down this many dB between their own hits
+    // the console (playback and the one-shot only)
+    double busFader = 0;
+    bool busMute = false;
+    int oneShot = -1;                 ///< the hit the one-shot renders (-1 = a typical hardest hit)
+    bool oneShotNorm = true;          ///< peak the one-shot at the ceiling
     int tameWorkers = 3;              ///< Hitline splits the tame pass into this many stretches of hits
     std::vector<SessionTrack> tracks;
 
@@ -196,6 +201,22 @@ void applyFades (Chs&, long inN, long outN);
     Sampler instrument files are not written (not wanted in Limitless Drums). */
 int writeSession (const Session&, const MixRender&, const LevelResult&,
                   const std::function<void (const std::string& path, const juce::MemoryBlock& bytes)>& sink);
+
+/** Whole-kit takes: every mic full length with its delay, polarity, phase EQ and L/R lock, through the sink. */
+int writeKit (const Session&, const MixRender&,
+              const std::function<void (const std::string& path, const juce::MemoryBlock& bytes)>& sink);
+
+/** One hit, every mic, ready to play: processed, on its level, one natural tail for all mics (Hitline's
+    renderHitStems for processed playback). Mono mics come back as one channel at -3 dB. */
+struct HitStems { std::vector<Chs> stems; Chs room; size_t i = 0; double ratio = 1; long start = 0, len = 0; };
+HitStems renderHitStems (const Session&, const MixRender&, const LevelResult&, size_t i, int taps = 32);   ///< playback uses 16 taps
+/** The stems summed to stereo as the console stands: faders, mute and solo, pan, the bus fader, the room return. */
+std::pair<F32, F32> mixToStereo (const Session&, const HitStems&);
+/** A typical hard hit: the hardest layer's round robin closest to its median level on the lead. */
+size_t defaultOneShot (const Session&, const LevelResult&);
+/** The one-shot: one hit mixed as the console stands, as a stereo WAV. Empty name when the bus is silent. */
+struct OneShot { std::string name; juce::MemoryBlock wav; size_t hit = 0; double scale = 1; };
+OneShot exportOneShot (const Session&, const MixRender&, const LevelResult&);
 
 /** A session from Hitline's saved state (its S object as JSON) and each track's audio, in track order. */
 Session sessionFromHitline (const juce::var& state, std::vector<Chs> audio);

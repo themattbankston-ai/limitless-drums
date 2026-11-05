@@ -50,18 +50,22 @@ void runCase (const juce::String& keyName, const juce::String& folder)
     auto S = ld::hl::sessionFromHitline (st, std::move (audio));
     S.tameWorkers = 3;   // golden_export.js fixes navigator.hardwareConcurrency at 4
 
+    const bool kit = S.mode == "kit";
     const auto t0 = juce::Time::getMillisecondCounterHiRes();
     const auto M = ld::hl::renderMix (S);
-    const auto L = ld::hl::measureLevels (S, M);
-    REQUIRE (L.valid);
+    const auto L = kit ? ld::hl::LevelResult() : ld::hl::measureLevels (S, M);
+    REQUIRE ((kit || L.valid));
     const auto t1 = juce::Time::getMillisecondCounterHiRes();
 
     // levels measured after the mix
     double worstGain = 0;
-    for (size_t t = 0; t < S.tracks.size(); ++t)
-        for (size_t i = 0; i < S.onsets.size(); ++i)
-            worstGain = std::max (worstGain, std::abs (L.gainsDbT[t][i] - (double) st["res"]["gainsDbT"][(int) t][(int) i]));
-    CHECK (std::abs (L.trimDb - (double) st["res"]["trimDb"]) < 1e-6);
+    if (! kit)
+    {
+        for (size_t t = 0; t < S.tracks.size(); ++t)
+            for (size_t i = 0; i < S.onsets.size(); ++i)
+                worstGain = std::max (worstGain, std::abs (L.gainsDbT[t][i] - (double) st["res"]["gainsDbT"][(int) t][(int) i]));
+        CHECK (std::abs (L.trimDb - (double) st["res"]["trimDb"]) < 1e-6);
+    }
 
     std::map<std::string, const juce::var*> gold;
     for (auto& f : *key["files"].getArray()) gold[f["path"].toString().toStdString()] = &f;
@@ -69,7 +73,7 @@ void runCase (const juce::String& keyName, const juce::String& folder)
     int n = 0, identical = 0, missing = 0;
     double worstRel = 0, worstAbs = 0; std::string worstAt;
     std::vector<std::string> order;
-    ld::hl::writeSession (S, M, L, [&] (const std::string& path, const juce::MemoryBlock& bytes)
+    auto onFile = [&] (const std::string& path, const juce::MemoryBlock& bytes)
     {
         order.push_back (path);
         ++n;
@@ -99,7 +103,8 @@ void runCase (const juce::String& keyName, const juce::String& folder)
             if (rel > worstRel) { worstRel = rel; worstAt = path; }
             worstAbs = std::max (worstAbs, pk);
         }
-    });
+    };
+    if (kit) ld::hl::writeKit (S, M, onFile); else ld::hl::writeSession (S, M, L, onFile);
     const auto t2 = juce::Time::getMillisecondCounterHiRes();
 
     int goldAudio = 0; for (auto& [p, _] : gold) if (juce::String (p).endsWithIgnoreCase (".wav")) ++goldAudio;
@@ -123,6 +128,35 @@ void runCase (const juce::String& keyName, const juce::String& folder)
     CHECK (worstGain < 1e-6);
     CHECK (worstRel < 1e-5);
     CHECK (worstAbs < 1e-5);
+
+    // the one-shot, with the console set as Hitline had it
+    const auto os = key["oneShot"];
+    if (os.isObject())
+    {
+        const auto con = os["console"];
+        for (int t = 0; t < (int) S.tracks.size(); ++t)
+        {
+            const auto c = con["tracks"][t];
+            auto& tr = S.tracks[(size_t) t];
+            tr.fader = c["fader"]; tr.mute = c["mute"]; tr.solo = c["solo"]; tr.strip.pan = c["pan"];
+        }
+        S.busFader = con["busFader"]; S.busMute = con["busMute"];
+        CHECK ((int) ld::hl::defaultOneShot (S, L) == (int) os["i"]);
+        const auto h = ld::hl::renderHitStems (S, M, L, (size_t) (int) os["i"]);
+        const auto [Lc, Rc] = ld::hl::mixToStereo (S, h);
+        for (auto [y, g] : { std::pair<const ld::hl::F32*, juce::var> { &Lc, os["L"] }, { &Rc, os["R"] } })
+        {
+            REQUIRE ((int) y->size() == (int) g["n"]);
+            double e = 0; for (float v : *y) e += (double) v * v;
+            CHECK (std::abs (e - (double) g["energy"]) / (double) g["energy"] < 1e-6);
+            const auto* s = g["s"].getArray();
+            double pk = 0;
+            for (int k = 0; k < s->size(); ++k) pk = std::max (pk, std::abs ((double) (*y)[(size_t) k * (size_t) STEP] - (double) (*s)[k]));
+            CHECK (pk < 1e-5);
+        }
+        const auto shot = ld::hl::exportOneShot (S, M, L);
+        CHECK (! shot.name.empty());
+    }
 }
 } // namespace
 
@@ -133,4 +167,5 @@ TEST_CASE ("Parity: a full export with the mix on matches Hitline 4.8")
     ld::hl::setReverbLibrary (juce::JSON::parse (root().getChildFile ("assets/irlib.json")));
     SECTION ("everything on, hits and full tracks") { runCase ("export_A.json", "SNARE 2 - BB/Center"); }
     SECTION ("Panda reference, kit levels, gated tails, 48 kHz 24-bit") { runCase ("export_B.json", "SNARE 1 - MH/Center"); }
+    SECTION ("whole-kit take: bleed gate, clean-up on strong hits, 48 kHz 24-bit") { runCase ("export_K.json", "SNARE 1 - MH/Center"); }
 }

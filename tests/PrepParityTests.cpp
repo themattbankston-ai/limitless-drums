@@ -86,3 +86,38 @@ TEST_CASE ("Parity: import and Auto prep match Hitline 4.8")
         }
     }
 }
+
+TEST_CASE ("Parity: a whole-kit take opens like Hitline 4.8")
+{
+    const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
+    const auto keyFile = juce::File (LD_SOURCE_DIR).getChildFile ("tests/parity/export_K.json");
+    if (root.isEmpty() || ! keyFile.existsAsFile()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
+    const auto key = juce::JSON::parse (keyFile)["state"];
+    const auto folder = juce::File (root).getChildFile ("SNARE 1 - MH/Center");
+    auto files = folder.findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::sort (files.begin(), files.end(), [] (auto& a, auto& b) { return a.getFileName().toStdString() < b.getFileName().toStdString(); });
+    std::vector<std::string> rel;
+    for (auto& f : files) rel.push_back (("Center/" + f.getFileName()).toStdString());
+    const auto recs = ld::hl::groupSessions (rel, true);
+    REQUIRE (recs.size() == 1);
+    CHECK (recs[0].artic == key["artic"].toString().toStdString());
+    std::vector<ld::hl::SourceFile> src;
+    for (auto i : recs[0].files) src.push_back ({ files[(int) i].getFileName().toStdString(), rel[i], ld::hl::readWav (files[(int) i]) });
+    auto opened = ld::hl::openSession (std::move (src), "kit", recs[0].artic);
+    auto& S = opened.session;
+    CHECK (S.mode == "kit");
+    CHECK (S.exp.mode == "full");
+    CHECK (! S.dnOn);
+    const auto* ko = key["kitOn"].getArray();
+    REQUIRE ((int) S.kitOn.size() == ko->size());
+    for (int i = 0; i < ko->size(); ++i) CHECK (S.kitOn[(size_t) i] == (long) (double) (*ko)[i]);
+    const auto* kt = key["tracks"].getArray();
+    REQUIRE ((int) S.tracks.size() == kt->size());
+    for (int t = 0; t < kt->size(); ++t)
+    {
+        CHECK (S.tracks[(size_t) t].mic == (*kt)[t]["mic"].toString().toStdString());
+        CHECK (S.tracks[(size_t) t].alignTo == (*kt)[t]["alignTo"].toString().toStdString());
+    }
+    CHECK (ld::hl::autoPrep (S));
+    CHECK (S.phaseAnalyzed);
+}
