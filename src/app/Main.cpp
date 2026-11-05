@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "core/Session.h"
 
 namespace ld
 {
