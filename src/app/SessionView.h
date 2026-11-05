@@ -53,6 +53,7 @@ private:
     juce::Rectangle<int> soloBox (int index) const;
     juce::Rectangle<int> muteBox (int index) const;
     juce::Colour roleColour (const MicRole&, const theme::Palette&) const;
+    std::pair<juce::Colour, juce::Colour> roleColours (const MicRole&) const;
     void clampView();
     void paintRuler (juce::Graphics&, const theme::Palette&);
     void paintLane (juce::Graphics&, const theme::Palette&, int index);

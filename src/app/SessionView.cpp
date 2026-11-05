@@ -50,22 +50,29 @@ juce::Rectangle<int> SessionView::muteBox (int i) const
     return { headerWidth - 36, b.getY() + laneHeight - 30, 26, 20 };
 }
 
-juce::Colour SessionView::roleColour (const MicRole& r, const theme::Palette& p) const
+std::pair<juce::Colour, juce::Colour> SessionView::roleColours (const MicRole& r) const
 {
-    auto c = [&]() -> juce::Colour {
     using K = MicRole::Kind;
+    namespace n = theme::neon;
     switch (r.kind)
     {
-        case K::kickIn: case K::kickOut: case K::kickSub: case K::kick:      return p.signal;
-        case K::snareTop: case K::snareBottom: case K::snare:                return p.select;
-        case K::hiHat: case K::ride: case K::cymbal:                         return juce::Colour (0xffe8c75a);
-        case K::tom: case K::floorTom:                                       return juce::Colour (0xffe07a5f);
-        case K::overheads:                                                   return juce::Colour (0xff8fb8ff);
-        case K::roomMono: case K::roomClose: case K::room: case K::roomFar:
-        case K::roomCrush: case K::ambient:                                  return p.reference;
-        default:                                                             return p.inkQuiet;
+        case K::kickIn: case K::kickOut: case K::kickSub: case K::kick:      return { n::amber, n::orange };
+        case K::snareTop: case K::snare:                                     return { n::cyan, n::blue };
+        case K::snareBottom:                                                 return { n::blue, n::cyan };
+        case K::hiHat: case K::ride: case K::cymbal:                         return { n::gold, n::lime };
+        case K::tom: case K::floorTom:                                       return { n::magenta, n::orange };
+        case K::overheads:                                                   return { n::blue, n::violet };
+        case K::roomMono: case K::roomClose: case K::room:                   return { n::violet, n::magenta };
+        case K::roomFar:                                                     return { n::violet, n::cyan };
+        case K::roomCrush:                                                   return { n::magenta, n::pink };
+        case K::ambient:                                                     return { n::pink, n::violet };
+        default:                                                             return { juce::Colour (0xffb8c0cc), juce::Colour (0xff7d8794) };
     }
-    }();
+}
+
+juce::Colour SessionView::roleColour (const MicRole& r, const theme::Palette& p) const
+{
+    auto c = roleColours (r).first;
     // On the light theme, deepen the colours so waveforms keep their contrast.
     return p.ground.getPerceivedBrightness() > 0.5f ? c.darker (0.6f) : c;
 }
@@ -122,6 +129,8 @@ void SessionView::paint (juce::Graphics& g)
     const float x = timeToX (pos);
     if (x >= headerWidth && x < getWidth())
     {
+        g.setColour (p.signal.withAlpha (0.18f));
+        g.fillRect (x - 3.0f, 0.0f, 7.0f, (float) getHeight());
         g.setColour (p.signal);
         g.fillRect (x - 0.5f, 0.0f, 1.5f, (float) getHeight());
         juce::Path tri;
@@ -173,85 +182,135 @@ void SessionView::paintLane (juce::Graphics& g, const theme::Palette& p, int i)
 {
     auto& lane = lanes[(size_t) i];
     auto b = laneBounds (i);
-    const auto colour = roleColour (lane.role, p);
+    const bool day = p.ground.getPerceivedBrightness() > 0.5f;
+    auto [c1, c2] = roleColours (lane.role);
+    if (day) { c1 = c1.darker (0.55f); c2 = c2.darker (0.55f); }
     const bool muted = lane.track->isMuted (false);
     const bool soloed = lane.track->isSolo (false);
     const bool anySolo = std::any_of (lanes.begin(), lanes.end(), [] (auto& l) { return l.track->isSolo (false); });
     const bool audible = ! muted && (! anySolo || soloed);
 
-    // Lane background and separator
-    g.setColour (i % 2 == 0 ? p.ground : p.ground.interpolatedWith (p.panel, 0.35f));
-    g.fillRect (b);
-    g.setColour (p.line);
-    g.fillRect (b.getX(), b.getBottom() - 1, b.getWidth(), 1);
-
-    // Header
-    auto h = b.withWidth (headerWidth);
-    g.setColour (p.panel);
+    // --- Header: a machined faceplate strip ---------------------------------------------
+    auto h = b.withWidth (headerWidth).toFloat();
+    g.setGradientFill (juce::ColourGradient (p.raised.brighter (day ? 0.05f : 0.06f), 0, h.getY(),
+                                             p.panel.darker (day ? 0.02f : 0.25f), 0, h.getBottom(), false));
     g.fillRect (h);
-    g.setColour (colour);
-    g.fillRect (h.getX(), h.getY() + 6, 3, h.getHeight() - 12);
-    g.setColour (p.line);
-    g.fillRect (h.getRight() - 1, h.getY(), 1, h.getHeight());
+    g.setColour (juce::Colours::white.withAlpha (day ? 0.5f : 0.05f));
+    g.fillRect (h.getX(), h.getY(), h.getWidth(), 1.0f);
+    g.setColour (juce::Colours::black.withAlpha (day ? 0.15f : 0.5f));
+    g.fillRect (h.getX(), h.getBottom() - 1, h.getWidth(), 1.0f);
+
+    // Colour LED bar on the left edge
+    auto led = juce::Rectangle<float> (h.getX() + 6, h.getY() + 10, 3, h.getHeight() - 20);
+    if (audible && ! day)
+    {
+        g.setColour (c1.withAlpha (0.25f));
+        g.fillRoundedRectangle (led.expanded (3, 2), 3.0f);
+    }
+    g.setGradientFill (juce::ColourGradient (c1.withAlpha (audible ? 1.0f : 0.35f), 0, led.getY(),
+                                             c2.withAlpha (audible ? 1.0f : 0.35f), 0, led.getBottom(), false));
+    g.fillRoundedRectangle (led, 1.5f);
 
     g.setColour (audible ? p.ink : p.inkQuiet);
     g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
-    g.drawText (lane.track->getName(), h.getX() + 14, h.getY() + 10, headerWidth - 24, 18, juce::Justification::centredLeft, true);
+    g.drawText (lane.track->getName(), (int) h.getX() + 18, (int) h.getY() + 10, headerWidth - 28, 18, juce::Justification::centredLeft, true);
 
-    g.setColour (p.inkQuiet);
-    g.setFont (juce::FontOptions (11.0f));
+    g.setColour (p.inkQuiet.withAlpha (0.8f));
+    g.setFont (juce::FontOptions (10.5f));
     juce::String sub;
     if (! lane.clips.empty())
         if (auto* ac = dynamic_cast<te::AudioClipBase*> (lane.clips.front().first.get()))
             sub = ac->getAudioFile().getFile().getFileName();
-    g.drawText (sub, h.getX() + 14, h.getY() + 28, headerWidth - 24, 14, juce::Justification::centredLeft, true);
+    g.drawText (sub, (int) h.getX() + 18, (int) h.getY() + 28, headerWidth - 28, 14, juce::Justification::centredLeft, true);
 
-    auto drawToggle = [&] (juce::Rectangle<int> r, const juce::String& t, bool on, juce::Colour onColour)
+    // LED push buttons: lit when on
+    auto drawLedButton = [&] (juce::Rectangle<int> r, const juce::String& t, bool on, juce::Colour lit)
     {
-        g.setColour (on ? onColour : p.raised);
-        g.fillRoundedRectangle (r.toFloat(), theme::radius::s);
-        g.setColour (on ? p.ground : p.inkQuiet);
-        g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        auto rf = r.toFloat();
+        if (on && ! day)
+        {
+            g.setColour (lit.withAlpha (0.3f));
+            g.fillRoundedRectangle (rf.expanded (3), theme::radius::s + 2);
+        }
+        g.setGradientFill (juce::ColourGradient (on ? lit.brighter (0.2f) : p.raised.brighter (0.08f), 0, rf.getY(),
+                                                 on ? lit.darker (0.3f) : p.raised.darker (0.2f), 0, rf.getBottom(), false));
+        g.fillRoundedRectangle (rf, theme::radius::s);
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawRoundedRectangle (rf, theme::radius::s, 1.0f);
+        g.setColour (on ? juce::Colour (0xff101114) : p.inkQuiet);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         g.drawText (t, r, juce::Justification::centred);
     };
-    drawToggle (soloBox (i), "S", soloed, juce::Colour (0xffe8c75a));
-    drawToggle (muteBox (i), "M", muted, p.select);
+    drawLedButton (soloBox (i), "S", soloed, theme::neon::gold);
+    drawLedButton (muteBox (i), "M", muted, theme::neon::cyan);
 
-    // Waveforms
+    // --- Screen: recessed dark glass ---------------------------------------------------------
+    auto screen = juce::Rectangle<float> ((float) headerWidth + 4, (float) b.getY() + 3, (float) getWidth() - headerWidth - 8, (float) laneHeight - 6);
+    g.setColour (day ? juce::Colour (0xffe9eae6) : theme::glass::deep);
+    g.fillRoundedRectangle (screen, 5.0f);
+
     g.saveState();
-    g.reduceClipRegion (headerWidth, b.getY(), getWidth() - headerWidth, b.getHeight() - 1);
+    g.reduceClipRegion (screen.toNearestInt());
+
+    // faint grid: a line per ruler tick
+    static const double steps[] = { 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60 };
+    double step = 60;
+    for (auto st : steps) if (st * pixelsPerSecond >= 80) { step = st; break; }
+    g.setColour (day ? juce::Colour (0x14000000) : theme::glass::grid);
+    for (double t = std::floor (viewStart / step) * step; timeToX (t) < getWidth(); t += step)
+        g.fillRect (timeToX (t), screen.getY(), 1.0f, screen.getHeight());
+    g.fillRect (screen.getX(), screen.getCentreY(), screen.getWidth(), 1.0f);
+
     for (auto& [clip, thumb] : lane.clips)
     {
         const auto pos = clip->getPosition();
-        const float x1 = timeToX (pos.getStart().inSeconds()), x2 = timeToX (pos.getEnd().inSeconds());
-        auto area = juce::Rectangle<float> (x1, (float) b.getY() + 4, x2 - x1, (float) laneHeight - 9);
-
-        g.setColour (colour.withAlpha (0.08f));
-        g.fillRoundedRectangle (area, 3.0f);
-
-        if (thumb != nullptr && ! thumb->isGeneratingProxy())
-        {
-            // Only draw the visible part of the clip
-            const double visStart = std::max (pos.getStart().inSeconds(), xToTime ((float) headerWidth));
-            const double visEnd = std::min (pos.getEnd().inSeconds(), xToTime ((float) getWidth()));
-            if (visEnd > visStart)
-            {
-                const double off = pos.getOffset().inSeconds() - pos.getStart().inSeconds();
-                auto r = juce::Rectangle<int> ((int) timeToX (visStart), (int) area.getY() + 2,
-                                               std::max (1, (int) (timeToX (visEnd) - timeToX (visStart))), (int) area.getHeight() - 4);
-                g.setColour (colour.withAlpha (audible ? 0.95f : 0.35f));
-                thumb->drawChannels (g, r, te::TimeRange (te::TimePosition::fromSeconds (visStart + off),
-                                                          te::TimePosition::fromSeconds (visEnd + off)), 1.0f);
-            }
-        }
-        else
+        if (thumb == nullptr || thumb->isGeneratingProxy())
         {
             g.setColour (p.inkQuiet);
             g.setFont (juce::FontOptions (11.0f));
-            g.drawText ("Reading waveform…", area.reduced (8, 0), juce::Justification::centredLeft);
+            g.drawText ("Reading waveform\u2026", screen.reduced (10, 0), juce::Justification::centredLeft);
+            continue;
         }
+
+        const double visStart = std::max (pos.getStart().inSeconds(), xToTime ((float) headerWidth));
+        const double visEnd = std::min (pos.getEnd().inSeconds(), xToTime ((float) getWidth()));
+        if (visEnd <= visStart) continue;
+
+        const double off = pos.getOffset().inSeconds() - pos.getStart().inSeconds();
+        const te::TimeRange src (te::TimePosition::fromSeconds (visStart + off), te::TimePosition::fromSeconds (visEnd + off));
+        auto r = juce::Rectangle<int> ((int) timeToX (visStart), (int) screen.getY() + 4,
+                                       std::max (1, (int) (timeToX (visEnd) - timeToX (visStart))), (int) screen.getHeight() - 8);
+        const float alpha = audible ? 1.0f : 0.3f;
+        // Display-only vertical zoom: the loudest moment of this file fills ~90% of the lane.
+        const float peak = thumb->getApproximatePeak();
+        const float vz = peak > 0.0001f ? juce::jlimit (1.0f, 12.0f, 0.9f / peak) : 1.0f;
+
+        // Glow: a wider, faint pass under the waveform
+        if (! day && audible)
+        {
+            g.setColour (c1.withAlpha (0.18f));
+            thumb->drawChannels (g, r.expanded (0, 3), src, vz);
+        }
+
+        // Gradient fill across time: colour one into colour two
+        juce::ColourGradient grad (c1.withAlpha (alpha), (float) r.getX(), 0, c2.withAlpha (alpha), (float) r.getRight(), 0, false);
+        if (r.getWidth() > getWidth() / 2)
+        {
+            grad = juce::ColourGradient (c1.withAlpha (alpha), (float) headerWidth, 0, c2.withAlpha (alpha), (float) getWidth(), 0, false);
+            grad.addColour (0.5, c1.interpolatedWith (c2, 0.5f).brighter (0.25f).withAlpha (alpha));
+        }
+        g.setGradientFill (grad);
+        thumb->drawChannels (g, r, src, vz);
     }
+
+    // Glass: inner shadow at the top, reflection line
+    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (day ? 0.08f : 0.55f), 0, screen.getY(),
+                                             juce::Colours::transparentBlack, 0, screen.getY() + 10, false));
+    g.fillRect (screen.withHeight (10));
     g.restoreState();
+
+    g.setColour (day ? juce::Colour (0x22000000) : theme::glass::rim);
+    g.drawRoundedRectangle (screen, 5.0f, 1.0f);
 }
 
 //==============================================================================

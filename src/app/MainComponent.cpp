@@ -463,21 +463,57 @@ void MainComponent::paint (juce::Graphics& g)
     const auto p = palette();
     g.fillAll (p.ground);
 
-    // Toolbar
-    auto bar = getLocalBounds().removeFromTop (56);
-    g.setColour (p.panel);
+    // Toolbar: a machined faceplate with screws, like a rack unit
+    const bool day = dayMode;
+    auto bar = getLocalBounds().removeFromTop (56).toFloat();
+    g.setGradientFill (juce::ColourGradient (p.raised.brighter (day ? 0.08f : 0.1f), 0, 0, p.panel.darker (day ? 0.04f : 0.3f), 0, bar.getBottom(), false));
     g.fillRect (bar);
-    g.setColour (p.line);
-    g.fillRect (bar.removeFromBottom (1));
+    // brushed texture: faint horizontal streaks
+    juce::Random grain (7);
+    for (int y = 2; y < (int) bar.getBottom() - 2; y += 2)
+    {
+        g.setColour ((grain.nextBool() ? juce::Colours::white : juce::Colours::black).withAlpha (day ? 0.025f : 0.035f));
+        g.fillRect (0.0f, (float) y, bar.getWidth(), 1.0f);
+    }
+    g.setColour (juce::Colours::white.withAlpha (day ? 0.6f : 0.07f));
+    g.fillRect (0.0f, 0.0f, bar.getWidth(), 1.0f);
+    g.setColour (juce::Colours::black.withAlpha (day ? 0.25f : 0.7f));
+    g.fillRect (0.0f, bar.getBottom() - 1.0f, bar.getWidth(), 1.0f);
+
+    auto screw = [&] (float cx, float cy)
+    {
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffb9bec6), cx - 3, cy - 3, juce::Colour (0xff4a4e55), cx + 3, cy + 3, false));
+        g.fillEllipse (cx - 4, cy - 4, 8, 8);
+        g.setColour (juce::Colour (0xff22252a));
+        g.drawLine (cx - 2.5f, cy - 2.5f, cx + 2.5f, cy + 2.5f, 1.2f);
+    };
+    screw (7, 9); screw (7, 47); screw (bar.getWidth() - 7, 9); screw (bar.getWidth() - 7, 47);
 
     if (edit)
     {
+        // LED time display in a recessed glass window
+        auto lcd = juce::Rectangle<float> (300, 9, 196, 38);
+        g.setColour (theme::glass::deep);
+        g.fillRoundedRectangle (lcd, 5.0f);
+        g.setColour (theme::glass::rim);
+        g.drawRoundedRectangle (lcd, 5.0f, 1.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.6f), 0, lcd.getY(), juce::Colours::transparentBlack, 0, lcd.getY() + 8, false));
+        g.fillRect (lcd.withHeight (8).reduced (1, 0));
+
         const double pos = edit->getTransport().getPosition().inSeconds();
         const int mins = (int) (pos / 60.0);
         const auto text = juce::String (mins) + ":" + juce::String (std::fmod (pos, 60.0), 3).paddedLeft ('0', 6);
-        g.setColour (p.ink);
-        g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-        g.drawText (text, 330, 0, 160, 56, juce::Justification::centredLeft);
+        const auto led = edit->getTransport().isPlaying() ? theme::neon::lime : theme::neon::amber;
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold));
+        g.setColour (led.withAlpha (0.10f));
+        g.drawText ("8:88.888", lcd.reduced (14, 0), juce::Justification::centredRight);   // unlit segments
+        for (auto [dx, dy, a] : { std::tuple { -1.0f, 0.0f, 0.18f }, { 1.0f, 0.0f, 0.18f }, { 0.0f, -1.0f, 0.18f }, { 0.0f, 1.0f, 0.18f } })
+        {
+            g.setColour (led.withAlpha (a));
+            g.drawText (text, lcd.reduced (14, 0).translated (dx, dy), juce::Justification::centredRight);
+        }
+        g.setColour (led);
+        g.drawText (text, lcd.reduced (14, 0), juce::Justification::centredRight);
     }
 
     if (lockupNight != nullptr && edit)

@@ -30,6 +30,21 @@ inline Palette day()
              juce::Colour (0xffc0362f) };
 }
 
+/** Neon accents for screens and LEDs, from the hardware-plugin references: cyan, magenta,
+    violet, amber, lime, electric blue. Used for waveforms, knob rings and meters. */
+namespace neon
+{
+    const juce::Colour cyan    (0xff2ee6ff), magenta (0xffff3da8), violet (0xff8b5cff), amber (0xffffb23e),
+                       lime    (0xff7cff6b), blue    (0xff4c8dff), orange (0xffff6a3d), gold (0xffffd85a),
+                       pink    (0xffff7ad9);
+}
+
+/** Glass screen colours (the recessed displays in the faceplates). */
+namespace glass
+{
+    const juce::Colour deep (0xff06070a), face (0xff0a0c11), grid (0x14ffffff), rim (0xff1d2028);
+}
+
 namespace space { constexpr int xs = 4, s = 8, m = 16, l = 24, xl = 40; }
 namespace radius { constexpr float s = 4.0f, m = 8.0f, l = 16.0f; }
 } // namespace ld::theme
