@@ -6,6 +6,18 @@ namespace ld
 {
 namespace te = tracktion;
 
+/** Runs engine tasks (renders, analysis) to completion on the calling thread and logs
+    warnings. The app replaces this with one that shows progress in M1. */
+struct SyncUIBehaviour : te::UIBehaviour
+{
+    void runTaskWithProgressBar (te::ThreadPoolJobWithProgress& t) override
+    {
+        while (t.runJob() == juce::ThreadPoolJob::jobNeedsRunningAgain) {}
+    }
+
+    void showWarningMessage (const juce::String& m) override { juce::Logger::writeToLog ("[engine] " + m); }
+};
+
 /** One mic of a multitrack drum recording. */
 struct MicFile
 {

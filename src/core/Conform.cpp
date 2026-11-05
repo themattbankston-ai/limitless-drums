@@ -68,14 +68,22 @@ ConformReport conformToGrid (te::Edit& edit, const std::vector<double>& triggers
             sl->setStart (start + te::TimeDuration::fromSeconds (deltas[k - 1]), false, true);
         }
 
-        // 4. Fill and crossfade: every slice runs on until the next one starts, plus the fade.
+        // 4. Fill and crossfade. A gap is filled by pulling the LATER slice's start back
+        //    (that audio is the previous hit's ringing tail, never a transient); an overlap
+        //    is resolved by trimming the earlier slice. Either way the two overlap by
+        //    exactly the crossfade length, so no hit is ever doubled.
         for (size_t k = 0; k + 1 < slices.size(); ++k)
         {
             auto* a = slices[k];
             auto* b = slices[k + 1];
-            const auto seam = b->getPosition().getStart();
+            const auto aEnd = a->getPosition().getEnd();
+            const auto bStart = b->getPosition().getStart();
 
-            a->setEnd (seam + xf, false);
+            if (bStart > aEnd - xf)
+                b->setStart (aEnd - xf, true, false);   // keep b's audio where it is, reveal earlier audio
+            else
+                a->setEnd (bStart + xf, true);
+
             a->setFadeOutType (te::AudioFadeCurve::convex);
             a->setFadeOut (xf);
             b->setFadeInType (te::AudioFadeCurve::convex);

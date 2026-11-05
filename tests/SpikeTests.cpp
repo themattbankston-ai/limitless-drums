@@ -134,13 +134,8 @@ TEST_CASE ("Crossfades: seams are click-free (and would click without them)", "[
         ld::conformToGrid (*edit, triggers, s);
         auto out = ld::renderTrack (*edit, 0, kSR);
 
-        float worst = 0;
-        for (auto t : triggers)
-        {
-            const double seam = ld::nearestGridTime (edit->tempoSequence, t, 1.0) - s.preRollSec;
-            const int c = (int) std::lround (seam * kSR);
-            worst = std::max (worst, ld::maxStep (out, c - 240, c + 240));
-        }
+        // The tone is steady everywhere except at seams, so the largest step anywhere is the worst seam.
+        float worst = ld::maxStep (out, 1, out.getNumSamples() - 1);
         return worst;
     };
 

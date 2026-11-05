@@ -11,7 +11,7 @@ public:
 
     void initialise (const juce::String&) override
     {
-        engine = std::make_unique<tracktion::Engine> ("Limitless Drums");
+        engine = std::make_unique<tracktion::Engine> ("Limitless Drums", std::make_unique<SyncUIBehaviour>(), nullptr);
         window = std::make_unique<Window> (getApplicationName(), *engine);
     }
 
