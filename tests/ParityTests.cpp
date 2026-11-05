@@ -320,3 +320,116 @@ TEST_CASE ("Parity: inserts match Hitline 4.8")
         CHECK (worst < 1e-5);   // float rounding (-100 dB)
     }
 }
+
+#include "hl/Clean.h"
+#include "hl/Shape.h"
+namespace
+{
+// Compares a render with a golden stored as every STEP-th sample plus total energy.
+double packDiff (const ld::hl::Chs& got, const juce::var& gold, int step)
+{
+    double worst = 0;
+    REQUIRE ((int) got.size() == gold.getArray()->size());
+    for (int c = 0; c < (int) got.size(); ++c)
+    {
+        const auto g = gold[c];
+        REQUIRE ((int) got[(size_t) c].size() == (int) g["len"]);
+        double e = 0;
+        for (float v : got[(size_t) c]) e += (double) v * v;
+        const double ge = g["energy"];
+        worst = std::max (worst, std::abs (e - ge) / std::max (1e-30, ge) * 1e-3);
+        const auto* s = g["s"].getArray();
+        for (int i = 0; i < s->size(); ++i) worst = std::max (worst, std::abs ((double) got[(size_t) c][(size_t) (i * step)] - (double) (*s)[i]));
+    }
+    return worst;
+}
+}
+
+TEST_CASE ("Parity: clean-up, tone/shape and tails match Hitline 4.8")
+{
+    const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
+    if (root.isEmpty()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
+    const auto G = juce::JSON::parse (parityDir().getChildFile ("clean.json"));
+    const auto C = G["cases"];
+    const int step = G["STEP"];
+    const double sr = G["sr"];
+    const long end = (int) G["end"];
+    std::vector<long> ons;
+    for (auto& v : *G["ons"].getArray()) ons.push_back ((long) (int) v);
+    const auto dir = juce::File (root).getChildFile ("SNARE 2 - BB/Center");
+    auto load = [&] (const char* f) { auto w = ld::hl::readWav (dir.getChildFile (f)); ld::hl::Chs c; for (auto& x : w.channels) c.push_back (ld::hl::F32 (x.begin(), x.begin() + end)); return c; };
+    const auto top = load ("SNARE_CENTER_TOP_RR06_V06.wav"), oh = load ("SNARE_CENTER_OH_RR06_V06.wav"), far = load ("SNARE_CENTER_ROOM-FAR_RR06_V06.wav");
+
+    // noise print and denoise
+    const auto np = ld::hl::noisePrint (far[0], sr, ons);
+    REQUIRE (np.has_value() == C["noisePrint"].isObject());
+    CHECK (np->runs == (int) C["noisePrint"]["runs"]);
+    CHECK_THAT (np->floorDb, WithinAbs ((double) C["noisePrint"]["floorDb"], 1e-9));
+    CHECK_THAT (np->trust, WithinAbs ((double) C["noisePrint"]["trust"], 1e-9));
+    const auto* psd = C["noisePrint"]["psdHead"].getArray();
+    for (int k = 0; k < psd->size(); ++k) CHECK_THAT (np->psd[(size_t) k] / (double) (*psd)[k], WithinAbs (1.0, 1e-9));
+    { INFO ("denoise"); CHECK (packDiff ({ ld::hl::denoise (far[0], sr, &*np, 14, 1.6, 0.08) }, C["denoise"], step) < 1e-6); }
+
+    // tails
+    const long h = 3, a = ons[(size_t) h] - 88, b = ons[(size_t) h + 1] - 88;
+    ld::hl::Chs seg;
+    for (auto* set : { &top, &oh, &far }) for (auto& x : *set) seg.push_back (ld::hl::F32 (x.begin() + a, x.begin() + b));
+    const auto plan = ld::hl::tailPlan (seg, sr, 0, -60);
+    CHECK (plan.end == (long) (int) C["tailPlan"]["end"]);
+    CHECK (plan.F == (long) (int) C["tailPlan"]["F"]);
+    CHECK_THAT (plan.need, WithinAbs ((double) C["tailPlan"]["need"], 1e-9));
+    { INFO ("applyTail"); CHECK (packDiff (ld::hl::applyTail (seg, plan, sr), C["applyTail"], step) < 1e-6); }
+
+    // click repair
+    auto clicked = top[0];
+    for (long k = 0; k < (long) ons.size(); ++k) { const long p = ons[(size_t) k] + (long) ld::hl::jsRound (0.3 * sr); clicked[(size_t) p] = (float) (clicked[(size_t) p] + 0.3); clicked[(size_t) p + 1] = (float) (clicked[(size_t) p + 1] - 0.25); }
+    CHECK (ld::hl::repairClicks (clicked, sr, ons) == (int) C["repairCount"]);
+    { INFO ("repair"); CHECK (packDiff ({ clicked }, C["repair"], step) < 1e-6); }
+
+    // bleed gate
+    { INFO ("bleedGate"); CHECK (packDiff (ld::hl::bleedGate (oh, sr, 12), C["bleedGate"], step) < 1e-6); }
+
+    // tone and shape pass
+    {
+        const auto P = C["fxPlan"];
+        ld::hl::FxPlan fp;
+        fp.K = P["K"]; fp.ons = ons; fp.spare = P["spare"]; fp.rampMs = P["rampMs"]; fp.envStepMs = P["envStepMs"]; fp.envT0 = P["envT0"];
+        for (auto& k : *P["kern"].getArray()) { ld::hl::F64 v; for (auto& x : *k.getArray()) v.push_back ((double) x); fp.kern.push_back (v); }
+        for (auto& x : *P["tone"].getArray()) fp.tone.push_back ((int) x);
+        for (auto& x : *P["cut"].getArray()) fp.cut.push_back ((int) x);
+        for (auto& x : *P["hitK"].getArray()) fp.hitK.push_back ((double) x);
+        for (auto& x : *P["env"].getArray()) fp.env.push_back ((double) x);
+        fp.hasComp = true; fp.compWin = (int) P["comp"]["win"]; fp.compLag = (int) P["comp"]["lag"]; fp.repair = P["repair"];
+        INFO ("fxRenderMulti");
+        CHECK (packDiff (ld::hl::fxRenderMulti (oh, sr, fp), C["fx"], step) < 1e-6);
+    }
+
+    // linked taming
+    {
+        ld::hl::TameOptions to;
+        to.ons = ons; for (size_t i = 1; i < ons.size(); ++i) to.bnd.push_back (ons[i]); to.bnd.push_back (end);
+        to.lag = { 0, 22.7, 1254 }; to.depth = 0.6; to.sharp = 0.4;
+        const auto r = ld::hl::tameMulti ({ top, oh, far }, sr, to);
+        const auto* gk = C["tame"]["gains"].getArray();
+        for (int k = 0; k < gk->size(); ++k) CHECK_THAT (r.gains[(size_t) k], WithinAbs ((double) (*gk)[k], 1e-9));
+        for (int t = 0; t < 3; ++t) { INFO ("tame track " << t); CHECK (packDiff (r.tracks[(size_t) t], C["tame"]["tracks"][t], step) < 1e-6); }
+    }
+
+    // resonance scan and library measurements
+    {
+        ld::hl::ResScanOptions ro; ro.ring = true; ro.autoProtect = true;
+        std::vector<long> ends; for (size_t i = 1; i < ons.size(); ++i) ends.push_back (ons[i]); ends.push_back (end);
+        const auto rs = ld::hl::resScan (top[0], ons, ends, sr, ro);
+        const auto K = C["resScan"];
+        CHECK_THAT (rs.f0, WithinAbs ((double) K["f0"], 1e-9));
+        CHECK_THAT (rs.thr, WithinAbs ((double) K["thr"], 1e-9));
+        REQUIRE ((int) rs.peaks.size() == K["peaks"].getArray()->size());
+        for (int i = 0; i < (int) rs.peaks.size(); ++i) { CHECK_THAT (rs.peaks[(size_t) i].f, WithinAbs ((double) K["peaks"][i]["f"], 1e-9)); CHECK_THAT (rs.peaks[(size_t) i].q, WithinAbs ((double) K["peaks"][i]["q"], 1e-9)); }
+        const auto bs = ld::hl::bandSpec (top[0], ons[2], sr);
+        for (int i = 0; i < (int) bs.size(); ++i) CHECK_THAT (bs[(size_t) i], WithinAbs ((double) C["bandSpec"][i], 1e-9));
+        const auto es = ld::hl::envStats (top[0], ons[2], sr);
+        CHECK (es.atk == (long) (int) C["envStats"]["atk"]);
+        CHECK (es.t60 == (long) (int) C["envStats"]["t60"]);
+        CHECK_THAT (es.body, WithinAbs ((double) C["envStats"]["body"], 1e-9));
+    }
+}

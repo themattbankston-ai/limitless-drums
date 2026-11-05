@@ -57,7 +57,9 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Levels.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxCore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxInserts.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxSat.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxSat.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Clean.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Shape.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
