@@ -21,7 +21,7 @@ namespace
     {
         F64 b ((size_t) len, 0.0);
         for (auto& [tr, pol] : items)
-            for (auto& x : tr->ch)
+            for (auto& x : (tr->raw.empty() ? tr->ch : tr->raw))
             {
                 const long N = (long) x.size();
                 for (long n = 0; n < len; ++n) { const long i = start + n + tr->lagInt; if (i >= 0 && i < N) b[(size_t) n] += pol * x[(size_t) i]; }
@@ -234,7 +234,7 @@ LevelResult computeLevels (const std::vector<LevelTrack>& tracks, int refIdx, co
         {
             double pch = 0, pmo = 0;
             const auto& r = R.regions[i];
-            for (auto& x : tr.ch)
+            for (auto& x : (tr.raw.empty() ? tr.ch : tr.raw))
                 for (long k = std::max (0L, r.start + tr.lagInt), e = std::min ((long) x.size(), r.end + tr.lagInt); k < e; ++k)
                 { const double a = x[(size_t) k] < 0 ? -x[(size_t) k] : x[(size_t) k]; if (a > pch) pch = a; }
             for (long k = std::max (0L, r.start + tr.lagInt), e = std::min ((long) tr.mono.size(), r.end + tr.lagInt); k < e; ++k)

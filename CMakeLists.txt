@@ -59,7 +59,8 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxInserts.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxSat.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Clean.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Shape.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Shape.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Session.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
@@ -148,7 +149,8 @@ if(LD_BUILD_TESTS)
         tests/ImportTests.cpp
         tests/ProjectTests.cpp
         tests/LayerTests.cpp
-        tests/ParityTests.cpp)
+        tests/ParityTests.cpp
+        tests/ExportParityTests.cpp)
     target_compile_definitions(LDTests PRIVATE LD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()

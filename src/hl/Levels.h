@@ -29,6 +29,7 @@ struct LevelTrack
 {
     std::string mic, name;
     std::vector<F32> ch;              ///< the signal levels are measured on (after the mix)
+    std::vector<F32> raw;             ///< the recording, for the peak check and the linked sum (empty = ch)
     F32 mono;                         ///< for display peaks
     long lagInt = 0;                  ///< applied delay, rounded
     int pol = 1;

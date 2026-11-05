@@ -288,7 +288,7 @@ double compCurve (const CompModel& o, double L)
     return std::min (0.0, g);
 }
 
-static F32 compGainCurve (const F32& det, double sr, const CompModel& o, double scHpf)
+F32 compGainCurve (const F32& det, double sr, const CompModel& o, double scHpf)
 {
     const size_t n = det.size();
     F32 x = det;

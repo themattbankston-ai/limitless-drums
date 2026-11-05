@@ -19,6 +19,8 @@ struct CompModel
 };
 CompModel compModel (const juce::var& P);
 double compCurve (const CompModel&, double L);
+/** The compressor's gain in dB per sample for a detector signal (the bus compressor drives every channel with it). */
+F32 compGainCurve (const F32& det, double sr, const CompModel&, double scHpf);
 /** Per-hit gain reduction (dB, positive) reported for the meters, when onsets are given. */
 Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector<long>* ons = nullptr, std::vector<F64>* grOut = nullptr);
 } // namespace ld::hl
