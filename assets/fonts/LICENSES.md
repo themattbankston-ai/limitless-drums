@@ -1,0 +1,2 @@
+- Inter and Inter Display: SIL Open Font License 1.1 (https://github.com/rsms/inter)
+- DejaVu Sans Mono: Bitstream Vera / DejaVu license (free to use and embed)

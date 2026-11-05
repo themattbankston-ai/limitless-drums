@@ -1,5 +1,5 @@
 #include "MainComponent.h"
-#include "BinaryData.h"
+#include "SessionModel.h"
 
 namespace ld
 {
@@ -8,72 +8,74 @@ namespace te = tracktion;
 //==============================================================================
 void LookAndFeel::setPalette (const theme::Palette& p)
 {
-    pal = p;
-    setColour (juce::TextButton::textColourOffId, p.ink);
-    setColour (juce::TextButton::textColourOnId, p.ground);
-    setColour (juce::ComboBox::backgroundColourId, p.raised);
-    setColour (juce::ComboBox::textColourId, p.ink);
-    setColour (juce::ComboBox::outlineColourId, p.line);
-    setColour (juce::ComboBox::arrowColourId, p.inkQuiet);
     setColour (juce::PopupMenu::backgroundColourId, p.panel);
     setColour (juce::PopupMenu::textColourId, p.ink);
     setColour (juce::PopupMenu::highlightedBackgroundColourId, p.select.withAlpha (0.25f));
     setColour (juce::PopupMenu::highlightedTextColourId, p.ink);
-}
-
-void LookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down)
-{
-    auto r = b.getLocalBounds().toFloat().reduced (0.5f);
-    const bool on = b.getToggleState();
-    auto fill = on ? pal.signal : pal.raised;
-    if (over) fill = fill.brighter (0.08f);
-    if (down) fill = fill.darker (0.12f);
-    g.setColour (fill);
-    g.fillRoundedRectangle (r, theme::radius::m - 2);
-    g.setColour (on ? pal.signal.brighter (0.2f) : pal.line);
-    g.drawRoundedRectangle (r, theme::radius::m - 2, 1.0f);
+    setColour (juce::AlertWindow::backgroundColourId, p.panel);
+    setColour (juce::AlertWindow::textColourId, p.ink);
+    setColour (juce::TextEditor::backgroundColourId, p.raised);
+    setColour (juce::TextEditor::textColourId, p.ink);
+    setColour (juce::TextButton::buttonColourId, p.raised);
+    setColour (juce::TextButton::textColourOffId, p.ink);
 }
 
 //==============================================================================
-static std::unique_ptr<juce::Drawable> loadSvg (const char* data, int size)
-{
-    return juce::Drawable::createFromImageData (data, (size_t) size);
-}
-
 MainComponent::MainComponent (te::Engine& e) : engine (e)
 {
     setLookAndFeel (&lnf);
-    lockupNight = loadSvg (BinaryData::lockuphorizontalnight_svg, BinaryData::lockuphorizontalnight_svgSize);
-    lockupDay = loadSvg (BinaryData::lockuphorizontalday_svg, BinaryData::lockuphorizontalday_svgSize);
+    setOpaque (true);
 
-    for (auto* b : { &importButton, &playButton, &startButton, &fitButton, &themeButton })
+    root.addChild (&studio);
+    root.onResize() += [this] { studio.setBounds (0, 0, root.width(), root.height()); };
+    host = std::make_unique<ui::VisageHost> (root);
+    addAndMakeVisible (*host);
+
+    studio.onImport = [this] { if (! edit) chooseFiles(); };
+    studio.onPlay = [this] { togglePlay(); };
+    studio.onRewind = [this] { if (edit) edit->getTransport().setPosition (te::TimePosition()); };
+    studio.onRecord = [this] { setNotice ("Recording comes with Song mode."); };
+    studio.onSeek = [this] (double t) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (t)); };
+    studio.onThemeToggled = [this] { dayMode = ! dayMode; applyTheme(); };
+    studio.onHistoryToggled = [this] { studio.setHistoryVisible (! studio.isHistoryVisible()); };
+    studio.onHistoryJump = [this] (int row) { jumpHistory (row); };
+    studio.onRename = [this] (int i) { renameTrack (i); };
+    studio.onKey = [this] (const visage::KeyEvent& k) { return handleKey (k); };
+    studio.onFilesDropped = [this] (const std::vector<std::string>& paths)
     {
-        addAndMakeVisible (b);
-        b->setWantsKeyboardFocus (false);
-    }
-    addChildComponent (takeBox);
-    takeBox.setWantsKeyboardFocus (false);
-
-    importButton.onClick = [this] { chooseFiles(); };
-    playButton.onClick = [this] { togglePlay(); };
-    startButton.onClick = [this] { if (edit) edit->getTransport().setPosition (te::TimePosition()); };
-    fitButton.onClick = [this] { if (view) view->zoomToFit(); };
-    themeButton.onClick = [this] { dayMode = ! dayMode; applyTheme(); };
-    takeBox.onChange = [this] { const int i = takeBox.getSelectedItemIndex(); if (i != currentTake && i >= 0) openTake (i); };
+        juce::Array<juce::File> items;
+        for (auto& p : paths) items.add (juce::File (juce::String (p)));
+        // Let the drop finish before any dialog opens.
+        juce::MessageManager::callAsync ([this, items] { importItems (items); });
+    };
+    studio.onSolo = [this] (int i, bool on) { auto t = audioTracks(); if (i < (int) t.size()) { t[(size_t) i]->setSolo (on); pushTrackStates(); } };
+    studio.onMute = [this] (int i, bool on) { auto t = audioTracks(); if (i < (int) t.size()) { t[(size_t) i]->setMute (on); pushTrackStates(); } };
+    studio.onVolume = [this] (int i, float db)
+    {
+        auto t = audioTracks();
+        if (i < (int) t.size()) if (auto* vp = t[(size_t) i]->getVolumePlugin()) { vp->setVolumeDb (db); pushTrackStates(); }
+    };
+    studio.onPan = [this] (int i, float pan)
+    {
+        auto t = audioTracks();
+        if (i < (int) t.size()) if (auto* vp = t[(size_t) i]->getVolumePlugin()) { vp->setPan (pan); pushTrackStates(); }
+    };
+    studio.setStep (ui::Step::importStep);
 
     auto& dm = engine.getDeviceManager().deviceManager;
     if (auto* dev = dm.getCurrentAudioDevice())
         deviceText = dev->getName() + "  ·  " + juce::String (dev->getCurrentSampleRate() / 1000.0, 1) + " kHz";
     else
         deviceText = "No audio output";
+    studio.setDeviceText ((deviceText + "  ·  Limitless Drums " + LD_VERSION_STRING).toStdString());
 
     setWantsKeyboardFocus (true);
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (this);
 #endif
     applyTheme();
-    startTimerHz (20);
-    setSize (1280, 800);
+    startTimerHz (60);
+    setSize (1600, 1000);
 }
 
 MainComponent::~MainComponent()
@@ -82,20 +84,46 @@ MainComponent::~MainComponent()
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
 #endif
-    history = nullptr;
-    view = nullptr;
+    shutdownUi();
     if (edit) edit->getTransport().stop (false, true);
+    if (edit) edit->getUndoManager().removeChangeListener (this);
     edit = nullptr;
     setLookAndFeel (nullptr);
+}
+
+void MainComponent::shutdownUi()
+{
+    // Stop the GPU render loop before any frame it draws goes away.
+    if (host) host->shutdown();
+    root.removeChild (&studio);
+    host = nullptr;
 }
 
 void MainComponent::applyTheme()
 {
     lnf.setPalette (palette());
-    themeButton.setButtonText (dayMode ? "Night" : "Day");
+    studio.setDayMode (dayMode);
     sendLookAndFeelChange();
-    repaint();
-    if (view) view->repaint();
+}
+
+void MainComponent::setNotice (const juce::String& s) { studio.setNotice (s.toStdString()); }
+
+std::vector<te::AudioTrack*> MainComponent::audioTracks() const
+{
+    if (! edit) return {};
+    auto list = te::getAudioTracks (*edit);
+    return { list.begin(), list.end() };
+}
+
+void MainComponent::pushTrackStates()
+{
+    auto tracks = audioTracks();
+    for (int i = 0; i < (int) tracks.size(); ++i)
+    {
+        auto* t = tracks[(size_t) i];
+        auto* vp = t->getVolumePlugin();
+        studio.setTrackState (i, t->isSolo (false), t->isMuted (false), vp ? vp->getVolumeDb() : 0.0f, vp ? vp->getPan() : 0.0f);
+    }
 }
 
 //==============================================================================
@@ -113,14 +141,6 @@ void MainComponent::chooseFiles()
                           });
 }
 
-void MainComponent::filesDropped (const juce::StringArray& paths, int, int)
-{
-    dragOver = false;
-    juce::Array<juce::File> items;
-    for (auto& p : paths) items.add (juce::File (p));
-    importItems (items);
-}
-
 void MainComponent::importItems (const juce::Array<juce::File>& items)
 {
     for (auto& f : items)
@@ -128,33 +148,37 @@ void MainComponent::importItems (const juce::Array<juce::File>& items)
             return openProject (f);
 
     auto planned = planImport (items);
-
     if (planned.empty())
     {
-        notice = "No WAV or AIFF files found there.";
-        repaint();
+        setNotice ("No WAV or AIFF files found there.");
         return;
     }
 
     takes = std::move (planned);
-    takeBox.clear (juce::dontSendNotification);
-    for (int i = 0; i < (int) takes.size(); ++i)
-        takeBox.addItem (takes[(size_t) i].title + "  (" + juce::String (takes[(size_t) i].mics.size()) + ")", i + 1);
-    takeBox.setVisible (takes.size() > 1);
     currentTake = -1;
-    openTake (0);
+    if (takes.size() == 1)
+        return openTake (0);
+
+    // Several takes: pick one now. Which take a session is gets decided at import, not in the header.
+    juce::PopupMenu m;
+    m.addSectionHeader ("Open which take?");
+    for (int i = 0; i < (int) takes.size(); ++i)
+        m.addItem (i + 1, takes[(size_t) i].title + "  (" + juce::String (takes[(size_t) i].mics.size()) + " mics)");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (getScreenBounds().withSizeKeepingCentre (2, 2)),
+                     [this] (int r) { if (r > 0) openTake (r - 1); });
 }
 
 void MainComponent::closeEdit()
 {
-    history = nullptr;
-    view = nullptr;
     if (edit)
     {
         edit->getTransport().stop (false, true);
+        edit->getUndoManager().removeChangeListener (this);
         project::autosaveFileFor (projectFile, sessionKey).deleteFile();
     }
     edit = nullptr;
+    studio.setModel ({});
+    studio.setHistory ({}, 0);
 }
 
 void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<MicRole> roles)
@@ -164,17 +188,15 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
     project::storeRoles (*edit, currentRoles);
     edit->resetChangedStatus();
     edit->getUndoManager().clearUndoHistory();
+    edit->getUndoManager().addChangeListener (this);
 
-    view = std::make_unique<SessionView> (*edit, currentRoles, [this] { return palette(); });
-    addAndMakeVisible (*view);
-    history = std::make_unique<HistoryPanel> (edit->getUndoManager(), [this] { return palette(); });
-    addChildComponent (*history);
-    history->setVisible (showHistory);
-    resized();
-    view->zoomToFit();
+    const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
+                     : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
+    studio.setModel (buildStudioModel (*edit, currentRoles, title));
+    studio.setStep (studio.model().layers.empty() ? ui::Step::align : ui::Step::levels);
+    updateHistory();
     grabKeyboardFocus();
     updateTitle();
-    repaint();
 
     // The engine settles a few internal values just after loading; drop those from the
     // history so it starts clean and only lists your own edits.
@@ -187,6 +209,7 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
         if (onlyUnnamed) um.clearUndoHistory();
         e->resetChangedStatus();
         sp->updateTitle();
+        sp->updateHistory();
     });
 }
 
@@ -202,20 +225,18 @@ void MainComponent::openTake (int index)
     auto& take = takes[(size_t) index];
     auto newEdit = createSessionEdit (engine, take.mics, 120.0, te::Edit::EditRole::forEditing);
     currentTake = index;
-    takeBox.setSelectedItemIndex (index, juce::dontSendNotification);
 
     if (newEdit == nullptr)
     {
-        notice = "Couldn't open " + take.title + ".";
-        repaint();
+        setNotice ("Couldn't open " + take.title + ".");
         return;
     }
 
-    notice = take.warnings.joinIntoString ("  ");
+    juce::String notice = take.warnings.joinIntoString ("  ");
     if (! take.references.empty())
         notice = (notice.isNotEmpty() ? notice + "  " : juce::String())
                  + juce::String ((int) take.references.size()) + " one-shot reference found (used later for reference matching).";
-
+    setNotice (notice);
     showEdit (std::move (newEdit), take.roles);
 }
 
@@ -226,17 +247,15 @@ void MainComponent::openProject (const juce::File& f)
     auto loaded = project::open (engine, f, roles, missing);
     if (loaded == nullptr)
     {
-        notice = "Couldn't open " + f.getFileName() + ".";
-        repaint();
+        setNotice ("Couldn't open " + f.getFileName() + ".");
         return;
     }
 
     closeEdit();
     takes.clear();
-    takeBox.setVisible (false);
     projectFile = f;
-    notice = missing.isEmpty() ? juce::String()
-                               : juce::String (missing.size()) + " audio file(s) are missing: " + missing.joinIntoString (", ");
+    setNotice (missing.isEmpty() ? juce::String()
+                                 : juce::String (missing.size()) + " audio file(s) are missing: " + missing.joinIntoString (", "));
     showEdit (std::move (loaded), roles);
 }
 
@@ -263,14 +282,11 @@ void MainComponent::saveProject (bool saveAs, std::function<void (bool)> done)
         {
             oldAutosave.deleteFile();
             projectFile = f;
-            notice = "Saved " + f.getFileName();
+            setNotice ("Saved " + f.getFileName());
         }
         else
-        {
-            notice = "Couldn't save to " + f.getFullPathName();
-        }
+            setNotice ("Couldn't save to " + f.getFullPathName());
         updateTitle();
-        repaint();
         if (done) done (ok);
     };
 
@@ -296,8 +312,73 @@ void MainComponent::undo (bool redo)
     if (! edit) return;
     auto& um = edit->getUndoManager();
     if (redo) um.redo(); else um.undo();
-    repaint();
-    if (view) view->repaint();
+}
+
+void MainComponent::jumpHistory (int row)
+{
+    if (! edit) return;
+    auto& um = edit->getUndoManager();
+    int delta = row - um.getUndoDescriptions().size();
+    while (delta < 0 && um.undo()) ++delta;
+    while (delta > 0 && um.redo()) --delta;
+}
+
+void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    updateHistory();
+    // Undo can rename tracks; keep the strips in step.
+    if (edit)
+    {
+        auto tracks = audioTracks();
+        auto m = studio.model();
+        bool renamed = false;
+        for (size_t i = 0; i < tracks.size() && i < m.tracks.size(); ++i)
+            if (m.tracks[i].name != tracks[i]->getName().toStdString()) { m.tracks[i].name = tracks[i]->getName().toStdString(); renamed = true; }
+        if (renamed)
+        {
+            const auto hit = studio.selectedHit;
+            const auto step = studio.step();
+            const auto view = studio.view;
+            studio.setModel (std::move (m));
+            studio.selectedHit = hit;
+            studio.view = view;
+            studio.setStep (step);
+        }
+    }
+}
+
+void MainComponent::updateHistory()
+{
+    if (! edit) return studio.setHistory ({}, 0);
+    auto& um = edit->getUndoManager();
+    std::vector<std::string> rows { "Opened session" };
+    auto past = um.getUndoDescriptions();
+    for (int i = past.size(); --i >= 0;) rows.push_back ((past[i].isNotEmpty() ? past[i] : juce::String ("Edit")).toStdString());
+    for (auto& f : um.getRedoDescriptions()) rows.push_back ((f.isNotEmpty() ? f : juce::String ("Edit")).toStdString());
+    studio.setHistory (std::move (rows), past.size());
+}
+
+void MainComponent::renameTrack (int index)
+{
+    auto tracks = audioTracks();
+    if (index < 0 || index >= (int) tracks.size()) return;
+    auto* track = tracks[(size_t) index];
+
+    auto* w = new juce::AlertWindow ("Rename track", {}, juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("name", track->getName());
+    w->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, index] (int r)
+    {
+        const auto newName = w->getTextEditorContents ("name").trim();
+        auto t = audioTracks();
+        if (r == 1 && newName.isNotEmpty() && index < (int) t.size() && newName != t[(size_t) index]->getName())
+        {
+            edit->getUndoManager().beginNewTransaction ("Rename " + t[(size_t) index]->getName() + " to " + newName);
+            t[(size_t) index]->setName (newName);
+            changeListenerCallback (nullptr);
+        }
+    }), true);
 }
 
 void MainComponent::updateTitle()
@@ -337,8 +418,7 @@ void MainComponent::offerRecovery()
     auto files = project::findRecoverableAutosaves();
     if (files.isEmpty()) return;
 
-    files.sort();
-    auto newest = files.getLast();
+    auto newest = files.getFirst();
     for (auto& f : files) if (f.getLastModificationTime() > newest.getLastModificationTime()) newest = f;
 
     auto options = juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
@@ -355,16 +435,15 @@ void MainComponent::offerRecovery()
             openProject (newest);
             projectFile = original.existsAsFile() ? original : juce::File();
             if (edit) edit->markAsChanged();
-            notice = "Restored unsaved work. Save to keep it.";
+            setNotice ("Restored unsaved work. Save to keep it.");
             updateTitle();
-            repaint();
         }
         for (auto& f : files) if (f != newest || result != 1) f.deleteFile();
     });
 }
 
 //==============================================================================
-enum MenuIDs { miNew = 1, miOpen, miImport, miSave, miSaveAs, miUndo, miRedo, miHistory, miTheme, miFit };
+enum MenuIDs { miOpen = 1, miImport, miSave, miSaveAs, miUndo, miRedo, miHistory, miTheme, miFit };
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 {
@@ -372,11 +451,11 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     const bool hasEdit = edit != nullptr;
     if (index == 0)
     {
-        m.addItem (miOpen, "Open Project\u2026\tCmd+O");
-        m.addItem (miImport, "Import Tracks\u2026\tCmd+I");
+        m.addItem (miOpen, "Open Project…\tCmd+O");
+        m.addItem (miImport, "Import Tracks…\tCmd+I");
         m.addSeparator();
         m.addItem (miSave, "Save\tCmd+S", hasEdit);
-        m.addItem (miSaveAs, "Save As\u2026\tShift+Cmd+S", hasEdit);
+        m.addItem (miSaveAs, "Save As…\tShift+Cmd+S", hasEdit);
     }
     else if (index == 1)
     {
@@ -387,7 +466,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     }
     else
     {
-        m.addItem (miHistory, "Show History", true, showHistory);
+        m.addItem (miHistory, "Show History", true, studio.isHistoryVisible());
         m.addItem (miTheme, dayMode ? "Night Mode" : "Day Mode");
         m.addItem (miFit, "Zoom to Fit\tF", hasEdit);
     }
@@ -404,9 +483,9 @@ void MainComponent::menuItemSelected (int id, int)
         case miSaveAs:  saveProject (true); break;
         case miUndo:    undo (false); break;
         case miRedo:    undo (true); break;
-        case miHistory: showHistory = ! showHistory; if (history) history->setVisible (showHistory); resized(); break;
+        case miHistory: studio.setHistoryVisible (! studio.isHistoryVisible()); break;
         case miTheme:   dayMode = ! dayMode; applyTheme(); break;
-        case miFit:     if (view) view->zoomToFit(); break;
+        case miFit:     studio.zoomToFit(); break;
         default: break;
     }
 }
@@ -419,166 +498,64 @@ void MainComponent::togglePlay()
     else t.play (false);
 }
 
+bool MainComponent::handleKey (const visage::KeyEvent& k)
+{
+    using KC = visage::KeyCode;
+    const auto code = k.keyCode();
+    const double pos = edit ? edit->getTransport().getPosition().inSeconds() : 0.0;
+    if (k.isMainModifier())
+    {
+        if (code == KC::O) { chooseProject(); return true; }
+        if (code == KC::I) { chooseFiles(); return true; }
+        if (code == KC::S) { saveProject (k.isShiftDown()); return true; }
+        if (code == KC::Z) { undo (k.isShiftDown()); return true; }
+        return false;
+    }
+    if (code == KC::Space)  { togglePlay(); return true; }
+    if (code == KC::Return && edit) { edit->getTransport().setPosition (te::TimePosition()); return true; }
+    if (code == KC::Equals) { studio.zoomBy (1.5, pos); return true; }
+    if (code == KC::Minus)  { studio.zoomBy (1.0 / 1.5, pos); return true; }
+    if (code == KC::F)      { studio.zoomToFit(); return true; }
+    return false;
+}
+
 bool MainComponent::keyPressed (const juce::KeyPress& k)
 {
-    if (k == juce::KeyPress::spaceKey)        { togglePlay(); return true; }
-    if (k == juce::KeyPress::returnKey && edit) { edit->getTransport().setPosition (te::TimePosition()); return true; }
-    if (k.getTextCharacter() == '=' && view)   { view->zoomBy (1.5, edit->getTransport().getPosition().inSeconds()); return true; }
-    if (k.getTextCharacter() == '-' && view)   { view->zoomBy (1.0 / 1.5, edit->getTransport().getPosition().inSeconds()); return true; }
-    if (k.getTextCharacter() == 'f' && view)   { view->zoomToFit(); return true; }
+    // Keys reach here only when the GPU view doesn't have focus; route them the same way.
     const auto mods = k.getModifiers();
-    if (mods.isCommandDown())
-    {
-        const int c = juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) k.getKeyCode());
-        if (c == 'O') { chooseProject(); return true; }
-        if (c == 'I') { chooseFiles(); return true; }
-        if (c == 'S') { saveProject (mods.isShiftDown()); return true; }
-        if (c == 'Z') { undo (mods.isShiftDown()); return true; }
-    }
-    return false;
+    int vm = 0;
+    if (mods.isCommandDown()) vm |= visage::kModifierCmd;
+    if (mods.isShiftDown()) vm |= visage::kModifierShift;
+    auto ch = (int) juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode());
+    if (k == juce::KeyPress::spaceKey) ch = ' ';
+    if (k == juce::KeyPress::returnKey) ch = '\n';
+    if (k.getTextCharacter() == '=' || k.getTextCharacter() == '-') ch = (int) k.getTextCharacter();
+    return handleKey (visage::KeyEvent ((visage::KeyCode) ch, vm, true));
 }
 
 void MainComponent::timerCallback()
 {
-    const bool playing = edit && edit->getTransport().isPlaying();
-    playButton.setToggleState (playing, juce::dontSendNotification);
-    playButton.setButtonText (playing ? "Stop" : "Play");
-    if (edit) repaint (0, 0, getWidth(), 56);
-
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
     if (edit)
     {
+        auto& t = edit->getTransport();
+        studio.setTransport (t.getPosition().inSeconds(), t.isPlaying());
+
         const bool dirty = edit->hasChangedSinceSaved();
         if (dirty != lastDirty) { lastDirty = dirty; updateTitle(); }
-        if (++autosaveTicks >= 20 * 30)   // every 30 s
+        if (++autosaveTicks >= 60 * 30)   // every 30 s
         {
             autosaveTicks = 0;
             project::autosave (*edit, project::autosaveFileFor (projectFile, sessionKey));
         }
     }
+    studio.tick (now);
 }
 
 //==============================================================================
-void MainComponent::paint (juce::Graphics& g)
-{
-    const auto p = palette();
-    g.fillAll (p.ground);
-
-    // Toolbar: a machined faceplate with screws, like a rack unit
-    const bool day = dayMode;
-    auto bar = getLocalBounds().removeFromTop (56).toFloat();
-    g.setGradientFill (juce::ColourGradient (p.raised.brighter (day ? 0.08f : 0.1f), 0, 0, p.panel.darker (day ? 0.04f : 0.3f), 0, bar.getBottom(), false));
-    g.fillRect (bar);
-    // brushed texture: faint horizontal streaks
-    juce::Random grain (7);
-    for (int y = 2; y < (int) bar.getBottom() - 2; y += 2)
-    {
-        g.setColour ((grain.nextBool() ? juce::Colours::white : juce::Colours::black).withAlpha (day ? 0.025f : 0.035f));
-        g.fillRect (0.0f, (float) y, bar.getWidth(), 1.0f);
-    }
-    g.setColour (juce::Colours::white.withAlpha (day ? 0.6f : 0.07f));
-    g.fillRect (0.0f, 0.0f, bar.getWidth(), 1.0f);
-    g.setColour (juce::Colours::black.withAlpha (day ? 0.25f : 0.7f));
-    g.fillRect (0.0f, bar.getBottom() - 1.0f, bar.getWidth(), 1.0f);
-
-    auto screw = [&] (float cx, float cy)
-    {
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffb9bec6), cx - 3, cy - 3, juce::Colour (0xff4a4e55), cx + 3, cy + 3, false));
-        g.fillEllipse (cx - 4, cy - 4, 8, 8);
-        g.setColour (juce::Colour (0xff22252a));
-        g.drawLine (cx - 2.5f, cy - 2.5f, cx + 2.5f, cy + 2.5f, 1.2f);
-    };
-    screw (7, 9); screw (7, 47); screw (bar.getWidth() - 7, 9); screw (bar.getWidth() - 7, 47);
-
-    if (edit)
-    {
-        // LED time display in a recessed glass window
-        auto lcd = juce::Rectangle<float> (300, 9, 196, 38);
-        g.setColour (theme::glass::deep);
-        g.fillRoundedRectangle (lcd, 5.0f);
-        g.setColour (theme::glass::rim);
-        g.drawRoundedRectangle (lcd, 5.0f, 1.0f);
-        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.6f), 0, lcd.getY(), juce::Colours::transparentBlack, 0, lcd.getY() + 8, false));
-        g.fillRect (lcd.withHeight (8).reduced (1, 0));
-
-        const double pos = edit->getTransport().getPosition().inSeconds();
-        const int mins = (int) (pos / 60.0);
-        const auto text = juce::String (mins) + ":" + juce::String (std::fmod (pos, 60.0), 3).paddedLeft ('0', 6);
-        const auto led = edit->getTransport().isPlaying() ? theme::neon::lime : theme::neon::amber;
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold));
-        g.setColour (led.withAlpha (0.10f));
-        g.drawText ("8:88.888", lcd.reduced (14, 0), juce::Justification::centredRight);   // unlit segments
-        for (auto [dx, dy, a] : { std::tuple { -1.0f, 0.0f, 0.18f }, { 1.0f, 0.0f, 0.18f }, { 0.0f, -1.0f, 0.18f }, { 0.0f, 1.0f, 0.18f } })
-        {
-            g.setColour (led.withAlpha (a));
-            g.drawText (text, lcd.reduced (14, 0).translated (dx, dy), juce::Justification::centredRight);
-        }
-        g.setColour (led);
-        g.drawText (text, lcd.reduced (14, 0), juce::Justification::centredRight);
-    }
-
-    if (lockupNight != nullptr && edit)
-        (dayMode ? lockupDay : lockupNight)->drawWithin (g, juce::Rectangle<float> ((float) getWidth() - 380, 14, 150, 28),
-                                                        juce::RectanglePlacement::xRight | juce::RectanglePlacement::yMid, 1.0f);
-
-    // Footer
-    auto footer = getLocalBounds().removeFromBottom (26);
-    g.setColour (p.panel);
-    g.fillRect (footer);
-    g.setColour (p.inkQuiet);
-    g.setFont (juce::FontOptions (12.0f));
-    g.drawText ((notice.isNotEmpty() ? notice + "     " : juce::String()) + deviceText + "  ·  Limitless Drums " + LD_VERSION_STRING,
-                footer.reduced (16, 0), juce::Justification::centredLeft, true);
-
-    if (! edit)
-    {
-        // Empty state: the logo and a drop target
-        auto area = getLocalBounds().withTrimmedTop (56).withTrimmedBottom (26).reduced (theme::space::xl);
-        auto panel = area.withSizeKeepingCentre (std::min (area.getWidth(), 760), std::min (area.getHeight(), 420)).toFloat();
-        g.setColour (dragOver ? p.select.withAlpha (0.12f) : p.panel);
-        g.fillRoundedRectangle (panel, theme::radius::l);
-        if (dragOver)
-        {
-            g.setColour (p.select);
-            g.drawRoundedRectangle (panel.reduced (1.0f), theme::radius::l, 2.0f);
-        }
-
-        if (auto* lockup = dayMode ? lockupDay.get() : lockupNight.get())
-            lockup->drawWithin (g, panel.withTrimmedBottom (150).reduced (110.0f, 50.0f), juce::RectanglePlacement::centred, 1.0f);
-
-        g.setColour (p.ink);
-        g.setFont (juce::FontOptions (17.0f, juce::Font::bold));
-        g.drawText ("Drop a folder of drum tracks here", panel.withTrimmedTop (panel.getHeight() - 140).withHeight (28),
-                    juce::Justification::centred);
-        g.setColour (p.inkQuiet);
-        g.setFont (juce::FontOptions (13.0f));
-        g.drawText ("WAV or AIFF from any DAW. Tracks sort into kick, snare, toms, overheads, then rooms, and get renamed for you.",
-                    panel.withTrimmedTop (panel.getHeight() - 108).withHeight (22).reduced (24, 0), juce::Justification::centred);
-    }
-}
-
 void MainComponent::resized()
 {
-    auto bar = getLocalBounds().removeFromTop (56).reduced (16, 12);
-    importButton.setBounds (bar.removeFromLeft (84));
-    bar.removeFromLeft (16);
-    startButton.setBounds (bar.removeFromLeft (40));
-    bar.removeFromLeft (6);
-    playButton.setBounds (bar.removeFromLeft (72));
-    themeButton.setBounds (bar.removeFromRight (64));
-    bar.removeFromRight (8);
-    fitButton.setBounds (bar.removeFromRight (52));
-    bar.removeFromRight (8);
-    takeBox.setBounds (bar.removeFromRight (220).withTrimmedLeft (0));
-
-    startButton.setVisible (edit != nullptr);
-    playButton.setVisible (edit != nullptr);
-    fitButton.setVisible (edit != nullptr);
-
-    auto content = getLocalBounds().withTrimmedTop (56).withTrimmedBottom (26);
-    if (history && showHistory)
-        history->setBounds (content.removeFromRight (240));
-    if (view)
-        view->setBounds (content);
+    if (host) host->setBounds (getLocalBounds());
 }
 
 } // namespace ld

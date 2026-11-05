@@ -43,7 +43,8 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Naming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Project.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Project.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Layers.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
@@ -70,6 +71,22 @@ endif()
 
 # --- The app ---------------------------------------------------------------------------------
 if(LD_BUILD_APP)
+    # Visage: the GPU interface (Metal on macOS, Vulkan on Linux). Pinned to an exact commit.
+    # freetype is declared first from its GitHub mirror so every machine can fetch it.
+    set(VISAGE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(VISAGE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(VISAGE_WAYLAND OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(freetype
+        GIT_REPOSITORY https://github.com/freetype/freetype.git
+        GIT_TAG        VER-2-14-1
+        GIT_SHALLOW    TRUE
+        EXCLUDE_FROM_ALL)
+    FetchContent_Declare(visage
+        GIT_REPOSITORY https://github.com/VitalAudio/visage.git
+        GIT_TAG        238d1b542002e03ad42accd076f938304e67971d
+        GIT_SHALLOW    FALSE)
+    FetchContent_MakeAvailable(visage)
+
     juce_add_gui_app(LimitlessDrums
         PRODUCT_NAME "Limitless Drums"
         COMPANY_NAME "Limitless Drums"
@@ -84,15 +101,23 @@ if(LD_BUILD_APP)
     juce_add_binary_data(LDAssets SOURCES
         assets/logo/mark-night.svg
         assets/logo/lockup-horizontal-night.svg
-        assets/logo/lockup-horizontal-day.svg)
+        assets/logo/lockup-horizontal-day.svg
+        assets/fonts/InterDisplay-SemiBold.otf
+        assets/fonts/InterDisplay-Bold.otf
+        assets/fonts/Inter-Medium.otf
+        assets/fonts/DejaVuSansMono.ttf
+        assets/fonts/DejaVuSansMono-Bold.ttf)
 
     target_sources(LimitlessDrums PRIVATE
         src/app/Main.cpp
         src/app/MainComponent.cpp
-        src/app/SessionView.cpp)
+        src/app/SessionModel.cpp
+        src/app/ui/VisageHost.cpp
+        src/app/ui/Studio.cpp)
     target_link_libraries(LimitlessDrums PRIVATE
         LDShared
         LDAssets
+        visage
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags)
 endif()
@@ -106,7 +131,8 @@ if(LD_BUILD_TESTS)
         tests/SpikeTests.cpp
         tests/NamingTests.cpp
         tests/ImportTests.cpp
-        tests/ProjectTests.cpp)
+        tests/ProjectTests.cpp
+        tests/LayerTests.cpp)
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()
     add_test(NAME LDTests COMMAND LDTests --reporter console --durations yes)
