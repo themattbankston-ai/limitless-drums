@@ -138,3 +138,12 @@ TEST_CASE ("A take opened from files goes through the whole chain")
     CHECK (L.valid);
 }
 
+
+TEST_CASE ("Short mic names from session exports are read like Hitline")
+{
+    using ld::hl::cleanMicName;
+    CHECK (cleanMicName ("SNARE_CENTER_V06_RR06_Btm.cm6.wav", "snare", "Center") == "Bottom");
+    CHECK (cleanMicName ("SNARE_CENTER_V06_RR06_RmCls.cm6.wav", "snare", "Center") == "Room Close");
+    CHECK (cleanMicName ("SNARE_CENTER_V06_RR06_RnCrsh.cm6.wav", "snare", "Center") == "Room Crush");
+    CHECK (cleanMicName ("SNARE_CENTER_V06_RR06_Top.cm6.wav", "snare", "Center") == "Top");
+}

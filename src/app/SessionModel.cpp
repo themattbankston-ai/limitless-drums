@@ -96,7 +96,16 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
         if (auto* vp = t->getVolumePlugin()) { info.volumeDb = vp->getVolumeDb(); info.pan = vp->getPan(); }
 
         hl::F32 mono;
-        if (map[i] >= 0) { const auto& tr = S->tracks[(size_t) map[i]]; mono = tr.mono; info.stereo = tr.ch.size() > 1; }
+        if (map[i] >= 0)
+        {
+            // Hitline's own mic name ("Room Close", not the file's "RmCls.cm6"), and its colour from that name
+            const auto& tr = S->tracks[(size_t) map[i]];
+            mono = tr.mono; info.stereo = tr.ch.size() > 1;
+            info.name = tr.mic;
+            const auto r = classifyMic (juce::String (tr.mic));
+            info.isRoom = isRoom (r.kind);
+            std::tie (info.colourA, info.colourB) = roleColours (r);
+        }
         else if (std::unique_ptr<juce::AudioFormatReader> r { formats.createReaderFor (files[i]) })
         {
             sr = r->sampleRate;
