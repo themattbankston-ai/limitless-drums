@@ -53,7 +53,8 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Fft.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Align.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Resolve.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Tune.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Tune.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Levels.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0

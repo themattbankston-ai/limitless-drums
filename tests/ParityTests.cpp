@@ -9,6 +9,7 @@
 #include "hl/Align.h"
 #include "hl/Resolve.h"
 #include "hl/Tune.h"
+#include "hl/Levels.h"
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 using Catch::Matchers::WithinAbs;
 
@@ -218,5 +219,63 @@ TEST_CASE ("Parity: tuned renders match Hitline 4.8's resampler")
         for (size_t i = 0; i < out.size(); ++i) worst = std::max (worst, (double) std::abs (out[i] - golden[i]));
         INFO ("largest difference " << worst);
         CHECK (worst < 1e-6);   // float rounding only (-120 dB)
+    }
+}
+
+TEST_CASE ("Parity: levels match Hitline 4.8")
+{
+    auto all = cases();
+    if (all.empty()) { WARN ("LD_PARITY_SESSIONS not set; parity skipped"); return; }
+    for (auto& c : all)
+    {
+        INFO (c.name);
+        const auto& k = c.key;
+        const int ref = k["refIdx"];
+        const auto* tracks = k["tracks"].getArray();
+        std::vector<ld::hl::LevelTrack> lt;
+        double sr = 0;
+        for (int t = 0; t < tracks->size(); ++t)
+        {
+            const auto kt = (*tracks)[t];
+            auto wav = trackWav (c, t);
+            sr = wav.sampleRate;
+            ld::hl::LevelTrack tr;
+            tr.mic = kt["mic"].toString().toStdString(); tr.name = kt["name"].toString().toStdString();
+            tr.mono = ld::hl::monoOf (wav.channels);
+            tr.ch = std::move (wav.channels);
+            tr.lagInt = (long) ld::hl::jsRound ((double) kt["lag"]);
+            tr.pol = kt["pol"];
+            lt.push_back (std::move (tr));
+        }
+        std::vector<long> onsets;
+        for (auto& v : *k["onsets"].getArray()) onsets.push_back ((long) (int) v);
+        ld::hl::Det det; det.V = k["det"]["V"]; det.RR = k["det"]["RR"]; det.order = k["det"]["order"].toString().toStdString(); det.prerollMs = k["det"]["prerollMs"];
+        const auto kl = k["lev"];
+        ld::hl::LevelSettings lev;
+        lev.mode = kl["mode"].toString().toStdString(); lev.source = kl["source"].toString().toStdString(); lev.winMs = kl["winMs"];
+        lev.curve = kl["curve"].toString().toStdString(); lev.shape = kl["shape"]; lev.midiRange = kl["midiRange"].toString().toStdString();
+        lev.stepDb = kl["stepDb"]; lev.rangeDb = kl["rangeDb"]; lev.anchor = kl["anchor"].toString().toStdString(); lev.offsetDb = kl["offsetDb"];
+        lev.std = kl["std"].toString().toStdString(); lev.steps = kl["steps"].toString().toStdString();
+        ld::hl::ExportLevelSettings ex; ex.maxLenS = k["exp"]["maxLenS"]; ex.trim = k["exp"]["trim"].toString().toStdString(); ex.ceilDb = k["exp"]["ceilDb"];
+        ld::hl::F64 ratios;
+        if (k["tinfo"].isObject()) for (auto& r : *k["tinfo"]["ratios"].getArray()) ratios.push_back ((double) r);
+
+        const auto R = ld::hl::computeLevels (lt, ref, onsets, sr, det, lev, ex, k["drum"].toString().toStdString(), ratios);
+        REQUIRE (R.valid);
+        const auto kr = k["res"];
+        for (int t = 0; t < tracks->size(); ++t)
+        {
+            INFO ("mic " << (*tracks)[t]["mic"].toString());
+            for (int i = 0; i < (int) onsets.size(); ++i)
+            {
+                CHECK_THAT (R.lvlRaw[(size_t) t][(size_t) i], WithinAbs ((double) kr["lvlRaw"][t][i], 1e-9));
+                CHECK_THAT (R.gainsDbT[(size_t) t][(size_t) i], WithinAbs ((double) kr["gainsDbT"][t][i], 1e-9));
+            }
+            for (int v = 0; v < det.V; ++v) CHECK_THAT (R.badge[(size_t) t][(size_t) v], WithinAbs ((double) kr["badge"][t][v], 1e-9));
+            CHECK_THAT (R.peakAfter[(size_t) t], WithinAbs ((double) kr["peakAfter"][t], 1e-9));
+            CHECK_THAT (R.spreadAfter[(size_t) t], WithinAbs ((double) kr["spreadAfter"][t], 1e-9));
+        }
+        for (int v = 0; v < det.V; ++v) CHECK_THAT (R.targetsOut[(size_t) v], WithinAbs ((double) kr["targetsOut"][v], 1e-9));
+        CHECK_THAT (R.trimDb, WithinAbs ((double) kr["trimDb"], 1e-12));
     }
 }
