@@ -10,10 +10,28 @@ public:
     const juce::String getApplicationVersion() override { return LD_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override          { return false; }
 
-    void initialise (const juce::String&) override
+    void initialise (const juce::String& commandLine) override
     {
         engine = std::make_unique<tracktion::Engine> ("Limitless Drums", std::make_unique<SyncUIBehaviour>(), nullptr);
         window = std::make_unique<Window> (getApplicationName(), *engine);
+        openFromCommandLine (commandLine);
+    }
+
+    void anotherInstanceStarted (const juce::String& commandLine) override { openFromCommandLine (commandLine); }
+
+    // Opening a folder or files from Finder ("Open With") or the command line.
+    void openFromCommandLine (const juce::String& commandLine)
+    {
+        juce::Array<juce::File> items;
+        for (auto& arg : juce::StringArray::fromTokens (commandLine, true))
+        {
+            auto path = arg.unquoted();
+            if (juce::File::isAbsolutePath (path) && juce::File (path).exists())
+                items.add (juce::File (path));
+        }
+        if (! items.isEmpty())
+            if (auto* mc = dynamic_cast<MainComponent*> (window->getContentComponent()))
+                mc->importItems (items);
     }
 
     void shutdown() override

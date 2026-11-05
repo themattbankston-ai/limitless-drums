@@ -40,7 +40,9 @@ add_library(LDShared INTERFACE)
 target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Conform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Session.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Analysis.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Analysis.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Naming.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
@@ -85,7 +87,8 @@ if(LD_BUILD_APP)
 
     target_sources(LimitlessDrums PRIVATE
         src/app/Main.cpp
-        src/app/MainComponent.cpp)
+        src/app/MainComponent.cpp
+        src/app/SessionView.cpp)
     target_link_libraries(LimitlessDrums PRIVATE
         LDShared
         LDAssets
@@ -99,7 +102,9 @@ if(LD_BUILD_TESTS)
     target_sources(LDTests PRIVATE
         tests/TestMain.cpp
         tests/TestSignals.cpp
-        tests/SpikeTests.cpp)
+        tests/SpikeTests.cpp
+        tests/NamingTests.cpp
+        tests/ImportTests.cpp)
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()
     add_test(NAME LDTests COMMAND LDTests --reporter console --durations yes)
