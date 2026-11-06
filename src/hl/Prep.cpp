@@ -325,17 +325,16 @@ void runAnalyze (Session& S)
     const auto alignOns = toInt (S.mode == "kit" ? S.kitOn : S.onsets);
     const auto& ref = S.tracks[(size_t) S.refIdx].mono;
     const int nT = (int) S.tracks.size();
-    if (S.rules)
-        for (int i = 0; i < nT; ++i)
-        {
-            auto& tr = S.tracks[(size_t) i];
-            if (i == S.refIdx) continue;
-            tr.role = detectRole (S, i);
-            // what it really is decides how it's handled: a far room keeps its natural timing
-            const auto r = effectiveRole (S, i);
-            if (r == "far" && tr.alignTo == "lead" && ! tr.manualLag) tr.alignTo = "none";
-            if (r != "far" && tr.alignTo == "none" && roleOfTrack (tr) == "far" && ! tr.manualLag && tr.roleOverride.empty()) tr.alignTo = "lead";
-        }
+    for (int i = 0; i < nT; ++i)
+    {
+        auto& tr = S.tracks[(size_t) i];
+        if (i == S.refIdx) continue;
+        tr.role = detectRole (S, i);
+        // what it really is decides how it's handled: a far room keeps its natural timing
+        const auto r = effectiveRole (S, i);
+        if (r == "far" && tr.alignTo == "lead" && ! tr.manualLag) tr.alignTo = "none";
+        if (r != "far" && tr.alignTo == "none" && roleOfTrack (tr) == "far" && ! tr.manualLag && ! tr.roleOverride.empty()) tr.alignTo = "lead";
+    }
     std::vector<int> todo;
     for (int i = 0; i < nT; ++i) if (i != S.refIdx) todo.push_back (i);
     std::vector<AlignResult> res (todo.size());
@@ -346,7 +345,7 @@ void runAnalyze (Session& S)
             {
                 const auto& tr = S.tracks[(size_t) todo[j]];
                 AlignOptions o; o.role = roleOfTrack (tr);
-                if (S.rules) o = rulesFor (effectiveRole (S, todo[j]));
+                o = alignOptionsFor (effectiveRole (S, todo[j]));
                 res[j] = alignMic (ref, baseChOf (tr), alignOns, S.sr, o);
             }));
         for (auto& j : jobs) j.get();
@@ -369,10 +368,9 @@ void runAnalyze (Session& S)
             auto& tr = S.tracks[(size_t) i];
             AlignOptions o;
             o.role = roleOfTrack (tr) == "far" || roleOfTrack (A) == "far" ? "far" : "near";
-            if (S.rules)
             {
                 const auto r = effectiveRole (S, i);
-                o = rulesFor (r == "far" || effectiveRole (S, a) == "far" ? "far" : r);
+                o = alignOptionsFor (r == "far" || effectiveRole (S, a) == "far" ? "far" : r);
             }
             o.minMs = -25;
             tr.grp = alignMic (A.mono, baseChOf (tr), ons, S.sr, o);

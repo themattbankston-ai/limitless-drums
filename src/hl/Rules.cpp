@@ -2,29 +2,13 @@
 #include "Prep.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace ld::hl
 {
-AlignOptions rulesFor (const std::string& role)
+AlignOptions alignOptionsFor (const std::string& role)
 {
     AlignOptions o;
-    if (role == "sub")
-    {
-        o.role = "near";
-        o.weight = { 1, 1, 0.35, 0.05, 0, 0, 0, 0 };   // 45-355 Hz: where a sub kick lives
-        o.minMs = -2; o.maxMs = 25;                     // a speaker-cone mic can sit well behind the batter side
-        o.keepThr = -1;                                 // always line up the lows: that is the sub's whole job
-    }
-    else if (role == "bottom")
-    {
-        o.role = "bottom";
-        o.weight = { 0.6, 0.8, 1, 1, 1, 1.25, 1.5, 1.5 };   // the wires
-        o.preferArrival = true;   // no lean to flipped: libraries often flip the bottom already; the sound decides
-    }
-    else if (role == "far") o.role = "far";
-    else { o.role = "near"; o.preferArrival = true; }
+    o.role = role == "far" ? "far" : role == "bottom" ? "bottom" : "near";
     return o;
 }
 
@@ -82,7 +66,6 @@ std::string detectRole (const Session& S, int t)
     double lHigh = 0, lAll = 0;
     for (int o : ons) { lHigh += bandEnergy (lead, o, o + (long) (0.3 * sr), sr, 2000, true); lAll += energy (lead, o, o + (long) (0.3 * sr)); }
     const double leadHigh = lAll > 0 ? lHigh / lAll : 0;
-    if (std::getenv ("LD_RULES_DEBUG")) std::fprintf (stderr, "    [%s/%s] arr %.2f low %.3f high %.4f lead high %.4f\n", S.drum.c_str(), S.tracks[(size_t) t].mic.c_str(), arrMs, lowFrac, highFrac, leadHigh);
     if (lowFrac > 0.75 && highFrac < 0.008) return "sub";
     if (std::isfinite (arrMs) && arrMs > 4.5) return "far";
     // a close mic on the other side of the drum: much brighter than the lead (the wires)
@@ -96,7 +79,7 @@ std::string effectiveRole (const Session& S, int t)
     if (! tr.roleOverride.empty()) return tr.roleOverride;
     const auto byName = roleOf (tr.mic + " " + tr.name);
     if (byName == "far") return "far";
-    if (! tr.role.empty()) return tr.role;
+    if (! tr.role.empty() && tr.role != "near") return tr.role;   // the sound adds what the name can't tell
     return byName == "far" ? "far" : byName == "bottom" ? "bottom" : "near";
 }
 } // namespace ld::hl
