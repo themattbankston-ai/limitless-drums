@@ -1,0 +1,84 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+body{margin:0;width:1400px;background:#030304;font-family:'Inter Display','Inter',sans-serif;color:#f2efe8;padding:20px 0}
+.sec{position:relative;margin:0 20px 26px;height:420px;border-radius:14px;background:linear-gradient(180deg,#18191d,#0c0c0f);box-shadow:0 20px 50px rgba(0,0,0,.8),0 0 0 1px #000,inset 0 1.5px 0 rgba(255,255,255,.08)}
+.lab{position:absolute;left:20px;top:-2px;transform:translateY(-100%);font-size:14px;font-weight:800;letter-spacing:.3em}
+.lab span{font-size:11px;font-weight:500;letter-spacing:0;color:#8b9099;margin-left:14px}
+.heads{position:absolute;left:12px;top:12px;width:236px;height:396px;overflow:hidden;border-radius:8px}
+.heads img{position:absolute;left:0;top:-4px;width:236px;height:632px}
+canvas{position:absolute;left:256px;top:12px;border-radius:10px}
+h1{margin:0 20px 34px;font-size:15px;letter-spacing:.2em}h1 span{font-weight:500;letter-spacing:0;color:#9aa0a8;font-size:12px;margin-left:12px}
+</style></head><body>
+<h1>THE ROWS, PER STEP <span>The tracks stay; each row becomes the step's view of that mic. The overview strip keeps your place. W flips back to waveforms.</span></h1>
+<div class="sec" style="margin-top:46px"><div class="lab" style="color:#9b6bff">ALIGN<span>each mic laid over the one it lines up to (Hitline's view), drag to move; red = best sum, green = auto-aligned</span></div><div class="heads"><img src="../../assets/ui/heads.png"></div><canvas id="al" width="2248" height="792" style="width:1124px;height:396px"></canvas></div>
+<div class="sec" style="margin-top:46px"><div class="lab" style="color:#ffb23e">MIX<span>each row is that mic's channel strip: tone curve, shape, inserts, how much it's tamed</span></div><div class="heads"><img src="../../assets/ui/heads.png"></div><canvas id="mx" width="2248" height="792" style="width:1124px;height:396px"></canvas></div>
+<div class="sec" style="margin-top:46px"><div class="lab" style="color:#c6ff6b">TUNE<span>each mic's pitch across the velocities, against the target note</span></div><div class="heads"><img src="../../assets/ui/heads.png"></div><canvas id="tn" width="2248" height="792" style="width:1124px;height:396px"></canvas></div>
+<script src="wavefull.js"></script><script src="alignrows.js"></script>
+<script>
+const VCOL=["#4c8dff","#2ee6ff","#7cff9b","#ffd85a","#ff6a3d","#ff3da8"];
+const M=[["Top","#2ee6ff","#4c8dff","TOP"],["Bottom","#4c8dff","#8b5cff","BOTTOM"],["Overheads","#9b6bff","#ff3da8","OH"],["Room Mono","#c86bff","#ff6ac1","ROOM_MONO"]];
+const W=1124,TOP=38,LH=(396-TOP)/4.43;   // rows line up with the headers (80.86 px in the render, 4 shown)
+function setup(id){const c=document.getElementById(id).getContext('2d');c.scale(2,2);
+  c.fillStyle='#04050a';c.fillRect(0,0,W,396);
+  // overview strip: the whole take, velocity zones, playhead
+  c.fillStyle='#0b0c10';c.fillRect(0,0,W,TOP-4);
+  const top=WF[0].ch[0];for(let v=0;v<6;v++){c.fillStyle=VCOL[v]+'22';c.fillRect(v*W/6,0,W/6,TOP-4);c.fillStyle=VCOL[v];c.fillRect(v*W/6,0,W/6-2,2)}
+  c.save();c.strokeStyle='#cfe9ff';c.globalAlpha=.6;c.beginPath();for(let i=0;i<top.mx.length;i++){const x=i/top.mx.length*W;c.moveTo(x,17-top.mx[i]*12);c.lineTo(x,17-top.mn[i]*12)}c.stroke();c.restore();
+  c.fillStyle='rgba(255,255,255,.12)';c.fillRect(W*0.58,0,W*0.12,TOP-4);c.strokeStyle='rgba(255,255,255,.4)';c.strokeRect(W*0.58+.5,.5,W*0.12,TOP-5);
+  c.fillStyle='#ffb23e';c.fillRect(W*0.63,0,2,TOP-4);
+  for(let i=0;i<4;i++){const y=TOP+i*LH;c.fillStyle='rgba(0,0,0,.85)';c.fillRect(0,y+LH-1,W,1);c.fillStyle='rgba(255,255,255,.075)';c.fillRect(0,y+LH,W,1)}
+  return c}
+function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+function txt(c,s,x,y,col,f='800 9px Inter',al='left'){c.save();c.font=f;c.fillStyle=col;c.textAlign=al;c.fillText(s,x,y);c.restore()}
+function chip(c,s,x,y,col,on=true){c.save();c.font='800 9px Inter';const w=c.measureText(s).width+16;rr(c,x,y,w,18,9);c.fillStyle=on?col+'33':'#0e0f12';c.fill();c.strokeStyle=on?col:'#2a2d33';c.stroke();c.fillStyle=on?'#fff':'#6a707a';c.fillText(s,x+8,y+12.5);c.restore();return w}
+function glowLine(c,pts,col,w=2,b=10,a=1){c.save();c.strokeStyle=col;c.lineWidth=w;c.shadowColor=col;c.shadowBlur=b;c.globalAlpha=a;c.beginPath();pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.stroke();c.restore()}
+
+// ALIGN
+{const c=setup('al');const lead=AR.TOP;const n=lead.length;
+ const SH=[0,7,6,52],DL=['LEAD','+0.2 ms','+2.6 ms','+4.1 ms'],SC=[null,[.82,.97],[.41,.88],[.30,.71]],PO=['','NATURAL','NATURAL · FLIPPED','NATURAL'],AP=['','—','190 · 410 Hz','230 Hz'];
+ M.forEach(([name,a,b,key],i)=>{const y=TOP+i*LH,cy=y+LH/2,amp=LH*.4,sx=16,sw=600;
+   c.save();rr(c,sx-6,y+6,sw+12,LH-12,8);c.fillStyle='#06070c';c.fill();c.restore();
+   const mic=AR[key];const shift=SH[i];
+   const path=(arr,off,col,lw,al,bl)=>{const pts=[];for(let k=0;k<arr.length;k++){const x=sx+(k-off)/n*sw*1.0;if(x<sx||x>sx+sw)continue;pts.push([x,cy-arr[k]*amp])}glowLine(c,pts,col,lw,bl,al)};
+   if(i==0){path(lead,0,a,2,1,10);txt(c,'EVERYTHING LINES UP TO THIS MIC',sx+sw-4,y+20,'#ffb23e','800 8.5px Inter','right')}
+   else{path(lead,0,'#2ee6ff',1.6,.55,6);path(mic,shift*0+0,a,1,.25,0);path(mic,shift,a,2.2,1,12);
+     const rx=sx+20/n*sw+30;c.strokeStyle='#ff4d5e';c.beginPath();c.moveTo(rx,y+8);c.lineTo(rx,y+LH-8);c.stroke();c.save();c.setLineDash([3,3]);c.strokeStyle='#7cff9b';c.beginPath();c.moveTo(rx+2,y+8);c.lineTo(rx+2,y+LH-8);c.stroke();c.restore();
+     txt(c,'⇆ drag',sx+sw-4,y+20,'#6a707a','700 8.5px Inter','right')}
+   // right side: score, delay, polarity, phase EQ, pull
+   const rx0=640;txt(c,DL[i],rx0,cy+5,i?'#f2efe8':'#ffb23e','700 15px DejaVu Sans Mono');
+   if(SC[i]){const bx=rx0+110,bw=150;const g=c.createLinearGradient(bx,0,bx+bw,0);g.addColorStop(0,'#4c8dff');g.addColorStop(.5,'#7cff9b');g.addColorStop(.8,'#ffd85a');g.addColorStop(1,'#ff6a3d');rr(c,bx,cy-4,bw,8,4);c.fillStyle='#0b0c10';c.fill();c.save();rr(c,bx,cy-4,bw*SC[i][1],8,4);c.fillStyle=g;c.shadowColor='#ffb23e';c.shadowBlur=8;c.fill();c.restore();
+     c.fillStyle='#fff';c.fillRect(bx+bw*SC[i][0],cy-8,1.5,16);txt(c,SC[i][0].toFixed(2)+' → '+SC[i][1].toFixed(2),bx+bw/2,cy-10,'#ffd85a','700 9px DejaVu Sans Mono','center');txt(c,'SUM SCORE',bx,cy+20,'#6a707a','800 7.5px Inter')}
+   if(i){let x=rx0+284;x+=chip(c,PO[i],x,cy-9,i==2?'#ff3da8':'#7cff9b')+6;if(AP[i]!='—')x+=chip(c,'Ø EQ '+AP[i],x,cy-9,'#9b6bff')+6;if(i==3)chip(c,'PULL 60 %',x,cy-9,'#ffb23e')}
+ });}
+
+// MIX
+{const c=setup('mx');
+ M.forEach(([name,a,b],i)=>{const y=TOP+i*LH,cy=y+LH/2;
+   // tone curve
+   const tx=16,tw=330;c.save();rr(c,tx-6,y+6,tw+12,LH-12,8);c.fillStyle='#0a0806';c.fill();c.restore();
+   const pts=[];for(let x=0;x<tw;x++){const f=x/tw;const p=[.62+.05*i,.25,.9][0];pts.push([tx+x,cy+4-(12-i*3)*Math.exp(-((f-p)**2)/.01)+(6+i)*Math.exp(-((f-.25)**2)/.02)*(i%2?1:-1)-4*Math.exp(-((f-.9)**2)/.004)])}
+   glowLine(c,[[tx,cy+4],[tx+tw,cy+4]],'rgba(255,255,255,.15)',1,0);glowLine(c,pts,a,2.2,12);txt(c,'TONE',tx+2,y+20,'#6a5a50','800 7.5px Inter');
+   // shape envelope
+   const sx=372,sw=200;c.save();rr(c,sx-6,y+6,sw+12,LH-12,8);c.fillStyle='#0a0606';c.fill();c.restore();
+   glowLine(c,[[sx,y+LH-14],[sx+10,y+16+i*2],[sx+60,y+30+i*3],[sx+140,y+34+i*2],[sx+sw,y+LH-14]],'#ff6a3d',2,10);txt(c,'SHAPE',sx+2,y+20,'#6a5050','800 7.5px Inter');
+   // inserts
+   let x=600;['SAT','COMP','TRANS'].forEach((s,k)=>{const on=(i+k)%3!=2;x+=chip(c,s,x,cy-9,'#ffb23e',on)+6});
+   // tame needle
+   const gx=830;c.save();rr(c,gx,y+10,70,LH-20,6);c.fillStyle='#0c0904';c.fill();c.restore();const ang=-.9+.3*i;glowLine(c,[[gx+35,y+LH-14],[gx+35+Math.sin(ang)*34,y+LH-14-Math.cos(ang)*34]],'#ff6a3d',1.8,8);txt(c,'TAME −'+(3-i*.5).toFixed(1),gx+35,y+LH-14,'#ffb23e','800 7px Inter','center');
+   // room send
+   const rx=930;c.strokeStyle='#08090b';c.lineWidth=5;c.beginPath();c.arc(rx+30,cy,16,.75*Math.PI,2.25*Math.PI);c.stroke();c.save();c.strokeStyle='#ff3da8';c.lineWidth=2.5;c.shadowColor='#ff3da8';c.shadowBlur=10;c.beginPath();c.arc(rx+30,cy,16,.75*Math.PI,.75*Math.PI+1.5*Math.PI*(.6-i*.1));c.stroke();c.restore();
+   c.fillStyle='#c7ccd3';c.beginPath();c.arc(rx+30,cy,10,0,7);c.fill();txt(c,'ROOM',rx+60,cy+4,'#b9bec6','800 8px Inter');
+ });}
+
+// TUNE
+{const c=setup('tn');const CENTS=[[-6,-3,0,2,4,5],[-8,-4,-1,1,3,6],[-4,-2,0,1,2,3],[-10,-5,-2,1,3,4]];
+ M.forEach(([name,a,b],i)=>{const y=TOP+i*LH,cy=y+LH/2;const tx=16,tw=720;
+   c.save();rr(c,tx-6,y+6,tw+12,LH-12,8);c.fillStyle='#050605';c.fill();c.restore();
+   c.save();c.setLineDash([4,4]);c.strokeStyle='#c6ff6b';c.globalAlpha=.55;c.beginPath();c.moveTo(tx,cy);c.lineTo(tx+tw,cy);c.stroke();c.restore();
+   txt(c,'A#3',tx+tw-4,cy-6,'#c6ff6b','800 9px DejaVu Sans Mono','right');
+   CENTS[i].forEach((ct,v)=>{const x=tx+40+v*(tw-100)/5,yy=cy-ct*2.4;c.save();c.strokeStyle=VCOL[v];c.globalAlpha=.4;c.beginPath();c.moveTo(x,cy);c.lineTo(x,yy);c.stroke();c.restore();
+     c.save();c.fillStyle=VCOL[v];c.shadowColor=VCOL[v];c.shadowBlur=12;c.beginPath();c.arc(x,yy,5,0,7);c.fill();c.restore();txt(c,(ct>0?'+':'')+ct+'¢',x+9,yy+4,VCOL[v],'700 9px DejaVu Sans Mono')});
+   txt(c,i==0?'TUNED FROM THIS MIC':'FOLLOWS THE TOP MIC',tx+tw+30,cy+4,i==0?'#c6ff6b':'#6a707a','800 9px Inter');
+ });}
+</script></body></html>
