@@ -1,0 +1,176 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--cyan:#2ee6ff;--vio:#9b6bff;--mag:#ff3da8;--pink:#ff7ad9;--amb:#ffb23e;--lime:#7cff9b;--teal:#3dffd2;--ink:#f2efe8;--q:#9aa0a8;--qq:#5f6670}
+*{box-sizing:border-box}
+body{margin:0;width:1680px;height:1050px;overflow:hidden;font-family:'Inter Display','Inter',sans-serif;color:var(--ink);background:#030304;position:relative}
+.mono{font-family:'DejaVu Sans Mono',monospace}
+.hdr{position:absolute;left:0;top:0;width:1680px}
+.plate{position:absolute;border-radius:14px;
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 1px,rgba(0,0,0,.02) 1px 2px),radial-gradient(ellipse 80% 60% at 20% 0%,rgba(255,255,255,.05),transparent 60%),linear-gradient(180deg,#18191d,#0c0c0f 55%,#09090b);
+  box-shadow:0 20px 50px rgba(0,0,0,.8),0 0 0 1px #000,inset 0 1.5px 0 rgba(255,255,255,.08),inset 0 -2px 0 rgba(0,0,0,.8)}
+.screw{position:absolute;width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#c9cdd4,#4b4f57 70%);box-shadow:0 1px 2px rgba(0,0,0,.9)}
+.screw:after{content:'';position:absolute;left:2px;right:2px;top:4.5px;height:1.4px;background:#25282e;transform:rotate(35deg)}
+.glass{position:absolute;border-radius:10px;background:radial-gradient(ellipse at 50% 0%,#0b0e16,#030407 72%);box-shadow:inset 0 3px 12px rgba(0,0,0,.95),inset 0 0 0 1px #191c24,0 1px 0 rgba(255,255,255,.06);overflow:hidden}
+.glass:after{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(118deg,rgba(255,255,255,.05),rgba(255,255,255,.01) 22%,transparent 40%);pointer-events:none}
+.lab{font-size:10px;font-weight:800;letter-spacing:.2em;color:#6a707a}
+/* strips */
+.strip{position:absolute;left:12px;width:208px;height:78px;border-radius:10px;background:linear-gradient(180deg,#1d1f24,#121317);box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,255,255,.08),0 4px 10px rgba(0,0,0,.5)}
+.strip .bar{position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--c);box-shadow:0 0 8px var(--c)}
+.strip .grip{position:absolute;left:10px;top:30px;width:6px;height:18px;background:radial-gradient(circle,#4b4f57 1px,transparent 1.5px) 0 0/3px 3px;opacity:.8}
+.strip .nm{position:absolute;left:24px;top:10px;font-size:14px;font-weight:700}
+.strip .rl{position:absolute;left:24px;top:30px;font-size:10.5px;color:var(--q);letter-spacing:.04em}
+.strip .bd{position:absolute;left:24px;top:50px;font-size:9px;font-weight:800;letter-spacing:.14em;padding:3px 6px;border-radius:4px;color:color-mix(in srgb,var(--c) 80%,#fff);background:color-mix(in srgb,var(--c) 14%,#0a0a0c)}
+.strip .lead{left:84px;color:var(--amb);background:rgba(255,178,62,.12)}
+.btn{position:absolute;width:24px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:10px;font-weight:800;color:#8b9099;background:linear-gradient(180deg,#2a2c32,#17181c);box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,255,255,.1)}
+.btn.s{right:40px;top:10px}.btn.m{right:12px;top:10px}
+.btn.on-s{color:#111;background:linear-gradient(180deg,#ffd27a,#ffb23e);box-shadow:0 0 0 1px #000,0 0 10px rgba(255,178,62,.5)}
+.knob{position:absolute;right:16px;top:40px;width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#eef0f3,#8e939b 70%);box-shadow:0 0 0 2px #0c0d10,0 0 0 4px color-mix(in srgb,var(--c) 70%,transparent),0 0 10px color-mix(in srgb,var(--c) 40%,transparent)}
+.knob:after{content:'';position:absolute;left:13px;top:3px;width:2px;height:9px;background:#1b1d21;border-radius:1px}
+.meter{position:absolute;left:24px;right:56px;bottom:7px;height:4px;border-radius:3px;background:#0a0b0e;box-shadow:inset 0 1px 2px #000}
+.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--teal),var(--lime) 60%,var(--amb))}
+.fdr{position:absolute;right:56px;top:50px;font-size:10px;color:var(--q)}
+.strip.sel{background:linear-gradient(180deg,#22252c,#15171c);box-shadow:0 0 0 1px #000,inset 0 0 0 1.5px color-mix(in srgb,var(--c) 70%,transparent),0 0 18px color-mix(in srgb,var(--c) 25%,transparent)}
+/* lanes */
+.zone{position:absolute;top:0;height:22px;border-radius:5px;font-size:10px;font-weight:800;letter-spacing:.06em;display:flex;align-items:center;padding-left:8px;color:#0a0a0c}
+.tip{position:absolute;font-size:11px;color:var(--q)}
+.chip{position:absolute;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,.75);color:#c9ced6;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+/* panel */
+.kn{position:absolute;width:64px;text-align:center}
+.kn .k{width:46px;height:46px;margin:0 auto;border-radius:50%;position:relative;background:radial-gradient(circle at 40% 30%,#f4f6f8,#8e939b 70%);box-shadow:0 0 0 3px #0c0d10,0 6px 10px rgba(0,0,0,.7)}
+.kn .k:after{content:'';position:absolute;left:22px;top:5px;width:2px;height:12px;background:#1b1d21;border-radius:1px;transform-origin:1px 18px;transform:rotate(var(--r))}
+.kn svg{position:absolute;left:3px;top:-6px}
+.kn b{display:block;margin-top:10px;font-size:9.5px;letter-spacing:.14em;color:#8b9099}
+.kn span{display:block;font-size:12px;font-weight:700;margin-top:3px}
+.seg{position:absolute;display:flex;border-radius:9px;background:#0a0b0e;box-shadow:inset 0 2px 4px #000,inset 0 0 0 1px rgba(255,255,255,.05);padding:3px;gap:3px}
+.seg span{padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;color:#7d838c}
+.seg span.on{color:#fff;background:radial-gradient(ellipse at 50% 140%,rgba(124,255,155,.45),#0d1610 75%);box-shadow:inset 0 0 0 1.5px rgba(124,255,155,.7)}
+.pad{position:absolute;width:82px;height:62px;border-radius:9px;background:radial-gradient(ellipse 90% 90% at 50% 120%,color-mix(in srgb,var(--c) var(--g),transparent),#07080b 75%);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c) 55%,transparent),0 0 calc(var(--g) * .5) color-mix(in srgb,var(--c) 40%,transparent),0 3px 8px rgba(0,0,0,.6)}
+.pad b{position:absolute;left:9px;top:7px;font-size:10px;letter-spacing:.12em;color:color-mix(in srgb,var(--c) 85%,#fff)}
+.pad span{position:absolute;right:9px;bottom:7px;font-size:10px;color:#9aa0a8}
+/* footer */
+.ft{position:absolute;left:12px;right:12px;bottom:10px;height:40px;border-radius:10px;display:flex;align-items:center;gap:10px;padding:0 10px;background:linear-gradient(180deg,#141519,#0c0d10);box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,255,255,.06)}
+.fchip{height:26px;padding:0 10px;border-radius:7px;display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;background:#08090c;box-shadow:inset 0 1px 3px #000,inset 0 0 0 1px rgba(255,255,255,.05);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}
+.note{flex:1;min-width:0;font-size:12px;color:var(--q);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ico{width:28px;height:26px;border-radius:7px;display:grid;place-items:center;background:#08090c;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);color:#8b9099;font-size:13px}
+.ann{position:absolute;font-size:12px;font-weight:700;color:#0a0a0c;background:#ffe14d;border-radius:12px;padding:3px 9px;box-shadow:0 4px 14px rgba(0,0,0,.6);white-space:nowrap}
+.ann i{font-style:normal;display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#0a0a0c;color:#ffe14d;font-size:10px;margin-right:6px}
+</style></head><body>
+<img class="hdr" src="header_v2.png">
+
+<!-- strips -->
+<div class="plate" style="left:12px;top:326px;width:232px;height:664px"><i class="screw" style="left:8px;top:8px"></i><i class="screw" style="right:8px;top:8px"></i><i class="screw" style="left:8px;bottom:8px"></i><i class="screw" style="right:8px;bottom:8px"></i>
+  <div class="lab" style="position:absolute;left:24px;top:16px">MICS</div>
+  <div style="position:absolute;right:24px;top:14px;font-size:11px;color:var(--q)">drag to reorder</div>
+  <div id="strips"></div>
+</div>
+
+<!-- screen -->
+<div class="plate" style="left:254px;top:326px;width:1086px;height:664px"><i class="screw" style="left:8px;top:8px"></i><i class="screw" style="right:8px;top:8px"></i><i class="screw" style="left:8px;bottom:8px"></i><i class="screw" style="right:8px;bottom:8px"></i>
+  <div class="glass" id="scr" style="left:16px;top:16px;width:1054px;height:632px">
+    <svg id="lanes" width="1054" height="632" style="position:absolute;left:0;top:0"></svg>
+    <div id="over"></div>
+  </div>
+</div>
+
+<!-- right panel: the step's controls, the pads, the outputs -->
+<div class="plate" style="left:1350px;top:326px;width:318px;height:664px"><i class="screw" style="left:8px;top:8px"></i><i class="screw" style="right:8px;top:8px"></i><i class="screw" style="left:8px;bottom:8px"></i><i class="screw" style="right:8px;bottom:8px"></i>
+  <div style="position:absolute;left:22px;top:18px;display:flex;align-items:center;gap:9px"><span class="dot" style="--c:#7cff9b"></span><span style="font-weight:800;letter-spacing:.24em;font-size:12px;color:#7cff9b;text-shadow:0 0 10px rgba(124,255,155,.6)">LEVEL</span></div>
+  <div style="position:absolute;right:22px;top:17px;font-size:11px;color:var(--q)">36 of 36 on standard</div>
+  <!-- the curve -->
+  <div class="glass" style="left:18px;top:46px;width:282px;height:132px">
+    <svg width="282" height="132">
+      <defs><linearGradient id="cv" x1="0" x2="1"><stop offset="0" stop-color="#4c8dff"/><stop offset=".4" stop-color="#2ee6ff"/><stop offset=".7" stop-color="#7cff9b"/><stop offset="1" stop-color="#ffb23e"/></linearGradient>
+      <linearGradient id="cvf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2ee6ff" stop-opacity=".25"/><stop offset="1" stop-color="#2ee6ff" stop-opacity="0"/></linearGradient></defs>
+      <g stroke="rgba(255,255,255,.05)"><path d="M0 33h282M0 66h282M0 99h282M47 0v132M94 0v132M141 0v132M188 0v132M235 0v132"/></g>
+      <path id="cpath" fill="url(#cvf)"/>
+      <path id="cline" fill="none" stroke="url(#cv)" stroke-width="2.5"/>
+      <g id="cdots"></g>
+      <text x="10" y="16" font-size="9.5" fill="#6a707a" letter-spacing="1.5" font-weight="800">VELOCITY CURVE · MIDI</text>
+      <text x="272" y="124" font-size="9.5" fill="#6a707a" text-anchor="end">−12.5 dB loudest</text>
+    </svg>
+  </div>
+  <div class="seg" style="left:18px;top:190px"><span class="on">Per mic</span><span>Linked</span></div>
+  <div class="seg" style="left:170px;top:190px"><span class="on">Even</span><span>Pro</span></div>
+  <div class="kn" style="left:22px;top:248px;--r:40deg"><div class="k"></div><b>SHAPE</b><span class="mono">0.90</span></div>
+  <div class="kn" style="left:94px;top:248px;--r:-10deg"><div class="k"></div><b>OFFSET</b><span class="mono">0.0 dB</span></div>
+  <div class="kn" style="left:166px;top:248px;--r:70deg"><div class="k"></div><b>RANGE</b><span class="mono">24 dB</span></div>
+  <div class="kn" style="left:238px;top:248px;--r:-60deg"><div class="k"></div><b>WINDOW</b><span class="mono">60 ms</span></div>
+  <div style="position:absolute;left:18px;right:18px;top:350px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)"></div>
+  <div class="lab" style="position:absolute;left:22px;top:364px">PADS</div>
+  <div style="position:absolute;right:22px;top:362px;font-size:11px;color:var(--q)">1 – 6 on the keyboard</div>
+  <div id="pads"></div>
+  <div style="position:absolute;left:18px;right:18px;top:546px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)"></div>
+  <div class="lab" style="position:absolute;left:22px;top:560px">ROOM</div>
+  <div class="lab" style="position:absolute;left:170px;top:560px">MASTER</div>
+  <div id="outs"></div>
+</div>
+
+<div class="ft">
+  <span class="fchip"><span class="dot" style="--c:#2ee6ff"></span>Snare 1 · Maple 14×6.5</span>
+  <span class="fchip" style="color:#9aa0a8">Limitless Snares</span>
+  <span class="fchip" style="color:#7cff9b">✓ 36 hits · 6 × 6</span>
+  <span class="note">Ready. Every hit is on the level standard. Export writes 252 files.</span>
+  <span class="fchip mono" style="color:#9aa0a8">44.1 kHz · 32-bit</span>
+  <span class="ico">−</span><span class="fchip mono" style="color:#c9ccd2">FIT</span><span class="ico">+</span>
+  <span class="ico">☾</span><span class="ico">▤</span>
+</div>
+
+<!-- notes for Matt -->
+<div class="ann" style="left:40px;top:1004px;display:none"></div>
+
+<script>
+const mics=[["Top","close · lead","mono","#2ee6ff",1,0.82],["Bottom","close","mono","#4c8dff",0,0.6],["Overheads","overhead","stereo","#9b6bff",0,0.55],["Room Mono","room","mono","#c86bff",0,0.45],["Room Close","room","stereo","#ff3da8",0,0.5],["Room Far","room","stereo","#ff6a9a",0,0.38],["Room Crush","room · fx","stereo","#ff7ad9",0,0.42]];
+let h='';mics.forEach((m,i)=>{h+=`<div class="strip ${i==0?'sel':''}" style="top:${40+i*88}px;--c:${m[3]}"><i class="bar"></i><i class="grip"></i><div class="nm">${m[0]}</div><div class="rl">${m[4]?m[1].replace('lead','<b style="color:#ffb23e">lead</b>'):m[1]}</div><span class="bd">${m[2].toUpperCase()}</span><span class="btn s ${i==4?'on-s':''}">S</span><span class="btn m">M</span><span class="meter"><i style="width:${m[5]*100}%"></i></span><span class="fdr mono">${(-[0,2.5,4,6,5.5,8,7][i]).toFixed(1)} dB</span><span class="knob" style="transform:rotate(${[-20,10,-30,0,25,-15,5][i]}deg)"></span></div>`});
+document.getElementById('strips').innerHTML=h;
+
+// lanes
+const W=1054,H=632,top0=58,lh=(H-top0-30)/7,X0=14,X1=W-14;
+const V=6,R=6,N=V*R,vcol=["#4c8dff","#2ee6ff","#7cff9b","#ffd85a","#ff6a3d","#ff3da8"];
+let s='<defs>';
+mics.forEach((m,i)=>{s+=`<linearGradient id="w${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${m[3]}" stop-opacity=".95"/><stop offset=".5" stop-color="${m[3]}" stop-opacity=".25"/><stop offset="1" stop-color="${m[3]}" stop-opacity=".95"/></linearGradient>`});
+s+='<filter id="gl" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
+const hx=k=>X0+20+k*((X1-X0-40)/(N-1));
+// zones
+for(let v=0;v<V;v++){const a=hx(v*R)-10,b=v<V-1?hx(v*R+R)-10:X1;s+=`<rect x="${a}" y="${top0}" width="${b-a}" height="${H-top0-30}" fill="${vcol[v]}" opacity=".035"/><line x1="${a}" y1="${top0}" x2="${a}" y2="${H-30}" stroke="${vcol[v]}" stroke-opacity=".25"/>`}
+// selected hit column
+const sel=21;s+=`<rect x="${hx(sel)-9}" y="${top0}" width="18" height="${H-top0-30}" fill="#fff" opacity=".05"/>`;
+// waveforms
+function rnd(n){let x=Math.sin(n*12.9898)*43758.5453;return x-Math.floor(x)}
+mics.forEach((m,i)=>{const cy=top0+lh*i+lh/2,amp=lh*0.44;
+  s+=`<line x1="${X0}" y1="${cy}" x2="${X1}" y2="${cy}" stroke="${m[3]}" stroke-opacity=".12"/>`;
+  let up=[],dn=[];
+  for(let x=X0;x<=X1;x+=1.5){let y=0;for(let k=0;k<N;k++){const d=x-hx(k);if(d>-1&&d<45){const v=Math.floor(k/R),a=(0.18+0.82*Math.pow(v/(V-1),1.2))*(0.92+0.1*rnd(k+i*7));const dec=i>=3?11:4.5;y=Math.max(y,a*Math.exp(-Math.max(0,d)/dec)*(d<0?0.2:1)*(0.75+0.25*Math.abs(Math.sin(d*1.7+i))))}}
+    up.push(`${x.toFixed(1)},${(cy-y*amp).toFixed(1)}`);dn.unshift(`${x.toFixed(1)},${(cy+y*amp).toFixed(1)}`)}
+  const poly=up.concat(dn).join(' ');
+  s+=`<polygon points="${poly}" fill="${m[3]}" opacity=".35" filter="url(#gl)"/><polygon points="${poly}" fill="url(#w${i})"/>`;
+  if(i<mics.length-1)s+=`<line x1="${X0}" y1="${top0+lh*(i+1)}" x2="${X1}" y2="${top0+lh*(i+1)}" stroke="rgba(255,255,255,.05)"/>`;
+});
+// markers row
+for(let k=0;k<N;k++){const v=Math.floor(k/R),x=hx(k),on=k==sel;s+=`<path d="M${x-5} ${top0-12}h10l-5 8z" fill="${vcol[v]}" opacity="${on?1:.75}" ${on?'filter="url(#gl)"':''}/>`+(on?`<path d="M${x-6} ${top0-13}h12l-6 9.5z" fill="#fff"/><line x1="${x}" y1="${top0}" x2="${x}" y2="${H-30}" stroke="#fff" stroke-opacity=".5" stroke-dasharray="3 4"/>`:'')}
+// playhead
+const px=hx(27)+14;s+=`<line x1="${px}" y1="${top0-16}" x2="${px}" y2="${H-30}" stroke="#ffb23e" stroke-width="2"/><line x1="${px}" y1="${top0-16}" x2="${px}" y2="${H-30}" stroke="#ffb23e" stroke-width="7" opacity=".2"/><path d="M${px-6} ${top0-20}h12l-6 7z" fill="#ffb23e"/>`;
+// time ruler
+for(let t=0;t<=80;t+=10){const x=X0+20+t/86*(X1-X0-40);if(x>W-330)continue;s+=`<text x="${x}" y="${H-12}" font-size="10" fill="#5f6670" font-family="DejaVu Sans Mono">${t}s</text>`}
+document.getElementById('lanes').innerHTML=s;
+let o='';
+for(let v=0;v<V;v++){const a=hx(v*R)-10,b=v<V-1?hx(v*R+R)-10:X1;o+=`<div class="zone" style="left:${a+2}px;top:8px;width:${b-a-4}px;background:linear-gradient(90deg,${vcol[v]},color-mix(in srgb,${vcol[v]} 60%,#000))">VEL ${v+1}<span style="opacity:.65;margin-left:8px;font-weight:700">${[1,22,43,64,85,106][v]}–${[21,42,63,84,105,127][v]} · ${R} RR</span></div>`;
+  mics.forEach((m,i)=>{const cy=top0+lh*i+lh/2;const db=(-[12.5,15,19,24,22,27,25][i]-(V-1-v)*5).toFixed(1);o+=`<span class="chip mono" style="left:${b-56}px;top:${cy+lh/2-19}px;${i==0?'color:#ffb23e':''}">${db}</span>`})}
+o+=`<div class="tip" style="left:${hx(sel)-80}px;top:34px;width:160px;text-align:center;color:#fff;font-weight:700;font-size:11px">VEL 4 · RR 4</div>`;
+o+=`<div class="tip" style="right:14px;bottom:8px">Shift-click adds a hit · drag moves · double-click removes</div>`;
+document.getElementById('over').innerHTML=o;
+
+// curve
+let pts=[];for(let v=0;v<6;v++){const x=20+v*48.4,y=118-Math.pow((v+1)/6,0.9)*96;pts.push([x,y])}
+const line='M'+pts.map(p=>p.join(' ')).join(' L');document.getElementById('cline').setAttribute('d',line);
+document.getElementById('cpath').setAttribute('d',line+` L${pts[5][0]} 132 L${pts[0][0]} 132Z`);
+document.getElementById('cdots').innerHTML=pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${vcol[i]}"/><circle cx="${p[0]}" cy="${p[1]}" r="9" fill="${vcol[i]}" opacity=".2"/>`).join('');
+// pads
+let pd='';for(let v=0;v<6;v++){const c=vcol[v],x=18+(v%3)*94,y=386+Math.floor(v/3)*74;pd+=`<div class="pad" style="left:${x}px;top:${y}px;--c:${c};--g:${v==3?85:34}%"><b>VEL ${v+1}</b><span class="mono">${v+1}</span></div>`}
+document.getElementById('pads').innerHTML=pd;
+// outputs: stereo meters
+function mtr(x,lv){let r='';for(let ch=0;ch<2;ch++){r+=`<div style="position:absolute;left:${x}px;top:${586+ch*14}px;width:128px;height:8px;border-radius:4px;background:#0a0b0e;box-shadow:inset 0 1px 2px #000"><i style="position:absolute;left:0;top:0;bottom:0;width:${lv[ch]}%;border-radius:4px;background:linear-gradient(90deg,#3dffd2,#7cff9b 60%,#ffb23e 85%,#ff3da8)"></i></div>`}return r}
+document.getElementById('outs').innerHTML=mtr(22,[54,48])+mtr(170,[78,74])+`<div class="mono" style="position:absolute;left:22px;top:620px;font-size:11px;color:#9aa0a8">−14.2 dB</div><div class="mono" style="position:absolute;left:170px;top:620px;font-size:11px;color:#9aa0a8">−3.1 dB peak</div>`;
+</script>
+</body></html>
