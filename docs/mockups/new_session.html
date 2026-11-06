@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--cyan:#2ee6ff;--vio:#9b6bff;--mag:#ff3da8;--pink:#ff7ad9;--amb:#ffb23e;--lime:#7cff9b;--teal:#3dffd2;--ink:#f2efe8;--q:#9aa0a8;--qq:#5f6670}
+*{box-sizing:border-box}
+body{margin:0;width:1680px;height:1050px;overflow:hidden;font-family:'Inter Display','Inter',sans-serif;color:var(--ink);background:#030304;position:relative}
+.mono{font-family:'DejaVu Sans Mono',monospace}
+.back{position:absolute;inset:0}
+.back img{position:absolute;left:0;top:0;width:1680px;filter:blur(3px) brightness(.45)}
+.back .scr{position:absolute;left:14px;right:14px;top:330px;bottom:14px;border-radius:12px;background:linear-gradient(180deg,#121317,#0a0a0c);filter:brightness(.5)}
+.shade{position:absolute;inset:0;background:radial-gradient(ellipse 60% 70% at 50% 52%,rgba(0,0,0,.25),rgba(0,0,0,.72))}
+/* the panel: same black anodised plate, bevel, screws */
+.panel{position:absolute;left:390px;top:125px;width:900px;height:800px;border-radius:14px;
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 1px,rgba(0,0,0,.02) 1px 2px),radial-gradient(ellipse 80% 60% at 20% 0%,rgba(255,255,255,.06),transparent 60%),linear-gradient(180deg,#191a1e,#0c0c0f 55%,#09090b);
+  box-shadow:0 50px 120px rgba(0,0,0,.9),0 0 0 1px #000,inset 0 1.5px 0 rgba(255,255,255,.09),inset 0 -2px 0 rgba(0,0,0,.8),inset 1px 0 0 rgba(255,255,255,.03),inset -1px 0 0 rgba(0,0,0,.6)}
+.screw{position:absolute;width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#c9cdd4,#4b4f57 70%);box-shadow:0 1px 2px rgba(0,0,0,.9)}
+.screw:after{content:'';position:absolute;left:2px;right:2px;top:5px;height:1.5px;background:#25282e;transform:rotate(35deg)}
+.title{position:absolute;left:40px;top:30px;font-weight:700;font-size:22px;letter-spacing:.28em}
+.sub{position:absolute;left:42px;top:64px;font-size:13px;color:var(--q)}
+.close{position:absolute;right:28px;top:26px;width:36px;height:36px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#30333a,#121316);box-shadow:0 0 0 1.5px #000,inset 0 1px 0 rgba(255,255,255,.12);display:grid;place-items:center;color:#8b9099;font-size:18px}
+.lab{position:absolute;font-size:10.5px;font-weight:800;letter-spacing:.2em;color:#6a707a}
+.lab b{color:#9aa0a8;font-weight:700;letter-spacing:.06em;text-transform:none;font-size:12px;margin-left:8px}
+/* glass pockets */
+.pk{position:absolute;border-radius:10px;background:radial-gradient(ellipse at 50% 0%,#0c0f17,#030407 72%);
+  box-shadow:inset 0 3px 12px rgba(0,0,0,.95),inset 0 0 0 1px #191c24,0 1px 0 rgba(255,255,255,.07)}
+.pk:after{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(118deg,rgba(255,255,255,.06),rgba(255,255,255,.012) 22%,transparent 40%,transparent 80%,rgba(255,255,255,.02));pointer-events:none}
+.field{display:flex;align-items:center;padding:0 16px;font-size:17px;font-weight:600}
+.field .caret{width:2px;height:20px;background:var(--cyan);margin-left:2px;box-shadow:0 0 8px var(--cyan)}
+.field.focus{box-shadow:inset 0 3px 12px rgba(0,0,0,.95),inset 0 0 0 1.5px rgba(46,230,255,.7),0 0 18px rgba(46,230,255,.18)}
+.sel{display:flex;align-items:center;justify-content:space-between;padding:0 14px 0 16px;font-size:15px;font-weight:600}
+.sel i{font-style:normal;color:#6a707a;font-size:13px}
+.sel .dot{width:8px;height:8px;border-radius:50%;margin-right:10px;display:inline-block}
+.btnsm{position:absolute;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.14em;color:#c9ccd2;
+  background:linear-gradient(180deg,#24262c,#141519);box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,255,255,.1),0 4px 10px rgba(0,0,0,.6)}
+/* drum tiles, ShaperBox style */
+.drums{position:absolute;left:40px;top:316px;display:grid;grid-template-columns:repeat(9,84px);gap:8px}
+.d{height:92px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative}
+.d svg{opacity:.8}
+.d .n{font-size:11px;font-weight:700;letter-spacing:.08em;color:color-mix(in srgb,var(--c) 70%,#80858e)}
+.d.on{background:radial-gradient(ellipse 90% 80% at 50% 125%,color-mix(in srgb,var(--c) 36%,transparent),#05060a 72%);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c) 75%,transparent),0 0 20px color-mix(in srgb,var(--c) 22%,transparent)}
+.d.on svg{opacity:1;filter:drop-shadow(0 0 4px var(--c)) drop-shadow(0 0 10px color-mix(in srgb,var(--c) 50%,transparent))}
+.d.on .n{color:var(--c);text-shadow:0 0 8px var(--c)}
+.d.on:before{content:'';position:absolute;left:22px;right:22px;top:0;height:2px;border-radius:2px;background:var(--c);box-shadow:0 0 8px var(--c)}
+/* articulation chips */
+.chips{position:absolute;display:flex;gap:7px;flex-wrap:wrap}
+.chip{height:30px;padding:0 11px;border-radius:15px;display:flex;align-items:center;font-size:12px;font-weight:700;color:#7d838c;background:#0b0b0e;box-shadow:inset 0 2px 4px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.06)}
+.chip.on{color:#fff;background:radial-gradient(ellipse at 50% 140%,rgba(255,61,168,.5),#120a10 75%);box-shadow:inset 0 0 0 1.5px rgba(255,61,168,.75),0 0 12px rgba(255,61,168,.2)}
+/* counts */
+.step{display:flex;align-items:center;gap:0}
+.step span{width:40px;height:44px;display:grid;place-items:center;color:#8b9099;font-size:18px}
+.step b{width:56px;text-align:center;font-size:24px;font-weight:700;color:var(--amb);text-shadow:0 0 10px rgba(255,178,62,.55)}
+.auto{position:absolute;font-size:11px;color:var(--teal);letter-spacing:.06em}
+.auto i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);margin-right:7px;vertical-align:1px}
+/* drop zone */
+.drop{position:absolute;left:40px;top:600px;width:820px;height:110px;border-radius:12px}
+.drop .dash{position:absolute;inset:8px;border-radius:9px;border:1.5px dashed rgba(46,230,255,.28)}
+.drop svg{position:absolute;left:8px;top:8px}
+.drop .t{position:absolute;left:0;right:0;top:34px;text-align:center;font-size:17px;font-weight:600}
+.drop .h{position:absolute;left:0;right:0;top:62px;text-align:center;font-size:12.5px;color:var(--q)}
+.drop .h b{color:var(--cyan);font-weight:700}
+.create{position:absolute;right:40px;bottom:30px;width:230px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;letter-spacing:.2em;color:#eafff9;
+  background:radial-gradient(ellipse 90% 120% at 50% 130%,rgba(61,255,210,.55),#0a1412 72%);box-shadow:0 0 0 1px #000,inset 0 0 0 1.5px rgba(61,255,210,.8),0 0 26px rgba(61,255,210,.3),inset 0 1px 0 rgba(255,255,255,.15);text-shadow:0 0 10px rgba(61,255,210,.8)}
+.cancel{position:absolute;right:286px;bottom:30px;width:130px;height:52px}
+.foot{position:absolute;left:42px;bottom:38px;width:330px;line-height:1.45;font-size:12px;color:#6a707a}
+.foot b{color:#9aa0a8}
+</style></head><body>
+<div class="back"><img src="header_v2.png"><div class="scr"></div></div>
+<div class="shade"></div>
+
+<div class="panel">
+  <i class="screw" style="left:10px;top:10px"></i><i class="screw" style="right:10px;top:10px"></i><i class="screw" style="left:10px;bottom:10px"></i><i class="screw" style="right:10px;bottom:10px"></i>
+  <div class="title">NEW SESSION</div>
+  <div class="sub">What you're working on. Then add the audio.</div>
+  <div class="close">✕</div>
+
+  <div class="lab" style="left:42px;top:104px">NAME</div>
+  <div class="pk field focus" style="left:40px;top:124px;width:400px;height:48px">Snare 1 · Maple 14×6.5<span class="caret"></span></div>
+
+  <div class="lab" style="left:462px;top:104px">LIBRARY</div>
+  <div class="pk sel" style="left:460px;top:124px;width:400px;height:48px"><span><span class="dot" style="background:#9b6bff;box-shadow:0 0 8px #9b6bff"></span>Limitless Snares</span><i>▾</i></div>
+
+  <div class="lab" style="left:42px;top:196px">START FROM <b>settings carried over, the levels and tone you already set</b></div>
+  <div class="pk sel" style="left:40px;top:216px;width:400px;height:48px"><span style="color:#d6d3cc">The library's standard</span><i>▾</i></div>
+  <div class="btnsm" style="left:460px;top:218px;width:200px">＋ NEW LIBRARY</div>
+
+  <div class="lab" style="left:42px;top:294px">DRUM</div>
+  <div class="drums">
+    <div class="pk d" style="--c:#ffb23e"><svg width="34" height="34" viewBox="0 0 34 34" fill="none" stroke="#ffb23e" stroke-width="2.2"><circle cx="17" cy="17" r="13"/><circle cx="17" cy="17" r="6"/></svg><span class="n">Kick</span></div>
+    <div class="pk d on" style="--c:#ff3da8"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#ff3da8" stroke-width="2.2" stroke-linecap="round"><ellipse cx="20" cy="10" rx="16" ry="5"/><path d="M4 10v13c0 3 7 5 16 5s16-2 16-5V10"/></svg><span class="n">Snare</span></div>
+    <div class="pk d" style="--c:#9b6bff"><svg width="36" height="34" viewBox="0 0 36 34" fill="none" stroke="#9b6bff" stroke-width="2.2"><ellipse cx="18" cy="9" rx="13" ry="4.5"/><path d="M5 9v15c0 2.5 6 4.5 13 4.5s13-2 13-4.5V9"/></svg><span class="n">Tom</span></div>
+    <div class="pk d" style="--c:#3dffd2"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#3dffd2" stroke-width="2.2" stroke-linecap="round"><path d="M4 12h32M6 17h28M20 17v15"/></svg><span class="n">Hi-hat</span></div>
+    <div class="pk d" style="--c:#2ee6ff"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#2ee6ff" stroke-width="2.2" stroke-linecap="round"><path d="M3 15c6-5 28-5 34 0M20 15v17"/><circle cx="20" cy="12" r="2.5" fill="#2ee6ff"/></svg><span class="n">Ride</span></div>
+    <div class="pk d" style="--c:#7cff9b"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#7cff9b" stroke-width="2.2" stroke-linecap="round"><path d="M5 16 35 10M20 13v19"/></svg><span class="n">Crash</span></div>
+    <div class="pk d" style="--c:#ff6a3d"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#ff6a3d" stroke-width="2.2" stroke-linecap="round"><path d="M4 11c4 6 28 6 32 0M8 13l-3-4M32 13l3-4M20 15v17"/></svg><span class="n">China</span></div>
+    <div class="pk d" style="--c:#ff7ad9"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#ff7ad9" stroke-width="2.2" stroke-linecap="round"><path d="M10 14c4-3 16-3 20 0M20 14v18"/></svg><span class="n">Splash</span></div>
+    <div class="pk d" style="--c:#ffd27a"><svg width="40" height="34" viewBox="0 0 40 34" fill="none" stroke="#ffd27a" stroke-width="2" stroke-linecap="round"><circle cx="20" cy="22" r="8"/><ellipse cx="9" cy="14" rx="6" ry="2.5"/><ellipse cx="31" cy="14" rx="6" ry="2.5"/><path d="M3 7l10-2M27 5l10 2"/></svg><span class="n">Full kit</span></div>
+  </div>
+
+  <div class="lab" style="left:42px;top:434px">ARTICULATION</div>
+  <div class="pk field" style="left:40px;top:454px;width:190px;height:44px;font-size:15px">Center</div>
+  <div class="chips" style="left:244px;top:461px;width:630px">
+    <span class="chip on">Center</span><span class="chip">Rimshot</span><span class="chip">Sidestick</span><span class="chip">Edge</span><span class="chip">Rim click</span><span class="chip">Wires off</span><span class="chip">Flam</span><span class="chip">Roll</span><span class="chip">＋</span>
+  </div>
+
+  <div class="lab" style="left:42px;top:548px">VELOCITIES × ROUND ROBINS</div>
+  <div class="pk step" style="left:300px;top:534px;width:136px;height:44px"><span>−</span><b class="mono">6</b><span>+</span></div>
+  <div style="position:absolute;left:446px;top:544px;font-size:18px;color:#6a707a">×</div>
+  <div class="pk step" style="left:470px;top:534px;width:136px;height:44px"><span>−</span><b class="mono">6</b><span>+</span></div>
+  <div class="auto" style="left:624px;top:550px"><i></i>READ FROM THE FILE NAMES</div>
+
+  <div class="pk drop">
+    <div class="dash"></div>
+    <svg width="804" height="102" viewBox="0 0 804 102"><defs><linearGradient id="dw" x1="0" x2="1"><stop offset="0" stop-color="#2ee6ff" stop-opacity="0"/><stop offset=".3" stop-color="#2ee6ff"/><stop offset=".65" stop-color="#9b6bff"/><stop offset="1" stop-color="#ff3da8" stop-opacity="0"/></linearGradient><filter id="bb"><feGaussianBlur stdDeviation="3"/></filter></defs>
+      <path d="M0 88C80 70 140 98 220 84S360 66 430 84 560 98 640 80 760 74 804 86" fill="none" stroke="url(#dw)" stroke-width="5" opacity=".5" filter="url(#bb)"/>
+      <path d="M0 88C80 70 140 98 220 84S360 66 430 84 560 98 640 80 760 74 804 86" fill="none" stroke="url(#dw)" stroke-width="1.8"/></svg>
+    <div class="t">Drop a folder of mics here</div>
+    <div class="h">or <b>Browse…</b> · one folder per articulation, or a parent folder to add them all</div>
+  </div>
+
+  <div class="foot">Velocities, round robins and mic names are read from the files; you can change them after.</div>
+  <div class="btnsm cancel">CANCEL</div>
+  <div class="create">CREATE SESSION</div>
+</div>
+</body></html>
