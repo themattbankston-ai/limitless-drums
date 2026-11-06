@@ -10,6 +10,7 @@ sys.argv = [sys.argv[0], sys.argv[1] if len(sys.argv) > 1 else '.', sys.argv[2] 
 import render_parts as P
 
 W, H = 318, 664
+MIX = bool(os.environ.get('LD_MIX'))
 U = 0.01   # blender units per px
 
 def at(px, py, z=0.0): return ((px - W / 2) * U, (H / 2 - py) * U, z)
@@ -126,18 +127,26 @@ def build():
     for rx in (2, W - 16):
         box('rail', rx, 0, 14, H, 0.05, -0.15, 0.002, 0.006, P.metal('rail', (0.08, 0.08, 0.09), 0.4, brushed=True, scale=10))
     lv = module('level', LEVEL['y'], LEVEL['h'])
-    window(lv, *SCREEN)
     pd = module('pads', PADS['y'], PADS['h'])
     ou = module('out', OUT_['y'], OUT_['h'])
     for m in METERS: window(ou, *m, depth=0.06)
-    for b in BUTTONS: button(*b)
-    for k in KNOBS: knob(*k, KNOB_R)
-    for p in PADS_AT: pad(*p)
+    if MIX:
+        # TONE: a screen, five knobs, two buttons; SHAPE: an envelope strip and four knobs
+        window(lv, 26, 44, 266, 112)
+        for b in [(26, 300, 60, 28), (90, 300, 60, 28), (232, 300, 60, 28)]: button(*b)
+        for x in (47, 103, 159, 215, 271): knob(x, 222, 17)
+        window(pd, 26, 372, 266, 40)
+        for x in (59, 126, 193, 260): knob(x, 470, 18)
+    else:
+        window(lv, *SCREEN)
+        for b in BUTTONS: button(*b)
+        for k in KNOBS: knob(*k, KNOB_R)
+        for p in PADS_AT: pad(*p)
     P.area(s, 'key', (-4, 6, 6), 5, 1300)
     P.area(s, 'fill', (6, -5, 5), 6, 160, (0.7, 0.82, 1.0))
     P.area(s, 'rim', (0, 9, 1.2), 9, 420)
     P.area(s, 'kick', (5, 3, 2), 2, 260, (1.0, 0.9, 0.8))
     P.area(s, 'under', (0, -9, 1.5), 8, 140, (0.6, 0.75, 1.0))
-    P.render(s, 'rack.png')
+    P.render(s, 'rack_mix.png' if MIX else 'rack.png')
 
 build()
