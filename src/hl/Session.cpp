@@ -1299,4 +1299,135 @@ Session sessionFromHitline (const juce::var& st, std::vector<Chs> audio)
     }
     return S;
 }
+
+namespace
+{
+juce::var obj() { return juce::var (new juce::DynamicObject()); }
+void put (juce::var& o, const char* k, const juce::var& v) { o.getDynamicObject()->setProperty (k, v); }
+juce::var toneVar (const ToneMoves& t)
+{
+    auto o = obj(); put (o, "match", t.match); put (o, "bright", t.bright); put (o, "crack", t.crack); put (o, "smooth", t.smooth); put (o, "tame", t.tame);
+    return o;
+}
+juce::var shapeVar (const ShapeMoves& t)
+{
+    auto o = obj(); put (o, "atk", t.atk); put (o, "dec", t.dec); put (o, "sus", t.sus); put (o, "rel", t.rel); put (o, "match", t.match);
+    return o;
+}
+} // namespace
+
+juce::var settingsToVar (const Session& S)
+{
+    auto st = obj();
+    put (st, "version", 1);
+    put (st, "drum", juce::String (S.drum)); put (st, "artic", juce::String (S.artic));
+    auto d = obj(); put (d, "V", S.det.V); put (d, "RR", S.det.RR); put (d, "order", juce::String (S.det.order)); put (d, "prerollMs", S.det.prerollMs);
+    put (d, "minGapMs", S.minGapMs); put (d, "thrDb", S.thrDb); put (d, "thrAuto", S.thrAuto);
+    put (st, "det", d);
+    auto l = obj(); const auto& lv = S.lev;
+    put (l, "mode", juce::String (lv.mode)); put (l, "source", juce::String (lv.source)); put (l, "winMs", lv.winMs); put (l, "curve", juce::String (lv.curve));
+    put (l, "shape", lv.shape); put (l, "midiRange", juce::String (lv.midiRange)); put (l, "stepDb", lv.stepDb); put (l, "rangeDb", lv.rangeDb);
+    put (l, "anchor", juce::String (lv.anchor)); put (l, "offsetDb", lv.offsetDb); put (l, "std", juce::String (lv.std)); put (l, "steps", juce::String (lv.steps));
+    put (st, "lev", l);
+    auto e = obj(); const auto& ex = S.exp;
+    put (e, "mode", juce::String (ex.mode)); put (e, "template", juce::String (ex.hitTemplate)); put (e, "fullTemplate", juce::String (ex.fullTemplate));
+    put (e, "kitTemplate", juce::String (ex.kitTemplate)); put (e, "bits", ex.bits); put (e, "rate", juce::String (ex.rate)); put (e, "tailMode", juce::String (ex.tailMode));
+    put (e, "tailFloor", ex.tailFloor); put (e, "maxLenS", ex.maxLenS); put (e, "fadeOutMs", ex.fadeOutMs); put (e, "fadeInMs", ex.fadeInMs);
+    put (e, "tailDb", ex.tailDb); put (e, "trim", juce::String (ex.trim)); put (e, "ceilDb", ex.ceilDb);
+    put (st, "exp", e);
+    auto dn = obj(); put (dn, "on", S.dnOn); put (dn, "db", S.dnDb); put (st, "dn", dn);
+    auto tn = toneVar (S.tone);
+    put (tn, "repair", S.tone.repair); put (tn, "proSrc", juce::String (S.tone.proSrc)); put (tn, "refAmt", S.tone.refAmt);
+    if (S.tone.hasRef) { auto r = obj(); juce::Array<juce::var> c; for (double v : S.tone.refCurve) c.add (v); put (r, "curve", c); put (tn, "ref", r); }
+    put (st, "tone", tn);
+    put (st, "shape", shapeVar (S.shape));
+    auto mix = obj();
+    put (mix, "busIns", S.busIns.isArray() ? S.busIns : juce::var (juce::Array<juce::var>()));
+    put (mix, "fader", S.busFader); put (mix, "mute", S.busMute); put (mix, "norm", S.oneShotNorm);
+    auto room = obj(); put (room, "on", S.room.on); put (room, "ret", S.room.ret); put (room, "p", S.room.p); put (mix, "room", room);
+    put (st, "mix", mix);
+    put (st, "kitBleed", S.kitBleed);
+    juce::Array<juce::var> tracks;
+    for (auto& t : S.tracks)
+    {
+        auto kt = obj();
+        put (kt, "mic", juce::String (t.mic)); put (kt, "alignTo", juce::String (t.alignTo)); put (kt, "amount", t.amount); put (kt, "apOn", t.apOn);
+        put (kt, "fader", t.fader); put (kt, "mute", t.mute); put (kt, "lrLock", t.lrLock);
+        auto sv = obj();
+        put (sv, "trim", t.strip.trim); put (sv, "pan", t.strip.pan); put (sv, "pol", t.strip.pol); put (sv, "send", t.strip.send);
+        put (sv, "tone", toneVar (t.strip.tone)); put (sv, "shape", shapeVar (t.strip.shape));
+        put (sv, "inserts", t.strip.inserts.isArray() ? t.strip.inserts : juce::var (juce::Array<juce::var>()));
+        put (kt, "strip", sv);
+        tracks.add (kt);
+    }
+    put (st, "tracks", tracks);
+    return st;
+}
+
+void applySettings (Session& S, const juce::var& st)
+{
+    if (! st.isObject()) return;
+    const auto d = st["det"];
+    if (d.isObject())
+    {
+        S.det.order = s_ (d, "order", S.det.order.c_str()); S.det.prerollMs = nn (d, "prerollMs", S.det.prerollMs);
+        S.minGapMs = nn (d, "minGapMs", S.minGapMs); S.thrDb = nn (d, "thrDb", S.thrDb);
+        if (d.hasProperty ("thrAuto")) S.thrAuto = truthy (d, "thrAuto");
+    }
+    const auto kl = st["lev"];
+    if (kl.isObject())
+    {
+        auto& lev = S.lev;
+        lev.mode = s_ (kl, "mode", lev.mode.c_str()); lev.source = s_ (kl, "source", lev.source.c_str()); lev.winMs = nn (kl, "winMs", lev.winMs);
+        lev.curve = s_ (kl, "curve", lev.curve.c_str()); lev.shape = nn (kl, "shape", lev.shape); lev.midiRange = s_ (kl, "midiRange", lev.midiRange.c_str());
+        lev.stepDb = nn (kl, "stepDb", lev.stepDb); lev.rangeDb = nn (kl, "rangeDb", lev.rangeDb); lev.anchor = s_ (kl, "anchor", lev.anchor.c_str());
+        lev.offsetDb = nn (kl, "offsetDb", lev.offsetDb); lev.std = s_ (kl, "std", lev.std.c_str()); lev.steps = s_ (kl, "steps", lev.steps.c_str());
+    }
+    const auto e = st["exp"];
+    if (e.isObject())
+    {
+        auto& ex = S.exp;
+        ex.mode = s_ (e, "mode", ex.mode.c_str()); ex.hitTemplate = s_ (e, "template", ex.hitTemplate.c_str()); ex.fullTemplate = s_ (e, "fullTemplate", ex.fullTemplate.c_str());
+        ex.kitTemplate = s_ (e, "kitTemplate", ex.kitTemplate.c_str()); ex.bits = (int) nn (e, "bits", ex.bits); ex.rate = s_ (e, "rate", ex.rate.c_str());
+        ex.tailMode = s_ (e, "tailMode", ex.tailMode.c_str()); ex.tailFloor = nn (e, "tailFloor", ex.tailFloor); ex.maxLenS = nn (e, "maxLenS", ex.maxLenS);
+        ex.fadeOutMs = nn (e, "fadeOutMs", ex.fadeOutMs); ex.fadeInMs = nn (e, "fadeInMs", ex.fadeInMs); ex.tailDb = nn (e, "tailDb", ex.tailDb);
+        ex.trim = s_ (e, "trim", ex.trim.c_str()); ex.ceilDb = nn (e, "ceilDb", ex.ceilDb);
+    }
+    if (st["dn"].isObject()) { S.dnOn = truthy (st["dn"], "on"); S.dnDb = nn (st["dn"], "db", S.dnDb); }
+    const auto tn = st["tone"];
+    if (tn.isObject())
+    {
+        static_cast<ToneMoves&> (S.tone) = toneOf (tn);
+        S.tone.repair = truthy (tn, "repair"); S.tone.proSrc = s_ (tn, "proSrc", ""); S.tone.refAmt = nn (tn, "refAmt", 0);
+        S.tone.hasRef = false; S.tone.refCurve.clear();
+        if (tn["ref"].isObject()) if (auto* c = tn["ref"]["curve"].getArray()) { S.tone.hasRef = true; for (auto& v : *c) S.tone.refCurve.push_back ((double) v); }
+    }
+    if (st["shape"].isObject()) S.shape = shapeOf (st["shape"]);
+    const auto mix = st["mix"];
+    if (mix.isObject())
+    {
+        if (mix["busIns"].isArray()) S.busIns = mix["busIns"];
+        S.busFader = nn (mix, "fader", S.busFader); S.busMute = truthy (mix, "mute");
+        if (mix.hasProperty ("norm")) S.oneShotNorm = truthy (mix, "norm");
+        if (mix["room"].isObject()) { S.room.on = truthy (mix["room"], "on"); S.room.ret = nn (mix["room"], "ret", 0); S.room.p = mix["room"]["p"]; }
+    }
+    S.kitBleed = nn (st, "kitBleed", S.kitBleed);
+    if (auto* tracks = st["tracks"].getArray())
+        for (auto& t : S.tracks)
+            for (auto& kt : *tracks)
+            {
+                if (juce::String (t.mic).compareIgnoreCase (kt["mic"].toString()) != 0) continue;
+                t.alignTo = s_ (kt, "alignTo", t.alignTo.c_str()); t.amount = nn (kt, "amount", t.amount);
+                if (kt.hasProperty ("apOn")) t.apOn = truthy (kt, "apOn");
+                t.fader = nn (kt, "fader", t.fader); t.mute = truthy (kt, "mute"); t.lrLock = truthy (kt, "lrLock");
+                const auto sv = kt["strip"];
+                if (sv.isObject())
+                {
+                    t.strip.trim = nn (sv, "trim", 0); t.strip.pan = nn (sv, "pan", 0); t.strip.pol = truthy (sv, "pol"); t.strip.send = nn (sv, "send", -60);
+                    t.strip.tone = toneOf (sv["tone"]); t.strip.shape = shapeOf (sv["shape"]);
+                    if (sv["inserts"].isArray()) t.strip.inserts = sv["inserts"];
+                }
+                break;
+            }
+}
 } // namespace ld::hl

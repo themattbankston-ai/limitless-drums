@@ -5,6 +5,9 @@
 #include "core/Import.h"
 #include "core/Project.h"
 #include "ui/Studio.h"
+#include "ui/NewSession.h"
+#include "Library.h"
+#include "Engine.h"
 #include "ui/VisageHost.h"
 #include "Audition.h"
 
@@ -56,6 +59,8 @@ private:
 
     visage::ApplicationWindow root;
     ui::Studio studio;
+    ui::NewSession newSession;
+    LibraryStore libraries;
     std::unique_ptr<ui::VisageHost> host;
 
     std::vector<ImportTake> takes;
@@ -82,6 +87,19 @@ private:
     theme::Palette palette() const { return dayMode ? theme::day() : theme::night(); }
     void openTake (int index);
     void startPrep();
+    void loadTake();
+    juce::String takeTitle() const;
+    // New Session
+    void openNewSession (const juce::Array<juce::File>& items = {});
+    void dialogAddItems (const juce::Array<juce::File>& items);
+    void dialogUseTake (int index);
+    void createSession();
+    void storeInLibrary();
+    std::vector<ImportTake> dialogTakes;
+    int dialogTake = -1;
+    juce::String dialogStartId;            ///< the library session Start From copies (empty: the standard)
+    TakeOptions takeOptions;               ///< what the open session was created with
+    juce::String sessionName, sessionLibrary, librarySessionId;
     void refreshModel();
     void adoptEngineOrder();
     void exportTake();

@@ -131,8 +131,10 @@ if(LD_BUILD_APP)
         src/app/SessionModel.cpp
         src/app/Engine.cpp
         src/app/Audition.cpp
+        src/app/Library.cpp
         src/app/ui/VisageHost.cpp
-        src/app/ui/Studio.cpp)
+        src/app/ui/Studio.cpp
+        src/app/ui/NewSession.cpp)
     target_link_libraries(LimitlessDrums PRIVATE
         LDShared
         LDAssets
@@ -155,7 +157,9 @@ if(LD_BUILD_TESTS)
         tests/ExportParityTests.cpp
         tests/PrepParityTests.cpp
         tests/AuditionTests.cpp
+        tests/NewSessionTests.cpp
         src/app/Audition.cpp
+        src/app/Library.cpp
         src/app/Engine.cpp)
     target_compile_definitions(LDTests PRIVATE LD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)

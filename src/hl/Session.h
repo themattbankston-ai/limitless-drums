@@ -227,6 +227,13 @@ size_t defaultOneShot (const Session&, const LevelResult&);
 struct OneShot { std::string name; juce::MemoryBlock wav; size_t hit = 0; double scale = 1; };
 OneShot exportOneShot (const Session&, const MixRender&, const LevelResult&);
 
+/** The settings a new session can start from (New Session, Start From): detection, levels, export, clean-up,
+    tone, shape, bus inserts, the room, and each mic's strip and fader (matched by mic name). No audio, no hits,
+    no alignment results. Keys as in Hitline's saved state. */
+juce::var settingsToVar (const Session&);
+/** Applies saved settings onto a freshly opened session. Mics the settings don't name keep their defaults. */
+void applySettings (Session&, const juce::var&);
+
 /** A session from Hitline's saved state (its S object as JSON) and each track's audio, in track order. */
 Session sessionFromHitline (const juce::var& state, std::vector<Chs> audio);
 } // namespace ld::hl

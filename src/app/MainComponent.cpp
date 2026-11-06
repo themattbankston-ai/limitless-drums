@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "SessionModel.h"
+#include "hl/Detect.h"
 #include <thread>
 
 namespace ld
@@ -28,11 +29,16 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
     setOpaque (true);
 
     root.addChild (&studio);
-    root.onResize() += [this] { studio.setBounds (0, 0, root.width(), root.height()); };
+    root.addChild (&newSession);
+    root.onResize() += [this]
+    {
+        studio.setBounds (0, 0, root.width(), root.height());
+        newSession.setBounds (0, 0, root.width(), root.height());
+    };
     host = std::make_unique<ui::VisageHost> (root);
     addAndMakeVisible (*host);
 
-    studio.onImport = [this] { if (! edit) chooseFiles(); };
+    studio.onImport = [this] { openNewSession(); };
     studio.onPlay = [this] { togglePlay(); };
     studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); updateHeader(); };
     studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
@@ -108,6 +114,98 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
         auto t = audioTracks();
         if (i < (int) t.size()) if (auto* vp = t[(size_t) i]->getVolumePlugin()) { vp->setPan (pan); pushTrackStates(); }
     };
+    newSession.onCancel = [this] { newSession.close(); grabKeyboardFocus(); };
+    newSession.onCreate = [this] { createSession(); };
+    newSession.onBrowse = [this]
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Add the take: a folder of mics", juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+                                                       "*.wav;*.aif;*.aiff;*.bwf;*.flac");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::canSelectDirectories | juce::FileBrowserComponent::canSelectMultipleItems,
+                              [this] (const juce::FileChooser& fc) { if (! fc.getResults().isEmpty()) dialogAddItems (fc.getResults()); });
+    };
+    newSession.onFilesDropped = [this] (const std::vector<std::string>& paths)
+    {
+        juce::Array<juce::File> items;
+        for (auto& p : paths) items.add (juce::File (juce::String (p)));
+        juce::MessageManager::callAsync ([this, items] { dialogAddItems (items); });
+    };
+    auto menuAt = [this] (float x, float y, float w, float h)
+    {
+        return juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (x, y, w, h).toNearestInt()))
+                                         .withMinimumWidth ((int) w);
+    };
+    newSession.onPickLibrary = [this, menuAt] (float x, float y, float w, float h)
+    {
+        juce::PopupMenu m;
+        for (int i = 0; i < (int) libraries.libraries.size(); ++i)
+        {
+            const auto& L = libraries.libraries[(size_t) i];
+            m.addItem (i + 1, L.name + "  (" + juce::String ((int) L.sessions.size()) + ")", true, L.name == juce::String (newSession.state().library));
+        }
+        m.addSeparator();
+        m.addItem (1000, juce::String (juce::CharPointer_UTF8 ("New Library\xe2\x80\xa6")));
+        m.showMenuAsync (menuAt (x, y, w, h), [this] (int r)
+        {
+            if (r == 1000) { if (newSession.onNewLibrary) newSession.onNewLibrary(); return; }
+            if (r < 1 || r > (int) libraries.libraries.size()) return;
+            const auto& L = libraries.libraries[(size_t) r - 1];
+            newSession.state().library = L.name.toStdString();
+            newSession.state().libraryColour = L.colour;
+            newSession.refresh();
+        });
+    };
+    newSession.onPickStart = [this, menuAt] (float x, float y, float w, float h)
+    {
+        juce::PopupMenu m;
+        m.addItem (1, "The library's standard", true, dialogStartId.isEmpty());
+        auto* lib = libraries.find (juce::String (newSession.state().library));
+        std::vector<const LibrarySession*> mine, other;
+        for (auto& L : libraries.libraries)
+            for (auto& e : L.sessions)
+                if (e.settings.isObject()) (lib == &L ? mine : other).push_back (&e);
+        auto newest = [] (auto* a, auto* b) { return a->modified > b->modified; };
+        std::sort (mine.begin(), mine.end(), newest);
+        std::sort (other.begin(), other.end(), newest);
+        std::vector<const LibrarySession*> all;
+        auto line = [] (const LibrarySession* e) { return e->name + "  \xc2\xb7  " + e->artic; };
+        if (! mine.empty()) m.addSectionHeader ("Copy the levels and tone of");
+        for (auto* e : mine) { all.push_back (e); m.addItem ((int) all.size() + 1, juce::String (juce::CharPointer_UTF8 (line (e).toRawUTF8())), true, e->id == dialogStartId); }
+        if (! other.empty())
+        {
+            juce::PopupMenu sub;
+            for (auto* e : other) { all.push_back (e); sub.addItem ((int) all.size() + 1, juce::String (juce::CharPointer_UTF8 (line (e).toRawUTF8())), true, e->id == dialogStartId); }
+            m.addSubMenu ("Other libraries", sub);
+        }
+        if (all.empty()) m.addItem (-1, "No sessions in your libraries yet", false);
+        m.showMenuAsync (menuAt (x, y, w, h), [this, all] (int r)
+        {
+            if (r == 1) { dialogStartId.clear(); newSession.state().startFrom = "The library's standard"; }
+            else if (r >= 2 && r - 2 < (int) all.size()) { dialogStartId = all[(size_t) r - 2]->id; newSession.state().startFrom = all[(size_t) r - 2]->name.toStdString(); }
+            else return;
+            newSession.refresh();
+        });
+    };
+    newSession.onNewLibrary = [this]
+    {
+        auto* w = new juce::AlertWindow ("New library", "A collection of sessions, like Limitless Snares.", juce::MessageBoxIconType::NoIcon);
+        w->addTextEditor ("name", {});
+        w->addButton ("Create", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int r)
+        {
+            const auto name = w->getTextEditorContents ("name").trim();
+            if (r != 1 || name.isEmpty()) return;
+            if (! libraries.add (name) && libraries.find (name) == nullptr) return;
+            libraries.save();
+            if (auto* L = libraries.find (name))
+            {
+                newSession.state().library = L->name.toStdString();
+                newSession.state().libraryColour = L->colour;
+                newSession.refresh();
+            }
+        }), true);
+    };
     studio.setStep (ui::Step::session);
 
     auto& dm = engine.getDeviceManager().deviceManager;
@@ -143,6 +241,7 @@ void MainComponent::shutdownUi()
 {
     // Stop the GPU render loop before any frame it draws goes away.
     if (host) host->shutdown();
+    root.removeChild (&newSession);
     root.removeChild (&studio);
     host = nullptr;
 }
@@ -195,25 +294,9 @@ void MainComponent::importItems (const juce::Array<juce::File>& items)
         if (f.hasFileExtension (project::extension))
             return openProject (f);
 
-    auto planned = planImport (items);
-    if (planned.empty())
-    {
-        setNotice ("No WAV or AIFF files found there.");
-        return;
-    }
-
-    takes = std::move (planned);
-    currentTake = -1;
-    if (takes.size() == 1)
-        return openTake (0);
-
-    // Several takes: pick one now. Which take a session is gets decided at import, not in the header.
-    juce::PopupMenu m;
-    m.addSectionHeader ("Open which take?");
-    for (int i = 0; i < (int) takes.size(); ++i)
-        m.addItem (i + 1, takes[(size_t) i].title + "  (" + juce::String (takes[(size_t) i].mics.size()) + " mics)");
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (getScreenBounds().withSizeKeepingCentre (2, 2)),
-                     [this] (int r) { if (r > 0) openTake (r - 1); });
+    // Audio always starts a session through the New Session window.
+    if (newSession.isOpen()) dialogAddItems (items);
+    else openNewSession (items);
 }
 
 void MainComponent::closeEdit()
@@ -236,15 +319,30 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
     edit = std::move (newEdit);
     currentRoles = std::move (roles);
     project::storeRoles (*edit, currentRoles);
+    {
+        // what New Session decided travels with the project; a project opened from disk brings its own back
+        static const juce::Identifier key ("ldSession");
+        if (edit->state.hasProperty (key) && sessionName.isEmpty())
+        {
+            const auto v = juce::JSON::parse (edit->state[key].toString());
+            sessionName = v["name"].toString(); sessionLibrary = v["library"].toString(); librarySessionId = v["id"].toString();
+            takeOptions = { v["drum"].toString().toStdString(), v["artic"].toString().toStdString(), (int) v["vel"], (int) v["rr"], {} };
+        }
+        auto o = juce::var (new juce::DynamicObject()); auto* d = o.getDynamicObject();
+        d->setProperty ("name", sessionName); d->setProperty ("library", sessionLibrary); d->setProperty ("id", librarySessionId);
+        d->setProperty ("drum", juce::String (takeOptions.drum)); d->setProperty ("artic", juce::String (takeOptions.artic));
+        d->setProperty ("vel", takeOptions.vel); d->setProperty ("rr", takeOptions.rr);
+        edit->state.setProperty (key, juce::JSON::toString (o, true), nullptr);
+    }
     edit->resetChangedStatus();
     edit->getUndoManager().clearUndoHistory();
     edit->getUndoManager().addChangeListener (this);
 
     const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
-                     : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
+                     : takeTitle();
     studio.setModel (buildStudioModel (*edit, currentRoles, title, nullptr));
-    studio.setStep (ui::Step::align);
-    startPrep();
+    studio.setStep (ui::Step::session);
+    loadTake();
     updateHistory();
     grabKeyboardFocus();
     updateTitle();
@@ -301,7 +399,7 @@ void MainComponent::refreshModel()
 {
     if (! edit) return;
     const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
-                     : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
+                     : takeTitle();
     const auto view = studio.view;
     studio.setModel (buildStudioModel (*edit, currentRoles, title, engineState.get()));
     studio.view = view;
@@ -320,9 +418,9 @@ void MainComponent::startPrep()
     prepping = true;
     if (audition) audition->setEngine (nullptr);
     updateHeader();
-    std::thread ([files, folder, gen, sp = juce::Component::SafePointer<MainComponent> (this)]
+    std::thread ([files, folder, gen, opts = takeOptions, sp = juce::Component::SafePointer<MainComponent> (this)]
     {
-        std::shared_ptr<EngineState> st = prepareTake (files, folder);
+        std::shared_ptr<EngineState> st = prepareTake (files, folder, opts);
         juce::MessageManager::callAsync ([sp, st, gen]
         {
             if (sp == nullptr || sp->prepGeneration != gen) return;
@@ -357,8 +455,162 @@ void MainComponent::startPrep()
             sp->refreshModel();
             sp->updateHeader();
             sp->setNotice ("Ready. Every hit is on the level standard. File > Export writes the samples.");
+            sp->storeInLibrary();
         });
     }).detach();
+}
+
+juce::String MainComponent::takeTitle() const
+{
+    if (sessionName.isNotEmpty()) return sessionName;
+    return currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled");
+}
+
+/** Opens the take as Hitline would (names, the lead first, counts, the drum's defaults) and stops there:
+    Auto prep waits for you. */
+void MainComponent::loadTake()
+{
+    if (! edit) return;
+    const auto files = editFiles (*edit);
+    if (files.empty() || std::any_of (files.begin(), files.end(), [] (auto& f) { return ! f.existsAsFile(); })) return;
+    const int gen = ++prepGeneration;
+    const auto folder = files[0].getParentDirectory().getFileName();
+    prepping = false;
+    if (audition) audition->setEngine (nullptr);
+    setNotice (juce::CharPointer_UTF8 ("Loading the mics\xe2\x80\xa6"));
+    std::thread ([files, folder, gen, opts = takeOptions, sp = juce::Component::SafePointer<MainComponent> (this)]
+    {
+        auto st = ld::openTake (files, folder, opts);
+        juce::MessageManager::callAsync ([sp, st, gen]
+        {
+            if (sp == nullptr || sp->prepGeneration != gen) return;
+            sp->engineState = st;
+            sp->adoptEngineOrder();
+            sp->refreshModel();
+            sp->updateHeader();
+            const auto& S = st->session;
+            if (! st->errors.empty()) { sp->setNotice (juce::String (st->errors.front())); return; }
+            if (S.tracks.empty()) return;
+            sp->setNotice (juce::String (S.tracks.size()) + " mics loaded, " + juce::String (S.tracks[(size_t) S.refIdx].mic) + " leads, "
+                           + juce::String (S.det.V) + juce::String (juce::CharPointer_UTF8 (" \xc3\x97 ")) + juce::String (S.det.RR)
+                           + " hits expected. Press Auto Prep (A) when you're ready.");
+            sp->storeInLibrary();
+        });
+    }).detach();
+}
+
+//==============================================================================
+// New Session
+void MainComponent::openNewSession (const juce::Array<juce::File>& items)
+{
+    for (auto& f : items)
+        if (f.hasFileExtension (project::extension)) return openProject (f);
+
+    ui::NewSessionState s;
+    s.library = libraries.current.toStdString();
+    if (auto* L = libraries.find (libraries.current)) s.libraryColour = L->colour;
+    dialogTakes.clear();
+    dialogTake = -1;
+    dialogStartId.clear();
+    newSession.open (s);
+    if (! items.isEmpty()) dialogAddItems (items);
+}
+
+void MainComponent::dialogAddItems (const juce::Array<juce::File>& items)
+{
+    for (auto& f : items)
+        if (f.hasFileExtension (project::extension)) { newSession.close(); return openProject (f); }
+    auto planned = planImport (items);
+    if (planned.empty())
+    {
+        newSession.state().folder.clear();
+        newSession.state().folderDetail = "No WAV or AIFF files there.";
+        newSession.refresh();
+        return;
+    }
+    dialogTakes = std::move (planned);
+    if (dialogTakes.size() == 1) return dialogUseTake (0);
+    juce::PopupMenu m;
+    m.addSectionHeader ("Which articulation is this session?");
+    for (int i = 0; i < (int) dialogTakes.size(); ++i)
+        m.addItem (i + 1, dialogTakes[(size_t) i].title + "  (" + juce::String (dialogTakes[(size_t) i].mics.size()) + " mics)");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (getScreenBounds().withSizeKeepingCentre (2, 2)),
+                     [this] (int r) { if (r > 0) dialogUseTake (r - 1); });
+}
+
+void MainComponent::dialogUseTake (int index)
+{
+    if (index < 0 || index >= (int) dialogTakes.size() || ! newSession.isOpen()) return;
+    dialogTake = index;
+    const auto& take = dialogTakes[(size_t) index];
+    auto& s = newSession.state();
+    s.folder = take.title.toStdString();
+    juce::String detail = juce::String ((int) take.mics.size()) + " mic" + (take.mics.size() == 1 ? "" : "s");
+    if (take.sampleRate > 0) detail << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  ")) << juce::String (take.sampleRate / 1000.0, 1) << " kHz";
+    if (take.lengthSeconds > 0) detail << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  ")) << juce::String (take.lengthSeconds, 1) << " s";
+    detail << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  ")) << take.folder.getParentDirectory().getFileName();
+    s.folderDetail = detail.toStdString();
+
+    // what the names say: drum, articulation, counts
+    std::vector<std::string> rel, names;
+    for (auto& m : take.mics) { rel.push_back ((take.folder.getFileName() + "/" + m.file.getFileName()).toStdString()); names.push_back (rel.back()); }
+    const auto recs = hl::groupSessions (rel);
+    static const std::vector<std::string> known { "kick", "snare", "tom", "hat", "ride", "crash", "china", "splash", "kit" };
+    if (! recs.empty())
+    {
+        if (std::find (known.begin(), known.end(), recs[0].drum) != known.end()) s.drum = recs[0].drum;
+        if (! recs[0].artic.empty()) s.artic = recs[0].artic;
+    }
+    if (const auto c = hl::guessCounts (names)) { s.vel = c->first; s.rr = c->second; s.countsFromNames = true; }
+    else s.countsFromNames = false;
+    if (s.name.empty())
+    {
+        const auto parent = take.folder.getParentDirectory().getFileName();
+        s.name = (dialogTakes.size() > 1 || take.title.equalsIgnoreCase (juce::String (s.artic))) && parent.isNotEmpty() ? parent.toStdString() : take.title.toStdString();
+    }
+    newSession.refresh();
+}
+
+void MainComponent::createSession()
+{
+    if (dialogTake < 0 || dialogTake >= (int) dialogTakes.size()) return;
+    const auto s = newSession.state();
+    takeOptions = {};
+    takeOptions.drum = s.drum;
+    takeOptions.artic = s.artic.empty() ? std::string ("Hit") : s.artic;
+    takeOptions.vel = s.vel; takeOptions.rr = s.rr;
+    if (dialogStartId.isNotEmpty())
+        if (auto* from = libraries.findSession (dialogStartId)) takeOptions.settings = from->settings;
+    sessionName = juce::String (s.name).trim();
+    if (sessionName.isEmpty()) sessionName = dialogTakes[(size_t) dialogTake].title;
+    sessionLibrary = juce::String (s.library);
+    librarySessionId = juce::String::toHexString (juce::Random::getSystemRandom().nextInt64());
+    libraries.current = sessionLibrary;
+    newSession.close();
+    takes = dialogTakes;
+    openTake (dialogTake);
+    storeInLibrary();
+}
+
+/** Keeps the library's record of the open session current: what it is, where its project lives, its settings. */
+void MainComponent::storeInLibrary()
+{
+    if (librarySessionId.isEmpty() || sessionLibrary.isEmpty()) return;
+    LibrarySession e;
+    if (auto* old = libraries.findSession (librarySessionId)) e = *old;
+    e.id = librarySessionId;
+    e.name = sessionName;
+    e.drum = takeOptions.drum; e.artic = takeOptions.artic; e.vel = takeOptions.vel; e.rr = takeOptions.rr;
+    if (engineState && ! engineState->session.tracks.empty())
+    {
+        const auto& S = engineState->session;
+        e.drum = S.drum; e.artic = S.artic; e.vel = S.det.V; e.rr = S.det.RR;
+        e.settings = hl::settingsToVar (S);
+    }
+    if (projectFile != juce::File()) e.project = projectFile.getFullPathName();
+    e.modified = juce::Time::currentTimeMillis();
+    libraries.put (sessionLibrary, e);
+    libraries.save();
 }
 
 void MainComponent::exportTake()
@@ -392,7 +644,7 @@ void MainComponent::exportTake()
                 if (sp == nullptr) return;
                 sp->exporting = false;
                 sp->setNotice (err.isNotEmpty() ? "Export failed: " + err : "Exported " + juce::String (n) + " files to " + dir.getFileName() + ".");
-                if (err.isEmpty()) dir.revealToUser();
+                if (err.isEmpty()) { dir.revealToUser(); sp->storeInLibrary(); }
             });
         }).detach();
     });
@@ -465,6 +717,7 @@ void MainComponent::openProject (const juce::File& f)
     closeEdit();
     takes.clear();
     projectFile = f;
+    sessionName.clear(); sessionLibrary.clear(); librarySessionId.clear(); takeOptions = {};
     setNotice (missing.isEmpty() ? juce::String()
                                  : juce::String (missing.size()) + " audio file(s) are missing: " + missing.joinIntoString (", "));
     showEdit (std::move (loaded), roles);
@@ -494,6 +747,7 @@ void MainComponent::saveProject (bool saveAs, std::function<void (bool)> done)
             oldAutosave.deleteFile();
             projectFile = f;
             setNotice ("Saved " + f.getFileName());
+            storeInLibrary();
         }
         else
             setNotice ("Couldn't save to " + f.getFullPathName());
@@ -598,7 +852,7 @@ void MainComponent::updateTitle()
     if (edit)
     {
         const auto name = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
-                        : (currentTake >= 0 && currentTake < (int) takes.size() ? takes[(size_t) currentTake].title : juce::String ("Untitled"));
+                        : takeTitle();
         t = name + (edit->hasChangedSinceSaved() || projectFile == juce::File() ? " •" : "") + "  —  Limitless Drums";
     }
     if (onTitleChanged) onTitleChanged (t);
@@ -663,7 +917,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     if (index == 0)
     {
         m.addItem (miOpen, juce::String (juce::CharPointer_UTF8 ("Open Project\xe2\x80\xa6")));
-        m.addItem (miImport, juce::String (juce::CharPointer_UTF8 ("Import Tracks\xe2\x80\xa6")));
+        m.addItem (miImport, juce::String (juce::CharPointer_UTF8 ("New Session\xe2\x80\xa6")));
         m.addSeparator();
         m.addItem (miSave, "Save", hasEdit);
         m.addItem (miSaveAs, juce::String (juce::CharPointer_UTF8 ("Save As\xe2\x80\xa6")), hasEdit);
@@ -693,7 +947,7 @@ void MainComponent::menuItemSelected (int id, int)
     switch (id)
     {
         case miOpen:    chooseProject(); break;
-        case miImport:  chooseFiles(); break;
+        case miImport:  openNewSession(); break;
         case miSave:    saveProject (false); break;
         case miSaveAs:  saveProject (true); break;
         case miUndo:    undo (false); break;
@@ -828,13 +1082,13 @@ void MainComponent::updateHeader()
         for (auto& t : S.tracks) if (t.autoResult && ! t.autoResult->kept && (t.lag != 0 || t.pol < 0 || ! t.ap.empty())) ++moved;
         h.status[2] = S.phaseAnalyzed ? std::to_string (moved) + " LINED UP" : "NOT YET"; h.done[2] = S.phaseAnalyzed;
         h.status[3] = S.tuneInfo ? hl::noteName (S.tuneInfo->nearest) + (S.tune.on ? " \xc2\xb7 ON" : " \xc2\xb7 OFF") : "NO PITCH"; h.done[3] = S.tuneInfo.has_value();
-        h.status[4] = hl::fxOn (S) || hl::busLive (S) || hl::roomLive (S) ? "ON" : "FLAT";
+        h.status[4] = ! es->mix ? (prepping ? "RENDERING" : "NOT YET") : hl::fxOn (S) || hl::busLive (S) || hl::roomLive (S) ? "ON" : "FLAT";
         const bool lv = es->levels && es->levels->valid;
-        h.status[5] = lv ? "ON STANDARD" : (es->mix ? "NEEDS HITS" : "MEASURING"); h.done[5] = lv;
+        h.status[5] = lv ? "ON STANDARD" : (es->mix ? "NEEDS HITS" : prepping ? "MEASURING" : "NOT YET"); h.done[5] = lv;
         h.exportReady = es->mix && (lv || S.mode == "kit");
         static const EngineState* countedFor = nullptr; static size_t files = 0;
         if (countedFor != es || ! h.exportReady) { files = hl::exportList (S).size(); countedFor = h.exportReady ? es : nullptr; }
-        h.status[6] = std::to_string (files) + " FILES";
+        h.status[6] = h.exportReady ? std::to_string (files) + " FILES" : std::string ("NOT YET");
         h.velocities = S.det.V;
         h.hits = (int) S.onsets.size();
         const int sel = audition && audition->isPlaying() && audition->currentHit() >= 0 ? audition->currentHit() : studio.selectedHit;
@@ -874,11 +1128,12 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
 {
     using KC = visage::KeyCode;
     const auto code = k.keyCode();
+    if (newSession.isOpen()) return true;   // the window takes its own keys
     const double pos = edit ? edit->getTransport().getPosition().inSeconds() : 0.0;
     if (k.isMainModifier())
     {
         if (code == KC::O) { chooseProject(); return true; }
-        if (code == KC::I) { chooseFiles(); return true; }
+        if (code == KC::I || code == KC::N) { openNewSession(); return true; }
         if (code == KC::S) { saveProject (k.isShiftDown()); return true; }
         if (code == KC::Z) { undo (k.isShiftDown()); return true; }
         if (code == KC::E) { exportTake(); return true; }
@@ -912,6 +1167,7 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
 bool MainComponent::keyPressed (const juce::KeyPress& k)
 {
     // Keys reach here only when the GPU view doesn't have focus; route them the same way.
+    if (newSession.isOpen()) return k == juce::KeyPress::escapeKey ? (newSession.close(), true) : true;
     const auto mods = k.getModifiers();
     int vm = 0;
     if (mods.isCommandDown()) vm |= visage::kModifierCmd;
