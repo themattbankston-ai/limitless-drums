@@ -211,14 +211,14 @@ void Audition::setConsole (const std::vector<float>& g, const std::vector<float>
     busGain = bus; roomGain = room;
 }
 
-std::unique_ptr<Audition::Rendered> Audition::renderOne (const EngineState& es, int hit, bool mono) const
+std::unique_ptr<Audition::Rendered> Audition::renderOne (const EngineState& es, int hit, bool mono, const std::vector<int>& only) const
 {
     auto r = std::make_unique<Rendered>();
     static const hl::LevelResult none;
     const auto& L = es.levels ? *es.levels : none;
-    hl::StemOptions oa; oa.processed = false; oa.mono = mono; oa.taps = 16;
+    hl::StemOptions oa; oa.processed = false; oa.mono = mono; oa.taps = 16; oa.only = only;
     r->a = hl::renderHitStems (es.session, *es.mix, L, (size_t) hit, oa);
-    hl::StemOptions ob; ob.processed = true; ob.mono = mono; ob.taps = 16;
+    hl::StemOptions ob; ob.processed = true; ob.mono = mono; ob.taps = 16; ob.only = only;
     r->b = hl::renderHitStems (es.session, *es.mix, L, (size_t) hit, ob);
     return r;
 }
@@ -240,7 +240,8 @@ void Audition::play (std::vector<PlayEvent> events, const Options& o)
     if (! engine || ! engine->mix || events.empty()) return;
     auto ph = std::make_shared<Phrase>();
     ph->events = std::move (events);
-    ph->chain = o.chain; ph->mono = o.mono; ph->sr = engine->session.sr;
+    ph->chain = o.chain && o.side < 0 && ! o.gain; ph->mono = o.mono; ph->sr = engine->session.sr;
+    ph->console = o.console; ph->gain = o.gain; ph->side = o.gain ? -1 : o.side;
     ph->nT = (int) engine->session.tracks.size(); ph->ref = engine->session.refIdx;
     const size_t n = ph->events.size();
     ph->store.resize (n);
@@ -260,13 +261,21 @@ void Audition::play (std::vector<PlayEvent> events, const Options& o)
     if (std::find (pre.begin(), pre.end(), n - 1) == pre.end()) pre.push_back (n - 1);
     {
         std::vector<std::thread> th;
-        for (auto k : pre) th.emplace_back ([&, k] { ph->store[k] = renderOne (*es, ph->events[k].hit, o.mono); });
+        for (auto k : pre) th.emplace_back ([&, k] { ph->store[k] = renderOne (*es, ph->events[k].hit, o.mono, o.only); });
         for (auto& x : th) x.join();
         for (auto k : pre) ph->ready[k] = ph->store[k].get();
     }
     // one shared scale from the loudest hits at the current faders, so velocities keep their real steps
     auto mixPeak = [&] (const hl::HitStems& h)
     {
+        if (! o.console)
+        {
+            // every track at unity in the middle: the plain sum
+            std::vector<float> m ((size_t) h.len, 0.0f);
+            for (auto& st : h.stems) for (auto& c : st) for (size_t q = 0; q < c.size() && q < m.size(); ++q) m[q] += c[q] / (float) st.size();
+            float p = 0; for (float v : m) p = std::max (p, std::abs (v) * 0.7071f);
+            return p;
+        }
         auto [L, R] = hl::mixToStereo (es->session, h);
         float p = 0; for (size_t q = 0; q < L.size(); ++q) p = std::max ({ p, std::abs (L[q]), std::abs (R[q]) });
         return p;
@@ -276,7 +285,7 @@ void Audition::play (std::vector<PlayEvent> events, const Options& o)
     ph->scale = 0.89 / peak;
     // loudness-matched A/B: the original is brought to the processed version's loudness, on the same hits
     ph->kA = 1;
-    if (o.loudnessMatch)
+    if (o.loudnessMatch && ! o.gain)
     {
         auto E = [&] (const hl::HitStems& h)
         {
@@ -284,7 +293,7 @@ void Audition::play (std::vector<PlayEvent> events, const Options& o)
             for (size_t t = 0; t < h.stems.size(); ++t)
             {
                 const auto& st = h.stems[t]; if (st.empty()) continue;
-                const double g = tGain[(int) std::min<size_t> (t, maxTracks - 1)].load();
+                const double g = o.console ? tGain[(int) std::min<size_t> (t, maxTracks - 1)].load() : 1.0;
                 if (g == 0) continue;
                 double q = 0; for (auto& c : st) for (float v : c) q += (double) v * v;
                 s += q * g * g / (double) st.size();
@@ -301,10 +310,10 @@ void Audition::play (std::vector<PlayEvent> events, const Options& o)
     ph->end = ph->chain ? ph->chainAt + lenA : lenA;
 
     // the rest renders ahead of the playhead
-    worker = std::thread ([ph, es, this, mono = o.mono]
+    worker = std::thread ([ph, es, this, mono = o.mono, only = o.only]
     {
         for (size_t k = 0; k < ph->events.size() && ! ph->cancel; ++k)
-            if (ph->ready[k].load() == nullptr) { ph->store[k] = renderOne (*es, ph->events[k].hit, mono); ph->ready[k] = ph->store[k].get(); }
+            if (ph->ready[k].load() == nullptr) { ph->store[k] = renderOne (*es, ph->events[k].hit, mono, only); ph->ready[k] = ph->store[k].get(); }
     });
     phrase = ph;
     currentMode = o.mode;
@@ -338,13 +347,20 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
     Phrase* ph = live.load();
     if (ph == nullptr || nOut == 0) { pkL = pkL * 0.85f; pkR = pkR * 0.85f; inCallback = false; return; }
     const int nT = ph->nT, ref = ph->ref;
-    const bool pv = wantB.load();
-    const float targetA = (float) (ph->chain ? ph->scale * ph->kA : (pv ? 0 : ph->scale * ph->kA));
-    const float targetB = (float) (ph->chain ? ph->scale : (pv ? ph->scale : 0));
+    // which side plays: the A/B switch, unless the phrase is pinned to one side (the pair buttons) or plays the
+    // difference (hear what you gain: A inverted under B)
+    const bool pv = ph->side >= 0 ? ph->side == 1 : wantB.load();
+    float targetA = (float) (ph->chain ? ph->scale * ph->kA : (pv ? 0 : ph->scale * ph->kA));
+    float targetB = (float) (ph->chain ? ph->scale : (pv ? ph->scale : 0));
+    if (ph->gain) { targetA = (float) -ph->scale; targetB = (float) ph->scale; }
     const float bus = busGain.load(), room = roomGain.load();
     if (snapGains.exchange (false)) { gA = targetA; gB = targetB; }   // a phrase starts at its gains; only A/B flips glide
     float gT[maxTracks]; std::array<double, 4> P[maxTracks];
-    for (int k = 0; k < std::min (nT, maxTracks); ++k) { gT[k] = tGain[k].load(); P[k] = hl::trackPanGains (tPan[k].load(), tPanL[k].load(), tPanR[k].load(), tStereo[k].load()); }
+    for (int k = 0; k < std::min (nT, maxTracks); ++k)
+    {
+        if (! ph->console) { gT[k] = 1; P[k] = hl::trackPanGains (0, 0, 0, tStereo[k].load()); continue; }   // unity, centred
+        gT[k] = tGain[k].load(); P[k] = hl::trackPanGains (tPan[k].load(), tPanL[k].load(), tPanR[k].load(), tStereo[k].load());
+    }
     const int mon = monTrack.load();
     const float ramp = 1.0f - std::exp (-1.0f / (0.02f * (float) deviceRate));
     const float limRel = 1.0f - std::exp (-1.0f / (0.08f * (float) deviceRate));
@@ -372,7 +388,7 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
                 const long i0 = (long) pos;
                 if (i0 + 1 >= h.len) continue;
                 const float vg = ver ? gB : gA;
-                if (vg < 1e-6f) continue;
+                if (std::abs (vg) < 1e-6f) continue;
                 const double fr = pos - (double) i0;
                 if (ph->chain ? true : (ver == (pv ? 1 : 0))) { hitNow = e.hit; velNow = e.vel; }
                 for (int tr = 0; tr < (int) h.stems.size() && tr < maxTracks; ++tr)
@@ -382,7 +398,7 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
                     const auto& a = st[0]; const auto& b = st.size() > 1 ? st[1] : st[0];
                     const double xa = a[(size_t) i0] + (a[(size_t) i0 + 1] - a[(size_t) i0]) * fr;
                     const double xb = st.size() > 1 ? b[(size_t) i0] + (b[(size_t) i0 + 1] - b[(size_t) i0]) * fr : xa;
-                    if (tr == mon) monV = std::max (monV, std::max (std::abs (xa), std::abs (xb)) * vg);
+                    if (tr == mon) monV = std::max (monV, std::max (std::abs (xa), std::abs (xb)) * std::abs (vg));
                     const double g = gT[tr] * bus * vg;
                     if (g == 0) continue;
                     const bool sto = st.size() > 1;
@@ -391,7 +407,7 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
                     l += ol; r += orr;
                     (tr == ref ? lead : rest) += ol + orr;
                 }
-                if (! h.room.empty() && room > 0)
+                if (! h.room.empty() && room > 0 && ph->console)
                 {
                     const double g = room * bus * vg;
                     l += (h.room[0][(size_t) i0] + (h.room[0][(size_t) i0 + 1] - h.room[0][(size_t) i0]) * fr) * g;

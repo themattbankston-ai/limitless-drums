@@ -37,7 +37,15 @@ public:
     ~Audition() override;
 
     void setEngine (std::shared_ptr<EngineState>);
-    struct Options { bool chain = false, mono = false, loudnessMatch = true; std::string mode = "hit"; };
+    struct Options
+    {
+        bool chain = false, mono = false, loudnessMatch = true;
+        std::string mode = "hit";
+        std::vector<int> only;   ///< just these tracks (empty: all)
+        int side = -1;           ///< -1: A or B as the A/B switch says; 0: always A (as recorded); 1: always B
+        bool console = true;     ///< false: every track at unity, centred, ignoring faders, mute and solo (pair checks)
+        bool gain = false;       ///< hear what you gain: B minus A, what the processing changed and nothing else
+    };
     /** Message thread. Renders what the start needs (the loudest hits for the shared scale, a few for the
         loudness match), then plays; the rest renders ahead of the playhead. */
     void play (std::vector<PlayEvent>, const Options&);
@@ -85,11 +93,11 @@ private:
         std::vector<std::unique_ptr<Rendered>> store;
         std::unique_ptr<std::atomic<Rendered*>[]> ready;
         double scale = 1, kA = 1, chainAt = 0, end = 0, sr = 44100;
-        bool chain = false, mono = false;
-        int nT = 0, ref = 0;
+        bool chain = false, mono = false, console = true, gain = false;
+        int nT = 0, ref = 0, side = -1;
         std::atomic<bool> cancel { false };
     };
-    std::unique_ptr<Rendered> renderOne (const EngineState&, int hit, bool mono) const;
+    std::unique_ptr<Rendered> renderOne (const EngineState&, int hit, bool mono, const std::vector<int>& only) const;
     void finishLater();
 
     juce::AudioDeviceManager& dm;
