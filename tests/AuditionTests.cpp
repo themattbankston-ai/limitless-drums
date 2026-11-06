@@ -46,5 +46,6 @@ TEST_CASE ("Every play mode plays a real session to its end")
         UNSCOPED_INFO (m.name << ": " << m.ev.size() << " hits, " << au.phraseEnd() << " s, peak " << peak);
         au.stop();
     }
-    CHECK (ld::modes::groove (S).size() > 36 + 8);
+    CHECK (ld::modes::groove (S).size() == 36 + 8);
+    CHECK (ld::modes::rudiments (S).size() > 70);
 }
