@@ -494,7 +494,7 @@ void MainComponent::onAlignAction (const std::string& a, int mic, double v)
         if (prepping) return;
         // measure every mic again, off the message thread, on a copy; then it replaces the session's alignment
         if (audition) audition->stop();
-        setNotice (juce::CharPointer_UTF8 ("Lining up the mics again\xe2\x80\xa6"));
+        setNotice (juce::CharPointer_UTF8 ("Lining up the tracks again\xe2\x80\xa6"));
         const int gen = ++renderGeneration;
         auto copy = std::make_shared<hl::Session> (S);
         std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]

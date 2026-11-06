@@ -1535,7 +1535,7 @@ struct Studio::Rack : visage::Frame
         led (c, 30, 23, live, vio);
         c.setColor (0xff8b9099);
         const int nm = (int) A.mics.size() - (live ? 1 : 0);
-        draw::text (c, live ? std::to_string (std::max (0, nm)) + " MICS \xc2\xb7 " + std::to_string (A.fightingAfter) + " FIGHTING" : std::string ("NOT LINED UP YET"),
+        draw::text (c, live ? std::to_string (std::max (0, nm)) + " TRACKS \xc2\xb7 " + std::to_string (A.fightingAfter) + " FIGHTING" : std::string ("NOT LINED UP YET"),
                     boldFont (S (8.5f)), Font::kRight, X (120), Y (16), S (168), S (12));
         keyLabel (c, keys[0], "ALIGN AGAIN", true, vio, true);
         c.setColor (0xff5f6670); draw::text (c, "FIGHTING", boldFont (S (6.5f)), Font::kCenter, X (204), Y (42), S (88), S (9));
@@ -1547,7 +1547,7 @@ struct Studio::Rack : visage::Frame
         keyLabel (c, keys[3], "AS RECORDED", A.timing == "natural", vio, live);
 
         // SCOPE: the two selectors
-        silk (c, "MIC", 30, 139, 0xffb9bec6, 7.5f, 1.4f); silk (c, "LINES UP TO", 166, 139, 0xffb9bec6, 7.5f, 1.4f);
+        silk (c, "TRACK", 30, 139, 0xffb9bec6, 7.5f, 1.4f); silk (c, "LINES UP TO", 166, 139, 0xffb9bec6, 7.5f, 1.4f);
         const auto* M = live && A.mic >= 0 && A.mic < (int) A.mics.size() ? &A.mics[(size_t) A.mic] : nullptr;
         const std::string micName = M ? M->name : std::string ("\xe2\x80\x94");
         auto selector = [&] (const Key& kk, const std::string& t)
@@ -1640,7 +1640,7 @@ struct Studio::Rack : visage::Frame
         else
         {
             c.setColor (0xff5f6670);
-            draw::text (c, live ? "Pick a mic" : "Run Auto Prep to line the mics up", bodyFont (S (11)), Font::kCenter, X (scX), Y (scY), S (scW), S (scH));
+            draw::text (c, live ? "Pick a track" : "Run Auto Prep to line the tracks up", bodyFont (S (11)), Font::kCenter, X (scX), Y (scY), S (scW), S (scH));
         }
 
         // the jog wheel: its ring lights with the heat, the dimple turns with the delay
