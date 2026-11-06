@@ -6,6 +6,7 @@
 #include "core/Project.h"
 #include "ui/Studio.h"
 #include "ui/VisageHost.h"
+#include "Audition.h"
 
 namespace ld
 {
@@ -67,6 +68,12 @@ private:
     std::shared_ptr<struct EngineState> engineState;   ///< the ported Hitline engine's view of the open take
     int prepGeneration = 0;
     bool exporting = false;
+    std::unique_ptr<Audition> audition;
+    std::string playModeName = "hit";
+    bool chainAB = false, loopOn = false, followOn = true, lmOn = true, padsOn = false, prepping = false;
+    int lastSelected = -2;
+    std::vector<modes::MidiNote> midiNotes;
+    juce::String midiName;
     int autosaveTicks = 0;
     bool lastDirty = false;
     juce::String deviceText;
@@ -77,6 +84,12 @@ private:
     void refreshModel();
     void exportTake();
     void exportOneShotFile();
+    void playMode (const std::string& mode);
+    void startPhrase (const std::string& mode);
+    void stepHit (int delta);
+    void updateHeader();
+    void pushConsole();
+    int engineIndexOf (int editTrack) const;
     void showEdit (std::unique_ptr<tracktion::Edit>, std::vector<MicRole> roles);
     void closeEdit();
     void openProject (const juce::File&);

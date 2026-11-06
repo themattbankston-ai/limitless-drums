@@ -142,7 +142,7 @@ void runCase (const juce::String& keyName, const juce::String& folder)
         }
         S.busFader = con["busFader"]; S.busMute = con["busMute"];
         CHECK ((int) ld::hl::defaultOneShot (S, L) == (int) os["i"]);
-        const auto h = ld::hl::renderHitStems (S, M, L, (size_t) (int) os["i"]);
+        const auto h = ld::hl::renderHitStems (S, M, L, (size_t) (int) os["i"], ld::hl::StemOptions {});
         const auto [Lc, Rc] = ld::hl::mixToStereo (S, h);
         for (auto [y, g] : { std::pair<const ld::hl::F32*, juce::var> { &Lc, os["L"] }, { &Rc, os["R"] } })
         {

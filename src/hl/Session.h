@@ -209,7 +209,16 @@ int writeKit (const Session&, const MixRender&,
 /** One hit, every mic, ready to play: processed, on its level, one natural tail for all mics (Hitline's
     renderHitStems for processed playback). Mono mics come back as one channel at -3 dB. */
 struct HitStems { std::vector<Chs> stems; Chs room; size_t i = 0; double ratio = 1; long start = 0, len = 0; };
-HitStems renderHitStems (const Session&, const MixRender&, const LevelResult&, size_t i, int taps = 32);   ///< playback uses 16 taps
+struct StemOptions
+{
+    bool processed = true;            ///< false: the recording as it is (Hitline's A side)
+    bool mono = false;                ///< every mic summed to one channel (the mono check)
+    int taps = 32;                    ///< playback uses 16
+    std::vector<int> only;            ///< just these tracks (empty = all)
+};
+HitStems renderHitStems (const Session&, const MixRender&, const LevelResult&, size_t i, const StemOptions& = {});
+/** The console's pan law: {LL, RL, LR, RR}. A mono channel is equal-power, a stereo channel a balance control. */
+std::array<double, 4> panGains (double pan, bool stereo);
 /** The stems summed to stereo as the console stands: faders, mute and solo, pan, the bus fader, the room return. */
 std::pair<F32, F32> mixToStereo (const Session&, const HitStems&);
 /** A typical hard hit: the hardest layer's round robin closest to its median level on the lead. */

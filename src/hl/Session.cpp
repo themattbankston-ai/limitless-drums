@@ -1088,50 +1088,57 @@ int writeKit (const Session& S, const MixRender& M, const std::function<void (co
     return n;
 }
 
-HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult& L, size_t i, int taps)
+HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult& L, size_t i, const StemOptions& o)
 {
+    // Hitline's renderHitStems0: processed (B) or the recording as it is (A), one shared tail for all mics
     HitStems h;
     const long pre = (long) jsRound (S.det.prerollMs * S.sr / 1000), cap = (long) jsRound (S.exp.maxLenS * S.sr);
     const auto r = sliceRegions (S.onsets, pre, cap, S.maxLen())[i];
-    const double ratio = ratioOf (S, i);
+    const double ratio = o.processed ? ratioOf (S, i) : 1.0;
     const long len = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
-    auto gainAt = [&] (int t) { return L.valid ? std::pow (10.0, L.gainsDbT[(size_t) t][i] / 20) : std::pow (10.0, (i < S.tracks[(size_t) t].clip.size() ? S.tracks[(size_t) t].clip[i] : 0.0) / 20); };
+    auto clipLin = [&] (int t) { return std::pow (10.0, (i < S.tracks[(size_t) t].clip.size() ? S.tracks[(size_t) t].clip[i] : 0.0) / 20); };
+    auto gainAt = [&] (int t) { return o.processed && L.valid ? std::pow (10.0, L.gainsDbT[(size_t) t][i] / 20) : clipLin (t); };
     auto fit = [] (F32 c, long n) { c.resize ((size_t) n, 0.0f); return c; };
     for (int t = 0; t < (int) S.tracks.size(); ++t)
     {
-        // renderHitMic with the hit's own ratio at the session rate
-        const double step = ratio, on = (double) S.onsets[i], lag = lagOf (S, t);
+        if (! o.only.empty() && std::find (o.only.begin(), o.only.end(), t) == o.only.end()) { h.stems.emplace_back(); continue; }
+        const double step = ratio, on = (double) S.onsets[i], lag = o.processed ? lagOf (S, t) : 0.0;
+        const int pol = o.processed ? polR (S, t) : 1;
         const long preOut = (long) jsRound ((on - r.start) / step), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
         const long lo = r.start + (long) std::floor (lag), hi = r.end + (long) std::ceil (lag);
+        const auto& src = o.processed ? M.proc[(size_t) t] : S.tracks[(size_t) t].ch;
         Chs s;
-        for (auto& x : M.proc[(size_t) t]) s.push_back (fit (renderTuned (x, on, preOut, outLen, lag, polR (S, t), gainAt (t), step, lo, hi, 0, taps), len));
+        for (auto& x : src) s.push_back (fit (renderTuned (x, on, preOut, outLen, lag, pol, gainAt (t), step, lo, hi, 0, o.taps), len));
         h.stems.push_back (std::move (s));
     }
     Chs all; for (auto& s : h.stems) for (auto& c : s) all.push_back (c);
     if (! all.empty())
     {
         const auto plan = tailPlan (all, S.sr, 0, S.exp.tailFloor);
-        for (auto& s : h.stems) s = applyTail (s, plan, S.sr);
+        for (auto& s : h.stems) if (! s.empty()) s = applyTail (s, plan, S.sr);
     }
-    const long n = h.stems.empty() ? len : (long) h.stems[0][0].size();
+    long n = len;
+    for (auto& s : h.stems) if (! s.empty()) { n = (long) s[0].size(); break; }
+    // mono for the mono check; mono mics sit -3 dB in each side (equal-power centre)
     for (auto& s : h.stems)
-        if (s.size() == 1)
+        if (! s.empty() && (o.mono || s.size() == 1))
         {
+            const double k = s.size() == 1 ? 0.7071 : 0.5;
             F32 m ((size_t) n, 0.0f);
-            for (auto& c : s) for (long q = 0; q < n; ++q) m[(size_t) q] = (float) ((double) m[(size_t) q] + (double) c[(size_t) q] * 0.7071);
+            for (auto& c : s) for (long q = 0; q < n; ++q) m[(size_t) q] = (float) ((double) m[(size_t) q] + (double) c[(size_t) q] * k);
             s = { m };
         }
-    if (! M.room.empty() && roomLive (S))
+    if (o.processed && o.only.empty() && ! M.room.empty() && roomLive (S))
     {
         const double on = (double) S.onsets[i];
         const long preOut = (long) jsRound ((on - r.start) / ratio), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
-        for (auto& x : M.room) h.room.push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, taps), n));
+        for (auto& x : M.room) h.room.push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, o.taps), n));
     }
     h.i = i; h.ratio = ratio; h.start = r.start; h.len = n;
     return h;
 }
 
-static std::array<double, 4> panGains (double p, bool stereo)
+std::array<double, 4> panGains (double p, bool stereo)
 {
     const double pi = juce::MathConstants<double>::pi;
     if (! stereo) { const double x = (p + 1) * pi / 4; return { std::cos (x), 0, std::sin (x), 0 }; }
@@ -1149,6 +1156,7 @@ std::pair<F32, F32> mixToStereo (const Session& S, const HitStems& h)
     for (size_t t = 0; t < h.stems.size(); ++t)
     {
         const auto& s = h.stems[t];
+        if (s.empty()) continue;
         const auto& tr = S.tracks[t];
         const bool audible = anySolo ? tr.solo : ! tr.mute;
         const double g = (audible ? (tr.fader <= -60 ? 0 : std::pow (10.0, tr.fader / 20)) : 0) * bus;
@@ -1190,7 +1198,7 @@ OneShot exportOneShot (const Session& S, const MixRender& M, const LevelResult& 
     OneShot o;
     if (S.tracks.empty() || S.onsets.empty()) return o;
     const size_t i = S.oneShot >= 0 && S.oneShot < (int) S.onsets.size() ? (size_t) S.oneShot : defaultOneShot (S, L);
-    const auto h = renderHitStems (S, M, L, i);
+    const auto h = renderHitStems (S, M, L, i, StemOptions {});
     auto [Lc, Rc] = mixToStereo (S, h);
     double pk = 0;
     for (size_t q = 0; q < Lc.size(); ++q) pk = std::max ({ pk, (double) std::abs (Lc[q]), (double) std::abs (Rc[q]) });

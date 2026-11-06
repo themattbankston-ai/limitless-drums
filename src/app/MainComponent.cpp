@@ -34,6 +34,28 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
 
     studio.onImport = [this] { if (! edit) chooseFiles(); };
     studio.onPlay = [this] { togglePlay(); };
+    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); updateHeader(); };
+    studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
+    studio.onUndo = [this] { undo (false); };
+    studio.onRedo = [this] { undo (true); };
+    studio.onPrevHit = [this] { stepHit (-1); };
+    studio.onNextHit = [this] { stepHit (1); };
+    studio.onAB = [this] (int i)
+    {
+        if (i == 2) chainAB = ! chainAB;
+        else { chainAB = false; if (audition) audition->setProcessed (i == 1); }
+        updateHeader();
+    };
+    studio.onMode = [this] (const std::string& m) { playMode (m); };
+    studio.onToggle = [this] (const std::string& k)
+    {
+        if (k == "loop") loopOn = ! loopOn;
+        else if (k == "follow") followOn = ! followOn;
+        else if (k == "lm") lmOn = ! lmOn;
+        else if (k == "pads") { padsOn = false; setNotice ("The pads come with the screen, next."); }
+        updateHeader();
+    };
+    studio.onSelectTrack = [this] (int i) { if (audition) audition->setMonitorTrack (engineIndexOf (i)); updateHeader(); };
     studio.onRewind = [this] { if (edit) edit->getTransport().setPosition (te::TimePosition()); };
     studio.onRecord = [this] { setNotice ("Recording comes with Song mode."); };
     studio.onSeek = [this] (double t) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (t)); };
@@ -42,6 +64,12 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
     studio.onHistoryJump = [this] (int row) { jumpHistory (row); };
     studio.onRename = [this] (int i) { renameTrack (i); };
     studio.onKey = [this] (const visage::KeyEvent& k) { return handleKey (k); };
+    audition = std::make_unique<Audition> (engine.getDeviceManager().deviceManager);
+    audition->onFinished = [this]
+    {
+        if (loopOn && playModeName != "hit" && playModeName != "mono") startPhrase (playModeName);
+        updateHeader();
+    };
     studio.onFilesDropped = [this] (const std::vector<std::string>& paths)
     {
         juce::Array<juce::File> items;
@@ -61,7 +89,7 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
         auto t = audioTracks();
         if (i < (int) t.size()) if (auto* vp = t[(size_t) i]->getVolumePlugin()) { vp->setPan (pan); pushTrackStates(); }
     };
-    studio.setStep (ui::Step::importStep);
+    studio.setStep (ui::Step::session);
 
     auto& dm = engine.getDeviceManager().deviceManager;
     if (auto* dev = dm.getCurrentAudioDevice())
@@ -237,6 +265,9 @@ void MainComponent::startPrep()
     const int gen = ++prepGeneration;
     const auto folder = files[0].getParentDirectory().getFileName();
     setNotice (juce::CharPointer_UTF8 ("Finding the hits and lining up the mics\xe2\x80\xa6"));
+    prepping = true;
+    if (audition) audition->setEngine (nullptr);
+    updateHeader();
     std::thread ([files, folder, gen, sp = juce::Component::SafePointer<MainComponent> (this)]
     {
         std::shared_ptr<EngineState> st = prepareTake (files, folder);
@@ -246,6 +277,8 @@ void MainComponent::startPrep()
             sp->engineState = st;
             sp->refreshModel();
             const auto& S = st->session;
+            if (! st->prepared) sp->prepping = false;
+            sp->updateHeader();
             if (! st->errors.empty()) sp->setNotice (juce::String (st->errors.front()));
             else if (! st->prepared) sp->setNotice (juce::String (st->advice.empty() ? "Couldn't find the hits." : st->advice));
             else
@@ -266,7 +299,10 @@ void MainComponent::startPrep()
             if (sp == nullptr || sp->prepGeneration != gen || sp->engineState != st) return;
             st->mix = std::move (*mix);
             st->levels = std::move (*lv);
+            sp->prepping = false;
+            if (sp->audition) sp->audition->setEngine (st);
             sp->refreshModel();
+            sp->updateHeader();
             sp->setNotice ("Ready. Every hit is on the level standard. File > Export writes the samples.");
         });
     }).detach();
@@ -620,12 +656,167 @@ void MainComponent::menuItemSelected (int id, int)
 
 void MainComponent::togglePlay()
 {
-    if (! edit) return;
-    auto& t = edit->getTransport();
-    if (t.isPlaying()) t.stop (false, false);
-    else t.play (false);
+    // Space / Play: the lit play mode (Hitline's playSel); again stops
+    if (audition && audition->isPlaying()) { audition->stop(); updateHeader(); return; }
+    playMode (playModeName);
 }
 
+int MainComponent::engineIndexOf (int editTrack) const
+{
+    if (! edit || ! engineState) return 0;
+    const auto files = editFiles (*edit);
+    if (editTrack < 0 || editTrack >= (int) files.size()) return engineState->session.refIdx;
+    for (size_t t = 0; t < engineState->session.tracks.size(); ++t)
+        if (engineState->session.tracks[t].name == files[(size_t) editTrack].getFileNameWithoutExtension().toStdString()) return (int) t;
+    return engineState->session.refIdx;
+}
+
+void MainComponent::playMode (const std::string& m)
+{
+    if (! audition) return;
+    if (audition->isPlaying() && audition->mode() == m) { audition->stop(); updateHeader(); return; }
+    playModeName = m;
+    startPhrase (m);
+    updateHeader();
+}
+
+void MainComponent::startPhrase (const std::string& m)
+{
+    if (! engineState || ! engineState->mix) { setNotice ("Still preparing the take."); return; }
+    const auto& S = engineState->session;
+    const int sel = std::max (0, studio.selectedHit);
+    if (m != "hit" && m != "mono" && ! hl::countsOk (S)) { setNotice ("That needs the full hit count. Hit and Mono work now."); return; }
+    if (edit) edit->getTransport().stop (false, false);
+    pushConsole();
+    std::vector<PlayEvent> ev;
+    Audition::Options o;
+    o.mode = m; o.chain = chainAB && m != "hit" && m != "mono"; o.loudnessMatch = lmOn;
+    if (m == "hit") ev = modes::hit (S, sel);
+    else if (m == "layer") ev = modes::layer (S, sel);
+    else if (m == "sweep") ev = modes::sweep (S, sel);
+    else if (m == "groove") ev = modes::groove (S);
+    else if (m == "mono") { ev = modes::hit (S, sel); o.mono = true; }
+    else if (m == "midi")
+    {
+        if (midiNotes.empty())
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Play a MIDI file on this drum", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.mid;*.midi");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+            {
+                const auto f = fc.getResult();
+                if (! f.existsAsFile()) return;
+                juce::MemoryBlock mb; f.loadFileAsData (mb);
+                juce::String err;
+                auto notes = modes::parseMidi (mb, err);
+                if (notes.empty()) { setNotice (err); return; }
+                midiNotes = std::move (notes); midiName = f.getFileName();
+                startPhrase ("midi");
+                updateHeader();
+            });
+            return;
+        }
+        ev = modes::midi (S, midiNotes);
+    }
+    if (ev.empty()) return;
+    audition->play (std::move (ev), o);
+}
+
+void MainComponent::stepHit (int delta)
+{
+    const int n = (int) studio.model().hits.size();
+    if (n == 0) return;
+    studio.selectedHit = std::clamp (studio.selectedHit + delta, 0, n - 1);
+    studio.redrawAll();
+}
+
+void MainComponent::pushConsole()
+{
+    if (! audition || ! edit || ! engineState) return;
+    const auto& S = engineState->session;
+    std::vector<float> g (S.tracks.size(), 1.0f), pan (S.tracks.size(), 0.0f);
+    std::vector<bool> st (S.tracks.size(), false);
+    auto tracks = audioTracks();
+    bool anySolo = false;
+    for (auto* t : tracks) anySolo = anySolo || t->isSolo (false);
+    for (int i = 0; i < (int) tracks.size(); ++i)
+    {
+        const int e = engineIndexOf (i);
+        if (e < 0 || e >= (int) S.tracks.size()) continue;
+        auto* t = tracks[(size_t) i];
+        const bool audible = anySolo ? t->isSolo (false) : ! t->isMuted (false);
+        float db = 0, p = 0;
+        if (auto* vp = t->getVolumePlugin()) { db = vp->getVolumeDb(); p = vp->getPan(); }
+        g[(size_t) e] = audible ? (db <= -60 ? 0.0f : std::pow (10.0f, db / 20.0f)) : 0.0f;
+        pan[(size_t) e] = p;
+        st[(size_t) e] = S.tracks[(size_t) e].ch.size() > 1;
+    }
+    const float room = hl::roomLive (S) ? std::pow (10.0f, (float) S.room.ret / 20.0f) : 0.0f;
+    audition->setConsole (g, pan, st, 1.0f, room);
+}
+
+void MainComponent::updateHeader()
+{
+    ui::HeaderState h = studio.headerState();
+    const auto* es = engineState.get();
+    const auto& m = studio.model();
+    for (int i = 0; i < 7; ++i) { h.status[i].clear(); h.done[i] = false; }
+    h.prepping = prepping;
+    if (es && ! es->session.tracks.empty())
+    {
+        const auto& S = es->session;
+        const auto di = juce::String (S.drum).substring (0, 1).toUpperCase() + juce::String (S.drum).substring (1);
+        h.sessionLine = (di + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + juce::String (S.artic)).toStdString();
+        h.detailLine = std::to_string (S.tracks.size()) + " mics \xc2\xb7 " + std::to_string (S.det.V) + " vel \xc3\x97 " + std::to_string (S.det.RR) + " RR \xc2\xb7 "
+                     + juce::String (S.sr / 1000.0, 1).toStdString() + " kHz";
+        const bool ok = hl::countsOk (S);
+        h.status[0] = std::to_string (S.tracks.size()) + " MICS"; h.done[0] = true;
+        h.status[1] = std::to_string (S.onsets.size()) + (ok ? " HITS" : " FOUND"); h.done[1] = ok;
+        int moved = 0;
+        for (auto& t : S.tracks) if (t.autoResult && ! t.autoResult->kept && (t.lag != 0 || t.pol < 0 || ! t.ap.empty())) ++moved;
+        h.status[2] = S.phaseAnalyzed ? std::to_string (moved) + " LINED UP" : "NOT YET"; h.done[2] = S.phaseAnalyzed;
+        h.status[3] = S.tuneInfo ? hl::noteName (S.tuneInfo->nearest) + (S.tune.on ? " \xc2\xb7 ON" : " \xc2\xb7 OFF") : "NO PITCH"; h.done[3] = S.tuneInfo.has_value();
+        h.status[4] = hl::fxOn (S) || hl::busLive (S) || hl::roomLive (S) ? "ON" : "FLAT";
+        const bool lv = es->levels && es->levels->valid;
+        h.status[5] = lv ? "ON STANDARD" : (es->mix ? "NEEDS HITS" : "MEASURING"); h.done[5] = lv;
+        h.exportReady = es->mix && (lv || S.mode == "kit");
+        static const EngineState* countedFor = nullptr; static size_t files = 0;
+        if (countedFor != es || ! h.exportReady) { files = hl::exportList (S).size(); countedFor = h.exportReady ? es : nullptr; }
+        h.status[6] = std::to_string (files) + " FILES";
+        h.velocities = S.det.V;
+        h.hits = (int) S.onsets.size();
+        const int sel = audition && audition->isPlaying() && audition->currentHit() >= 0 ? audition->currentHit() : studio.selectedHit;
+        h.hit = sel;
+        h.vel = sel >= 0 && ok ? S.velOfHit ((size_t) sel) : -1;
+        h.rr = sel >= 0 && ok ? sel % S.det.RR : -1;
+        if (h.vel >= 0) { h.midiLo = (int) std::floor (h.vel * 127.0 / S.det.V) + 1; h.midiHi = (int) std::floor ((h.vel + 1) * 127.0 / S.det.V); } else h.midiLo = h.midiHi = 0;
+        h.hitWave.clear();
+        if (sel >= 0 && sel < (int) m.hits.size() && m.referenceTrack < (int) m.tracks.size())
+        {
+            const auto& tr = m.tracks[(size_t) m.referenceTrack];
+            const int b0 = (int) (m.hits[(size_t) sel].time * tr.blocksPerSecond), nb = (int) (0.6 * tr.blocksPerSecond);
+            float pk = 1e-6f;
+            for (int q = 0; q < nb && b0 + q < (int) tr.peaks.size(); ++q) pk = std::max (pk, tr.peaks[(size_t) (b0 + q)]);
+            for (int q = 0; q < 48; ++q)
+            {
+                float v = 0;
+                for (int r = q * nb / 48; r < (q + 1) * nb / 48 && b0 + r < (int) tr.peaks.size(); ++r) v = std::max (v, tr.peaks[(size_t) (b0 + r)]);
+                h.hitWave.push_back (v / pk);
+            }
+        }
+        const int mon = audition ? engineIndexOf (studio.selectedTrack) : S.refIdx;
+        h.monitorMic = juce::String (S.tracks[(size_t) std::clamp (mon, 0, (int) S.tracks.size() - 1)].mic).toUpperCase().toStdString();
+        if (audition) audition->setMonitorTrack (mon);
+    }
+    h.processed = audition ? audition->processed() : true;
+    h.chain = chainAB;
+    h.playing = audition && audition->isPlaying();
+    h.mode = playModeName;
+    h.loop = loopOn; h.follow = followOn; h.lm = lmOn; h.pads = padsOn;
+    h.canUndo = edit && edit->getUndoManager().canUndo();
+    h.canRedo = edit && edit->getUndoManager().canRedo();
+    h.historyCount = edit ? edit->getUndoManager().getNumActionsInCurrentTransaction() + (int) edit->getUndoManager().getUndoDescriptions().size() : 0;
+    studio.setHeader (std::move (h));
+}
 bool MainComponent::handleKey (const visage::KeyEvent& k)
 {
     using KC = visage::KeyCode;
@@ -641,6 +832,23 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
         return false;
     }
     if (code == KC::Space)  { togglePlay(); return true; }
+    // Hitline's keys: play modes, loop, A/B, previous and next hit, Auto Prep
+    if (code == KC::H) { playMode ("hit"); return true; }
+    if (code == KC::L) { playMode ("layer"); return true; }
+    if (code == KC::V) { playMode ("sweep"); return true; }
+    if (code == KC::G) { playMode ("groove"); return true; }
+    if (code == KC::M) { playMode ("mono"); return true; }
+    if (code == KC::O) { loopOn = ! loopOn; updateHeader(); return true; }
+    if (code == KC::A) { if (edit && ! prepping) startPrep(); return true; }
+    if (code == KC::B)
+    {
+        if (k.isShiftDown()) chainAB = ! chainAB;
+        else if (audition) { chainAB = false; audition->setProcessed (! audition->processed()); }
+        updateHeader();
+        return true;
+    }
+    if (code == KC::Left)  { stepHit (-1); return true; }
+    if (code == KC::Right) { stepHit (1); return true; }
     if (code == KC::Return && edit) { edit->getTransport().setPosition (te::TimePosition()); return true; }
     if (code == KC::Equals) { studio.zoomBy (1.5, pos); return true; }
     if (code == KC::Minus)  { studio.zoomBy (1.0 / 1.5, pos); return true; }
@@ -657,6 +865,8 @@ bool MainComponent::keyPressed (const juce::KeyPress& k)
     if (mods.isShiftDown()) vm |= visage::kModifierShift;
     auto ch = (int) juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode());
     if (k == juce::KeyPress::spaceKey) ch = ' ';
+    if (k.getKeyCode() == juce::KeyPress::leftKey) { stepHit (-1); return true; }
+    if (k.getKeyCode() == juce::KeyPress::rightKey) { stepHit (1); return true; }
     if (k == juce::KeyPress::returnKey) ch = '\n';
     if (k.getTextCharacter() == '=' || k.getTextCharacter() == '-') ch = (int) k.getTextCharacter();
     return handleKey (visage::KeyEvent ((visage::KeyCode) ch, vm, true));
@@ -677,6 +887,27 @@ void MainComponent::timerCallback()
             autosaveTicks = 0;
             project::autosave (*edit, project::autosaveFileFor (projectFile, sessionKey));
         }
+    }
+    if (audition)
+    {
+        auto& h = studio.headerState();
+        h.meterL = audition->peakL(); h.meterR = audition->peakR(); h.phase = audition->correlation();
+        Audition::MonitorPoint pts[512];
+        const int n = audition->drainMonitor (pts, 512);
+        if (n > 0)
+        {
+            float lv[512]; int vv[512];
+            for (int q = 0; q < n; ++q) { lv[q] = pts[q].level; vv[q] = pts[q].vel; }
+            studio.pushMonitor (lv, vv, n);
+        }
+        const bool playingNow = audition->isPlaying();
+        if (playingNow && audition->currentHit() >= 0 && audition->currentHit() != studio.selectedHit) { studio.selectedHit = audition->currentHit(); lastSelected = studio.selectedHit; studio.redrawAll(); }
+        if (studio.selectedHit != lastSelected)
+        {
+            lastSelected = studio.selectedHit;
+            if (followOn && ! playingNow && engineState && engineState->mix) startPhrase ("hit");
+        }
+        if (playingNow != h.playing || playingNow || (++autosaveTicks % 15) == 0) { if (playingNow) pushConsole(); updateHeader(); }
     }
     studio.tick (now);
 }

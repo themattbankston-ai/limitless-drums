@@ -225,265 +225,357 @@ namespace draw
 // Header unit: logo, steps, the movable transport group and the reference picker.
 struct Studio::Header : visage::Frame
 {
+    // Laid out on the 1652 x 286 rendered faceplate (assets/ui/header-plate.png) and scaled to the window.
     explicit Header (Studio& s) : studio (s) {}
     Studio& studio;
+    static constexpr float DW = 1652, DH = 286;
+    float k = 1;   // scale
+    std::map<std::string, visage::Svg> svgs;
 
-    struct Group { int id; float w; float x = 0; };   // 0 logo, 1 steps, 2 transport, 3 ref
-    std::vector<Group> groups;
-    float transportX = -1.0f;                          // where you dragged it; -1 = default
-    bool draggingTransport = false;
-    float dragOffset = 0.0f;
-    std::vector<std::pair<float, float>> stepX;        // x, width per step
-    float gripX = 0, rewindX = 0, playX = 0, recX = 0;
+    static constexpr unsigned stepColour[7] = { 0xff2ee6ff, 0xffff3da8, 0xff9b6bff, 0xff3dffd2, 0xffffb23e, 0xff7cff9b, 0xffff7ad9 };
+    static constexpr const char* stepName[7] = { "Session", "Hits", "Align", "Tune", "Mix", "Level", "Export" };
+    static constexpr const char* modeId[6] = { "hit", "layer", "sweep", "groove", "midi", "mono" };
+    static constexpr const char* modeName[6] = { "HIT", "LAYER", "SWEEP", "GROOVE", "MIDI", "MONO" };
+    static constexpr unsigned modeColour[6] = { 0xff2ee6ff, 0xff9b6bff, 0xffff3da8, 0xff3dffd2, 0xff7cff9b, 0xffff7ad9 };
 
-    static constexpr const char* stepNames[] = { "IMPORT", "ALIGN", "LEVELS", "TUNE", "MIX", "EXPORT" };
-
-    float stepsWidth() const
+    static std::string glowPath (const std::string& d, const std::string& stroke, float w)
     {
-        float w = 0;
-        const auto f = boldFont (11.5f);
-        for (auto* n : stepNames) w += textWidth (f, n) + 14 * 0.0f + 46;
-        return w + 5 * 6;
+        return "<path d='" + d + "' fill='none' stroke='" + stroke + "' stroke-opacity='0.22' stroke-width='" + std::to_string (w * 2.6f) + "' stroke-linecap='round' stroke-linejoin='round'/>"
+             + "<path d='" + d + "' fill='none' stroke='" + stroke + "' stroke-width='" + std::to_string (w) + "' stroke-linecap='round' stroke-linejoin='round'/>";
     }
-
-    void layoutGroups()
+    static std::string grad (const char* id, const char* a, const char* b, int w)
     {
-        const float logoW = 210, stepsW = stepsWidth(), transportW = 470, refW = 200;
-        std::vector<Group> others { { 0, logoW }, { 1, stepsW }, { 3, refW } };
-        // Default spot: centred in the space between the steps and the reference picker.
-        const float defaultX = 16 + logoW + 14 + stepsW + std::max (14.0f, (width() - 16 - refW - 14 - (16 + logoW + 14 + stepsW) - transportW) * 0.5f);
-        const float tx = transportX < 0 ? defaultX : transportX;
-
-        // Insert the transport where you dropped it, then pack everything else around it.
-        float natural = 16;
-        size_t insertAt = others.size();
-        for (size_t i = 0; i < others.size(); ++i)
+        return std::string ("<linearGradient id='") + id + "' gradientUnits='userSpaceOnUse' x1='0' y1='0' x2='" + std::to_string (w) + "' y2='0'><stop offset='0' stop-color='" + a + "'/><stop offset='1' stop-color='" + b + "'/></linearGradient>";
+    }
+    static std::string stepSvg (int i)
+    {
+        auto wrap = [] (int w, int h, const std::string& body) { return "<svg xmlns='http://www.w3.org/2000/svg' width='" + std::to_string (w) + "' height='" + std::to_string (h) + "' viewBox='0 0 " + std::to_string (w) + " " + std::to_string (h) + "'>" + body + "</svg>"; };
+        switch (i)
         {
-            if (tx + transportW * 0.5f < natural + others[i].w * 0.5f) { insertAt = i; break; }
-            natural += others[i].w + 14;
-        }
-        others.insert (others.begin() + (long) insertAt, Group { 2, transportW });
-        groups = others;
-
-        float cursor = 16;
-        for (size_t i = 0; i < groups.size(); ++i)
-        {
-            auto& g = groups[i];
-            if (g.id == 2) g.x = std::clamp (tx, cursor, width() - 16 - g.w);
-            else if (i == groups.size() - 1) g.x = std::max (cursor, width() - 16 - g.w);
-            else g.x = cursor;
-            cursor = g.x + g.w + 14;
+            case 0: return wrap (64, 54, "<defs>" + grad ("g", "#2ee6ff", "#4c8dff", 64) + "</defs>" + glowPath ("M10 15a22 7 0 1 0 44 0a22 7 0 1 0 -44 0M10 15v20c0 4 10 7 22 7s22-3 22-7V15", "url(#g)", 2.6f) + "<path d='M14 20l6 20M50 20l-6 20M32 22v20' stroke='url(#g)' stroke-opacity='0.55' stroke-width='2.4' stroke-linecap='round' fill='none'/>");
+            case 1: return wrap (74, 54, "<defs>" + grad ("g", "#ff3da8", "#ff7ad9", 74) + "</defs>" + glowPath ("M3 34h8l3-22 4 34 3-18 3 8 3-4h6l3-14 3 22 2-10 2 4h4l2-8 2 12 2-6h8", "url(#g)", 2.6f) + "<path d='M14 6l-3-4h6zM42 6l-3-4h6zM60 6l-3-4h6z' fill='#ff3da8'/>");
+            case 2: return wrap (74, 58, "<defs>" + grad ("g", "#9b6bff", "#2ee6ff", 74) + "</defs><circle cx='14' cy='29' r='4' fill='#9b6bff'/>" + glowPath ("M24 19a14 14 0 0 1 0 20M33 12a24 24 0 0 1 0 34M43 6a34 34 0 0 1 0 46", "url(#g)", 2.4f) + "<path d='M53 2a44 44 0 0 1 0 54' fill='none' stroke='url(#g)' stroke-opacity='0.45' stroke-width='2.4' stroke-linecap='round'/>");
+            case 3: return wrap (70, 54, "<defs>" + grad ("g", "#3dffd2", "#2ee6ff", 70) + "</defs>" + glowPath ("M26 6v14a9 9 0 0 0 18 0V6M35 29v19", "url(#g)", 2.6f) + "<path d='M4 27c4-8 8 8 12 0M54 27c4-8 8 8 12 0' fill='none' stroke='url(#g)' stroke-opacity='0.6' stroke-width='2.6' stroke-linecap='round'/>");
+            case 4: return wrap (66, 54, "<defs>" + grad ("g", "#ffb23e", "#ff6a3d", 66) + "</defs><path d='M13 4v46M33 4v46M53 4v46' fill='none' stroke='url(#g)' stroke-opacity='0.45' stroke-width='2.6' stroke-linecap='round'/><rect x='7' y='28' width='12' height='7' rx='2' fill='#ffb23e'/><rect x='27' y='12' width='12' height='7' rx='2' fill='#ff8a3d'/><rect x='47' y='34' width='12' height='7' rx='2' fill='#ff6a3d'/>");
+            case 5: return wrap (70, 54, "<defs>" + grad ("g", "#7cff9b", "#3dffd2", 70) + "</defs><g fill='url(#g)'><rect x='4' y='40' width='8' height='10' rx='2'/><rect x='15' y='34' width='8' height='16' rx='2'/><rect x='26' y='27' width='8' height='23' rx='2'/><rect x='37' y='20' width='8' height='30' rx='2'/><rect x='48' y='12' width='8' height='38' rx='2'/><rect x='59' y='4' width='8' height='46' rx='2'/></g>");
+            default: return wrap (70, 54, "<defs>" + grad ("g", "#ff7ad9", "#9b6bff", 70) + "</defs>" + glowPath ("M4 28c5-14 9 14 14 0s9 14 14 0M40 28h24M54 18l10 10-10 10", "url(#g)", 2.6f));
         }
     }
+    static std::string modeSvg (int i)
+    {
+        auto wrap = [] (const std::string& body) { return "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='22' viewBox='0 0 32 22'>" + body + "</svg>"; };
+        switch (i)
+        {
+            case 0: return wrap (glowPath ("M2 14h7l3-12 3 18 3-10 2 4h8", "#2ee6ff", 2.2f));
+            case 1: return wrap (glowPath ("M4 4v14M10 4v14M16 4v14M22 4v14M28 4v14", "#9b6bff", 2.2f));
+            case 2: return wrap (glowPath ("M3 17v3M9 13v7M15 9v11M21 5v15M27 2v18", "#ff3da8", 2.2f));
+            case 3: return wrap ("<g fill='#3dffd2'><circle cx='4' cy='16' r='2.6'/><circle cx='11' cy='8' r='2'/><circle cx='15' cy='16' r='2.6'/><circle cx='22' cy='12' r='1.6'/><circle cx='26' cy='16' r='2.6'/></g>");
+            case 4: return wrap ("<circle cx='16' cy='11' r='9' fill='none' stroke='#7cff9b' stroke-width='2'/><g fill='#7cff9b'><circle cx='11' cy='10' r='1.5'/><circle cx='21' cy='10' r='1.5'/><circle cx='13' cy='6' r='1.5'/><circle cx='19' cy='6' r='1.5'/><circle cx='16' cy='5' r='1.5'/></g>");
+            default: return wrap ("<circle cx='11' cy='11' r='8' fill='none' stroke='#ff7ad9' stroke-width='2'/><circle cx='21' cy='11' r='8' fill='none' stroke='#ff7ad9' stroke-width='2'/>");
+        }
+    }
+    void icon (Canvas& c, const std::string& key, const std::string& svgText, float x, float y, float w, float h, float alpha = 1)
+    {
+        const std::string id = key + "@" + std::to_string ((int) (w * 10)) + "x" + std::to_string ((int) (h * 10));
+        auto it = svgs.find (id);
+        if (it == svgs.end())
+        {
+            visage::Svg svg (reinterpret_cast<const unsigned char*> (svgText.data()), (int) svgText.size());
+            svg.setDimensions ((int) std::round (w), (int) std::round (h), 1.0f);
+            it = svgs.emplace (id, svg).first;
+        }
+        (void) alpha;
+        c.svg (it->second, x, y, w, h);
+    }
 
-    void resized() override { layoutGroups(); }
+    float X (float v) const { return v * k; }
+    void glowBox (Canvas& c, float x, float y, float w, float h, float r, unsigned col, float a, float blur)
+    {
+        c.setColor (draw::withAlpha (col, a));
+        c.roundedRectangleShadow (X (x), X (y), X (w), X (h), X (r), X (blur));
+    }
 
     void draw (Canvas& c) override
     {
-        const auto ch = chrome (studio.day);
-        draw::plate (c, 0, 0, width(), height(), ch.plateTop, ch.plateBottom, ch.plateEdge, 10);
-        layoutGroups();
-        for (auto& g : groups)
-        {
-            if (g.id == 0) drawLogo (c, g.x);
-            if (g.id == 1) drawSteps (c, g.x);
-            if (g.id == 2) drawTransport (c, g.x);
-            if (g.id == 3) drawRef (c, g.x, g.w);
-        }
-    }
+        k = width() / DW;
+        const auto& H = studio.hdr;
+        c.image (reinterpret_cast<const unsigned char*> (BinaryData::headerplate_png), BinaryData::headerplate_pngSize, 0, 0, width(), height());
 
-    void drawLogo (Canvas& c, float x)
-    {
-        const float cy = height() * 0.5f;
-        c.setColor (neon::amber);
-        c.svg (reinterpret_cast<const unsigned char*> (BinaryData::marknight_svg), BinaryData::marknight_svgSize,
-               x + 10, cy - 17, 34, 34);
-        const auto ch = chrome (studio.day);
-        c.setColor (ch.ink);
-        draw::spaced (c, "LIMITLESS", boldFont (19), x + 54, cy - 19, 26, 5.2f);
-        c.setColor (ch.inkQuiet);
-        draw::spaced (c, "DRUMS", uiFont (9.5f), x + 56, cy + 4, 14, 8.5f);
-    }
+        // logo and session
+        c.setColor (Color (0xffffb23e));
+        c.ring (X (28), X (30), X (36), X (2));
+        draw::text (c, "\xe2\x88\x9e", boldFont (X (26)), Font::kCenter, X (28), X (28), X (36), X (36));
+        c.setColor (Color (0xfff2efe8));
+        draw::spaced (c, "LIMITLESS", boldFont (X (21)), X (78), X (30), X (24), X (5.6f));
+        c.setColor (Color (0xff9aa0a8));
+        draw::spaced (c, "DRUMS", bodyFont (X (10)), X (79), X (54), X (14), X (7.8f));
+        c.setColor (Color (0xff5f6670));
+        draw::spaced (c, "SESSION", boldFont (X (10)), X (28), X (94), X (12), X (2));
+        c.setColor (Color (0xffe6e3dc));
+        draw::text (c, H.sessionLine, uiFont (X (15)), Font::kLeft, X (28), X (110), X (230), X (20));
+        c.setColor (Color (0xff9aa0a8));
+        draw::text (c, H.detailLine, bodyFont (X (12)), Font::kLeft, X (28), X (131), X (240), X (18));
 
-    void drawSteps (Canvas& c, float x)
-    {
-        const auto f = boldFont (11.5f);
-        const auto ch = chrome (studio.day);
-        stepX.clear();
-        const float h = 30, y = (height() - h) * 0.5f;
-        for (int i = 0; i < 6; ++i)
+        // the steps
+        const int cur = (int) studio.currentStep;
+        for (int i = 0; i < 7; ++i)
         {
-            const float w = textWidth (f, stepNames[i]) + 46;
-            const bool on = (int) studio.currentStep == i;
-            stepX.push_back ({ x, w });
+            const float x = 272 + 138 * i, y = 18, w = 128, h = 142;
+            const unsigned col = stepColour[i];
+            const bool on = i == cur, dim = i == 6 && ! H.exportReady;
             if (on)
             {
-                c.setColor (draw::withAlpha (neon::cyan, 0.35f));
-                c.roundedRectangleShadow (x, y, w, h, 7, 16);
-                c.setColor (Brush::linear (Color (0xff7ff3ff), Color (0xff19c6e6), Point (x, y), Point (x, y + h)));
-                c.roundedRectangle (x, y, w, h, 7);
-                c.setColor (0x66ffffff);
-                c.fill (x + 6, y + 1, w - 12, 1);
-                draw::led (c, x + 15, y + h * 0.5f, 0xff053039, true, 2.6f);
-                c.setColor (0xff06222a);
+                c.setColor (Brush::radial (draw::withAlpha (col, 0.34f), draw::withAlpha (col, 0.0f), Point (X (x + w / 2), X (y + h + 16)), X (w * 0.9f), X (h * 0.7f)));
+                c.roundedRectangle (X (x), X (y), X (w), X (h), X (12));
+                c.setColor (draw::withAlpha (col, 0.75f));
+                c.roundedRectangleBorder (X (x), X (y), X (w), X (h), X (12), X (1.5f));
+                c.setColor (col);
+                c.roundedRectangle (X (x + 30), X (y), X (w - 60), X (2), X (1));
+                glowBox (c, x + 28, y - 2, w - 56, 6, 3, col, 0.6f, 10);
+            }
+            const float a = dim ? 0.45f : 1.0f;
+            c.setColor (draw::withAlpha (col, a));
+            draw::text (c, stepName[i], uiFont (X (17)), Font::kCenter, X (x), X (y + 14), X (w), X (22));
+            icon (c, "step" + std::to_string (i) + (dim ? "d" : ""), stepSvg (i), X (x + w / 2 - 36), X (y + 46), X (72), X (56));
+            c.setColor (draw::withAlpha (col, dim ? 0.4f : 0.85f));
+            const auto st = H.status[i];
+            draw::spaced (c, st, monoBold (X (10.5f)), X (x + w / 2) - textWidth (monoBold (X (10.5f)), st) / 2 - st.size() * X (0.7f), X (y + h - 26), X (14), X (1.4f));
+            if (H.done[i]) { glowBox (c, x + w - 17, y + 11, 6, 6, 3, col, 0.8f, 8); c.setColor (col); c.circle (X (x + w - 17), X (y + 11), X (6)); }
+        }
+
+        // Auto Prep: the selected mic as a heart monitor while it plays, a slow wave otherwise
+        {
+            const float x = 1244, y = 18, w = 214, h = 142, base = y + 84;
+            c.setColor (draw::withAlpha (0xff2ee6ff, 0.06f));
+            for (float gx = x + 14; gx < x + w; gx += 14) c.fill (X (gx), X (y + 2), X (1), X (h - 4));
+            for (float gy = y + 14; gy < y + h; gy += 14) c.fill (X (x + 2), X (gy), X (w - 4), X (1));
+            c.setColor (draw::withAlpha (0xff2ee6ff, 0.12f));
+            c.fill (X (x + 2), X (base), X (w - 4), X (1));
+            const auto& L = studio.monLevel;
+            if (H.playing && ! L.empty())
+            {
+                const int n = (int) L.size(), head = studio.monHead;
+                for (int col = 1; col < n; ++col)
+                {
+                    const int age = (head - col + n) % n;             // 0 at the head
+                    if (age > n - 8) continue;                         // the gap ahead of the head
+                    const float fade = age < n * 0.85f ? 1.0f - 0.55f * age / (float) n : 0.3f;
+                    const float l0 = L[(size_t) col - 1], l1 = L[(size_t) col];
+                    const auto amp = [&] (float v) { return std::min (66.0f, std::pow (std::max (0.0f, v), 0.5f) * 80.0f); };
+                    const int vel = studio.monVel[(size_t) col];
+                    const unsigned vc = draw::layerColour (vel, std::max (1, H.velocities));
+                    const float px0 = x + 4 + (w - 8) * (col - 1) / (float) n, px1 = x + 4 + (w - 8) * col / (float) n;
+                    const float y0 = base - amp (l0) * ((col & 1) ? 1.0f : -0.55f), y1 = base - amp (l1) * ((col & 1) ? -0.55f : 1.0f);
+                    c.setColor (draw::withAlpha (vc, 0.25f * fade));
+                    c.segment (X (px0), X (y0), X (px1), X (y1), X (4.5f), true);
+                    c.setColor (draw::withAlpha (vc, fade));
+                    c.segment (X (px0), X (y0), X (px1), X (y1), X (1.7f), true);
+                }
+                const float hx = x + 4 + (w - 8) * head / (float) n;
+                glowBox (c, hx - 5, base - 5, 10, 10, 5, 0xffff7ad9, 0.7f, 12);
+                c.setColor (Color (0xffffffff));
+                c.circle (X (hx - 2.6f), X (base - 2.6f), X (5.2f));
             }
             else
             {
-                c.setColor (studio.day ? 0xffd5d8dd : 0xff1b1d22);
-                c.roundedRectangle (x, y, w, h, 7);
-                c.setColor (studio.day ? 0x22000000 : 0x14ffffff);
-                c.roundedRectangleBorder (x, y, w, h, 7, 1);
-                const bool reachable = studio.data.hasSession || i == 0;
-                draw::led (c, x + 15, y + h * 0.5f, neon::lime, reachable && i < (int) studio.currentStep, 2.6f);
-                c.setColor (reachable ? ch.inkQuiet : ch.inkDim);
+                // idle: a slow flowing wave, cyan to violet to pink
+                const float tt = (float) studio.now;
+                for (int pass = 0; pass < 2; ++pass)
+                    for (int q = 0; q < 80; ++q)
+                    {
+                        const float u0 = q / 80.0f, u1 = (q + 1) / 80.0f;
+                        auto yAt = [&] (float u) { return base + 2 + 14 * std::sin (u * 9.4f + tt * 1.3f) * std::sin (u * 3.1f + tt * 0.4f) + (pass ? 6 * std::sin (u * 13 + tt * 2.1f) : 0); };
+                        const unsigned col = u0 < 0.55f ? 0xff2ee6ff : 0xffff3da8;
+                        const float mix = u0 < 0.55f ? u0 / 0.55f : (u0 - 0.55f) / 0.45f;
+                        const Color cc = u0 < 0.55f ? Color (col).interpolateWith (Color (0xff9b6bff), mix) : Color (0xff9b6bff).interpolateWith (Color (col), mix);
+                        c.setColor (cc.withAlpha (pass ? 0.45f : 0.95f));
+                        c.segment (X (x + 4 + (w - 8) * u0), X (yAt (u0)), X (x + 4 + (w - 8) * u1), X (yAt (u1)), X (pass ? 1.2f : 2.0f), true);
+                    }
             }
-            draw::spaced (c, stepNames[i], f, x + 25, y, h, 1.6f);
-            x += w + 6;
+            c.setColor (Color (0xffd9d4ea));
+            draw::spaced (c, H.prepping ? "PREPARING\xe2\x80\xa6" : "AUTO PREP", boldFont (X (11)), X (x + 14), X (y + 10), X (14), X (2.2f));
+            if (! H.monitorMic.empty())
+            {
+                const auto mic = "\xe2\x97\x8f " + H.monitorMic;
+                c.setColor (Color (0xff2ee6ff));
+                draw::text (c, mic, boldFont (X (10)), Font::kRight, X (x + 14), X (y + 10), X (w - 28), X (14));
+            }
+            c.setColor (Color (0xff7d7891));
+            const std::string foot = H.playing && studio.hdr.vel >= 0 ? "VEL " + std::to_string (H.vel + 1) + (H.vel + 1 == H.velocities ? " \xc2\xb7 HARDEST" : "") : "EVERY STEP, FROM YOUR STANDARD";
+            draw::spaced (c, foot, monoFont (X (10)), X (x + 14), X (y + h - 22), X (12), X (1.1f));
         }
-    }
 
-    void drawTransport (Canvas& c, float x)
-    {
-        const float h = height() - 14, y = 7;
-        c.setColor (studio.day ? 0xffc3c7cd : 0xff0e0f12);
-        c.roundedRectangle (x, y, 470, h, 9);
-        c.setColor (studio.day ? 0x30000000 : 0x18ffffff);
-        c.roundedRectangleBorder (x, y, 470, h, 9, 1);
-
-        // grip
-        gripX = x;
-        c.setColor (studio.day ? 0x66000000 : 0x55ffffff);
-        for (int r = 0; r < 5; ++r)
-            for (int col = 0; col < 2; ++col)
-                c.circle (x + 9 + col * 5, y + h * 0.5f - 11 + r * 5.2f, 2.2f);
-
-        auto key = [&] (float kx, float kw, unsigned top, unsigned bottom)
+        // undo / redo rings, history
+        auto ringLight = [&] (float cx, float cy, float d, unsigned col, float a)
         {
-            c.setColor (0x88000000);
-            c.roundedRectangle (kx, y + 6, kw, h - 10, 6);
-            c.setColor (Brush::linear (Color (top), Color (bottom), Point (kx, y + 5), Point (kx, y + h - 5)));
-            c.roundedRectangle (kx, y + 5, kw, h - 11, 6);
-            c.setColor (0x33ffffff);
-            c.fill (kx + 5, y + 6, kw - 10, 1);
+            glowBox (c, cx - d / 2, cy - d / 2, d, d, d / 2, col, 0.45f * a, 18);
+            c.setColor (draw::withAlpha (col, 0.9f * a));
+            c.ring (X (cx - d / 2), X (cy - d / 2), X (d), X (2.5f));
         };
-        const float ky = y + 5, kh = h - 11;
-        rewindX = x + 28;
-        key (rewindX, 44, 0xff3a3d44, 0xff23252a);
-        c.setColor (0xffd9dce1);
-        c.fill (rewindX + 15, ky + kh * 0.5f - 7, 2.2f, 14);
+        if (H.canUndo) ringLight (1506, 62, 64, 0xff2ee6ff, 1);
+        if (H.canRedo) ringLight (1578, 62, 64, 0xff2ee6ff, 1);
+        auto arrow = [&] (float cx, float cy, bool redo, bool on)
         {
-            visage::Path p;
-            p.moveTo (rewindX + 30, ky + kh * 0.5f - 7);
-            p.lineTo (rewindX + 30, ky + kh * 0.5f + 7);
-            p.lineTo (rewindX + 18.5f, ky + kh * 0.5f);
-            p.close();
-            c.fill (p);
+            c.setColor (on ? Color (0xffbff6ff) : Color (0xff4c5058));
+            const float d = redo ? 1.0f : -1.0f;
+            c.segment (X (cx - 6 * d), X (cy - 4), X (cx + 2 * d), X (cy - 4), X (2.2f), true);
+            c.segment (X (cx - 6 * d), X (cy - 4), X (cx - 2 * d), X (cy - 8), X (2.2f), true);
+            c.segment (X (cx - 6 * d), X (cy - 4), X (cx - 2 * d), X (cy), X (2.2f), true);
+            c.segment (X (cx + 2 * d), X (cy - 4), X (cx + 6 * d), X (cy + 1), X (2.2f), true);
+            c.segment (X (cx + 6 * d), X (cy + 1), X (cx + 2 * d), X (cy + 6), X (2.2f), true);
+        };
+        arrow (1506, 62, false, H.canUndo);
+        arrow (1578, 62, true, H.canRedo);
+        c.setColor (Color (0xff6a707a));
+        draw::text (c, "UNDO", boldFont (X (9.5f)), Font::kCenter, X (1466), X (102), X (80), X (12));
+        draw::text (c, "REDO", boldFont (X (9.5f)), Font::kCenter, X (1538), X (102), X (80), X (12));
+        pill (c, 1496, 128, 110, "HISTORY \xc2\xb7 " + std::to_string (H.historyCount), studio.isHistoryVisible(), 0xff9b6bff);
+
+        // transport
+        c.setColor (Color (0xff8b9099));
+        c.triangleLeft (X (44), X (226), X (12));
+        c.fill (X (42), X (226), X (2), X (12));
+        c.triangleRight (X (182), X (226), X (12));
+        c.fill (X (194), X (226), X (2), X (12));
+        ringLight (118, 232, 78, 0xff3dffd2, H.playing ? 1.0f : 0.7f);
+        c.setColor (Color (0xffc9fff2));
+        if (H.playing) { c.roundedRectangle (X (109), X (223), X (7), X (18), X (1.5f)); c.roundedRectangle (X (121), X (223), X (7), X (18), X (1.5f)); }
+        else c.triangleRight (X (110), X (220), X (24));
+
+        // readout: velocity and round robin first
+        {
+            const float x = 222, y = 200;
+            c.setColor (Color (0xffa87a33));
+            draw::spaced (c, "VEL", monoBold (X (13)), X (x + 16), X (y + 16), X (16), X (1.8f));
+            draw::spaced (c, "RR", monoBold (X (13)), X (x + 96), X (y + 16), X (16), X (1.8f));
+            c.setColor (Color (0xffffb23e));
+            draw::text (c, H.vel >= 0 ? std::to_string (H.vel + 1) : "\xe2\x80\x93", monoBold (X (27)), Font::kLeft, X (x + 52), X (y + 6), X (40), X (32));
+            draw::text (c, H.rr >= 0 ? std::to_string (H.rr + 1) : "\xe2\x80\x93", monoBold (X (27)), Font::kLeft, X (x + 124), X (y + 6), X (40), X (32));
+            c.setColor (Color (0xff7b8190));
+            std::string line = H.hit >= 0 ? "HIT " + std::to_string (H.hit + 1) + " / " + std::to_string (H.hits) : "NO HIT SELECTED";
+            if (H.midiHi > 0) line += " \xc2\xb7 MIDI " + std::to_string (H.midiLo) + "\xe2\x80\x93" + std::to_string (H.midiHi);
+            draw::spaced (c, line, monoFont (X (10)), X (x + 18), X (y + 46), X (12), X (1.2f));
+            const auto& wv = H.hitWave;
+            if (! wv.empty())
+            {
+                const float wx = x + 186, wy = y + 32, ww = 94;
+                for (size_t q = 1; q < wv.size(); ++q)
+                {
+                    const float u = q / (float) wv.size();
+                    const Color cc = u < 0.5f ? Color (0xff2ee6ff).interpolateWith (Color (0xff9b6bff), u * 2) : Color (0xff9b6bff).interpolateWith (Color (0xffff3da8), (u - 0.5f) * 2);
+                    c.setColor (cc.withAlpha (1.0f - 0.6f * u));
+                    const float a0 = wv[q - 1] * 21 * ((q & 1) ? 1 : -1), a1 = wv[q] * 21 * ((q & 1) ? -1 : 1);
+                    c.segment (X (wx + ww * (q - 1) / wv.size()), X (wy + a0), X (wx + ww * q / wv.size()), X (wy + a1), X (1.6f), true);
+                }
+            }
         }
 
-        playX = rewindX + 52;
-        if (studio.playing)
+        // A / B / A then B
         {
-            c.setColor (draw::withAlpha (neon::lime, 0.5f));
-            c.roundedRectangleShadow (playX, ky, 64, kh, 6, 20);
-        }
-        key (playX, 64, studio.playing ? 0xffa6ff8f : 0xff6fe85a, studio.playing ? 0xff4fd23a : 0xff36a828);
-        c.setColor (0xff0d2a0a);
-        if (studio.playing)
-        {
-            c.fill (playX + 25, ky + kh * 0.5f - 7, 5, 14);
-            c.fill (playX + 34, ky + kh * 0.5f - 7, 5, 14);
-        }
-        else
-        {
-            visage::Path p;
-            p.moveTo (playX + 26, ky + kh * 0.5f - 8);
-            p.lineTo (playX + 26, ky + kh * 0.5f + 8);
-            p.lineTo (playX + 40, ky + kh * 0.5f);
-            p.close();
-            c.fill (p);
+            const float x = 528, y = 210, w = 150, h = 44;
+            const int sel = H.chain ? 2 : H.processed ? 1 : 0;
+            const char* lab[3] = { "A", "B", "A\xe2\x86\x92" "B" };
+            for (int i = 0; i < 3; ++i)
+            {
+                const float sx = x + w / 3 * i;
+                if (i == sel)
+                {
+                    c.setColor (Brush::radial (draw::withAlpha (0xff9b6bff, 0.6f), draw::withAlpha (0xff9b6bff, 0.0f), Point (X (sx + w / 6), X (y + h + 8)), X (w / 3 * 0.8f), X (h * 0.9f)));
+                    c.fill (X (sx + 1), X (y + 1), X (w / 3 - 2), X (h - 2));
+                }
+                c.setColor (i == sel ? Color (0xffffffff) : Color (0xff5d636c));
+                draw::text (c, lab[i], boldFont (X (i == 2 ? 12 : 15)), Font::kCenter, X (sx), X (y), X (w / 3), X (h));
+            }
         }
 
-        recX = playX + 72;
-        key (recX, 44, 0xff3a3d44, 0xff23252a);
-        c.setColor (0xffd9dce1);
-        c.circle (recX + 16, ky + kh * 0.5f - 6, 12);
+        // play modes
+        for (int i = 0; i < 6; ++i)
+        {
+            const float x = 694 + 84 * i, y = 201, w = 76, h = 62;
+            const bool on = H.mode == modeId[i];
+            const unsigned col = modeColour[i];
+            if (on)
+            {
+                c.setColor (Brush::radial (draw::withAlpha (col, 0.36f), draw::withAlpha (col, 0.0f), Point (X (x + w / 2), X (y + h + 10)), X (w * 0.9f), X (h * 0.8f)));
+                c.roundedRectangle (X (x), X (y), X (w), X (h), X (9));
+                c.setColor (draw::withAlpha (col, 0.75f));
+                c.roundedRectangleBorder (X (x), X (y), X (w), X (h), X (9), X (1.5f));
+                if (H.playing) glowBox (c, x - 4, y - 4, w + 8, h + 8, 12, col, 0.25f, 16);
+            }
+            icon (c, std::string ("mode") + modeId[i], modeSvg (i), X (x + w / 2 - 16), X (y + 12), X (32), X (22));
+            c.setColor (draw::withAlpha (col, on ? 1.0f : 0.65f));
+            draw::text (c, modeName[i], boldFont (X (9.5f)), Font::kCenter, X (x), X (y + 40), X (w), X (12));
+        }
 
-        // LED clock
-        const float cx = recX + 54, cw = 170;
-        draw::glass (c, cx, ky - 1, cw, kh + 2);
-        const unsigned ledColour = studio.playing ? neon::lime : neon::amber;
-        const auto clockFont = monoBold (27);
-        c.setColor (draw::withAlpha (ledColour, 0.08f));
-        draw::text (c, "8:88.888", clockFont, Font::kRight, cx, ky, cw - 12, kh);
-        c.setColor (draw::withAlpha (ledColour, 0.35f));
-        draw::text (c, draw::clock (studio.playhead), clockFont, Font::kRight, cx + 0.8f, ky, cw - 12, kh);
-        c.setColor (ledColour);
-        draw::text (c, draw::clock (studio.playhead), clockFont, Font::kRight, cx, ky, cw - 12, kh);
+        pill (c, 1208, 200, 92, "LOOP", H.loop, 0xff3dffd2);
+        pill (c, 1306, 200, 92, "FOLLOW", H.follow, 0xff3dffd2);
+        pill (c, 1208, 236, 92, "LM", H.lm, 0xff3dffd2);
+        pill (c, 1306, 236, 92, "PADS", H.pads, 0xff3dffd2);
 
-        // tempo
-        const float bx = cx + cw + 8, bw = 72;
-        draw::glass (c, bx, ky - 1, bw, kh + 2);
-        c.setColor (0xffcfe9ff);
-        draw::text (c, draw::fmt ("%.2f", studio.data.bpm), monoFont (14), Font::kCenter, bx, ky + 2, bw, kh * 0.55f);
-        c.setColor (0xff6f8aa6);
-        draw::text (c, "BPM", monoFont (10), Font::kCenter, bx, ky + kh * 0.5f, bw, kh * 0.45f);
+        // phase meter and master meter
+        {
+            const float x = 1418, y = 214, w = 150;
+            c.setColor (Brush::horizontal (visage::Gradient (Color (0xffff4d5e), Color (0xffffb23e), Color (0xff1c1e23), Color (0xff3dffd2), Color (0xff2ee6ff))));
+            c.roundedRectangle (X (x), X (y), X (w), X (8), X (4));
+            if (std::isfinite (H.phase))
+            {
+                const float px = x + w * (0.5f + 0.5f * std::clamp (H.phase, -1.0f, 1.0f));
+                glowBox (c, px - 2, y - 5, 4, 18, 2, 0xff3dffd2, 0.7f, 10);
+                c.setColor (Color (0xffffffff));
+                c.roundedRectangle (X (px - 1.5f), X (y - 5), X (3), X (18), X (1.5f));
+            }
+            c.setColor (Color (0xff5c626b));
+            draw::text (c, "\xe2\x88\x92" "1", boldFont (X (9.5f)), Font::kLeft, X (x), X (y + 14), X (30), X (12));
+            draw::text (c, "PHASE", boldFont (X (9.5f)), Font::kCenter, X (x), X (y + 14), X (w), X (12));
+            draw::text (c, "+1", boldFont (X (9.5f)), Font::kRight, X (x), X (y + 14), X (w), X (12));
+            auto bar = [&] (float bx, float v)
+            {
+                const float hgt = 52 * std::clamp ((20 * std::log10 (v + 1e-9f) + 60) / 60, 0.0f, 1.0f);
+                if (hgt <= 0) return;
+                c.setColor (Brush::vertical (Color (0xffff3da8), Color (0xff2ee6ff)));
+                c.roundedRectangle (X (bx), X (258 - hgt), X (9), X (hgt), X (2));
+            };
+            bar (1596, H.meterL);
+            bar (1610, H.meterR);
+        }
     }
 
-    void drawRef (Canvas& c, float x, float w)
+    void pill (Canvas& c, float x, float y, float w, const std::string& label, bool on, unsigned col)
     {
-        const float h = 34, y = (height() - h) * 0.5f;
-        c.setColor (studio.day ? 0xffd5d8dd : 0xff121317);
-        c.roundedRectangle (x, y, w, h, 7);
-        c.setColor (studio.day ? 0x26000000 : 0x14ffffff);
-        c.roundedRectangleBorder (x, y, w, h, 7, 1);
-        const auto ch = chrome (studio.day);
-        c.setColor (ch.inkQuiet);
-        draw::spaced (c, "REF", boldFont (10.5f), x + 12, y, h, 1.5f);
-        c.setColor (ch.inkDim);
-        draw::text (c, "Off", uiFont (13), Font::kLeft, x + 52, y, 80, h);
-        c.setColor (ch.inkDim);
-        {
-            visage::Path p;
-            p.moveTo (x + w - 64, y + h * 0.5f - 5);
-            p.lineTo (x + w - 64, y + h * 0.5f + 5);
-            p.lineTo (x + w - 56, y + h * 0.5f);
-            p.close();
-            c.fill (p);
-        }
-        draw::text (c, "A/B", uiFont (12.5f), Font::kLeft, x + w - 44, y, 40, h);
+        c.setColor (Color (0xff0b0b0e));
+        c.roundedRectangle (X (x), X (y), X (w), X (28), X (14));
+        c.setColor (draw::withAlpha (0xffffffff, 0.05f));
+        c.roundedRectangleBorder (X (x), X (y), X (w), X (28), X (14), X (1));
+        const auto f = boldFont (X (10));
+        const float tw = textWidth (f, label) + label.size() * X (1.4f), dx = x + w / 2 - (tw / k + 13) / 2;
+        if (on) glowBox (c, dx - 3, y + 11, 6, 6, 3, col, 0.8f, 8);
+        c.setColor (on ? Color (col) : Color (0xff24272d));
+        c.circle (X (dx), X (y + 11), X (6));
+        c.setColor (on ? Color (0xffe9fff9) : Color (0xff646a73));
+        draw::spaced (c, label, f, X (dx + 13), X (y + 8), X (12), X (1.4f));
     }
 
     void mouseDown (const visage::MouseEvent& e) override
     {
         studio.requestKeyboardFocus();
-        const float px = e.position.x, py = e.position.y;
-        for (auto& g : groups)
-            if (g.id == 2 && px >= g.x && px < g.x + 24)
-            {
-                draggingTransport = true;
-                dragOffset = px - g.x;
-                return;
-            }
-        for (int i = 0; i < (int) stepX.size(); ++i)
-            if (px >= stepX[(size_t) i].first && px < stepX[(size_t) i].first + stepX[(size_t) i].second && py > 10 && py < height() - 10)
-            {
-                if (i == 0 && studio.onImport) studio.onImport();
-                if (studio.data.hasSession || i == 0) studio.setStep ((Step) i);
-                return;
-            }
-        if (px >= rewindX && px < rewindX + 44 && studio.onRewind) return studio.onRewind();
-        if (px >= playX && px < playX + 64 && studio.onPlay) return studio.onPlay();
-        if (px >= recX && px < recX + 44 && studio.onRecord) return studio.onRecord();
+        const float px = e.position.x / k, py = e.position.y / k;
+        auto in = [&] (float x, float y, float w, float h) { return px >= x && px < x + w && py >= y && py < y + h; };
+        auto near = [&] (float cx, float cy, float r) { return (px - cx) * (px - cx) + (py - cy) * (py - cy) < r * r; };
+        for (int i = 0; i < 7; ++i)
+            if (in (272 + 138 * i, 18, 128, 142)) { if (studio.onStepClicked) studio.onStepClicked ((Step) i); return; }
+        if (in (1244, 18, 214, 142)) { if (studio.onAutoPrep) studio.onAutoPrep(); return; }
+        if (near (1506, 62, 32)) { if (studio.onUndo) studio.onUndo(); return; }
+        if (near (1578, 62, 32)) { if (studio.onRedo) studio.onRedo(); return; }
+        if (in (1496, 128, 110, 28)) { studio.setHistoryVisible (! studio.isHistoryVisible()); return; }
+        if (near (52, 232, 22)) { if (studio.onPrevHit) studio.onPrevHit(); return; }
+        if (near (118, 232, 38)) { if (studio.onPlay) studio.onPlay(); return; }
+        if (near (184, 232, 22)) { if (studio.onNextHit) studio.onNextHit(); return; }
+        for (int i = 0; i < 3; ++i) if (in (528 + 50 * i, 210, 50, 44)) { if (studio.onAB) studio.onAB (i); return; }
+        for (int i = 0; i < 6; ++i) if (in (694 + 84 * i, 201, 76, 62)) { if (studio.onMode) studio.onMode (modeId[i]); return; }
+        const char* tg[4] = { "loop", "follow", "lm", "pads" };
+        const float tx[4] = { 1208, 1306, 1208, 1306 }, ty[4] = { 200, 200, 236, 236 };
+        for (int i = 0; i < 4; ++i) if (in (tx[i], ty[i], 92, 28)) { if (studio.onToggle) studio.onToggle (tg[i]); return; }
     }
-
-    void mouseDrag (const visage::MouseEvent& e) override
-    {
-        if (! draggingTransport) return;
-        transportX = std::clamp (e.position.x - dragOffset, 16.0f, width() - 16 - 470);
-        redraw();
-    }
-
-    void mouseUp (const visage::MouseEvent&) override { draggingTransport = false; }
 };
 
 //==============================================================================
@@ -887,6 +979,7 @@ struct Studio::Strips : visage::Frame
             if (soloBox (i).contains (e.position)) { if (studio.onSolo) studio.onSolo (i, ! d.tracks[(size_t) i].solo); return; }
             if (muteBox (i).contains (e.position)) { if (studio.onMute) studio.onMute (i, ! d.tracks[(size_t) i].mute); return; }
             if (strip (i).contains (e.position) && e.repeatClickCount() >= 2 && studio.onRename) { studio.onRename (i); return; }
+            if (strip (i).contains (e.position)) { studio.selectedTrack = i; if (studio.onSelectTrack) studio.onSelectTrack (i); studio.redrawAll(); return; }
         }
     }
 
@@ -1090,9 +1183,10 @@ struct Studio::Rack : visage::Frame
         const float avail = height() - meterH - 10;
         switch (studio.currentStep)
         {
-            case Step::importStep: y = session (c, y); break;
+            case Step::session:    y = session (c, y); break;
+            case Step::hits:       y = velocity (c, y); break;
             case Step::align:      y = align (c, y, avail - 10); break;
-            case Step::levels:     y = align (c, y, 186); y = velocity (c, y + 10); break;
+            case Step::level:      y = align (c, y, 186); y = velocity (c, y + 10); break;
             case Step::tune:       y = tune (c, y); y = velocity (c, y + 10); break;
             case Step::mix:        y = eq (c, y); y = comp (c, y + 10); if (y + 170 < avail) y = roomAux (c, y + 10); break;
             case Step::exportStep: y = exportUnit (c, y); break;
@@ -1546,8 +1640,9 @@ void Studio::resized() { layoutPanels(); }
 void Studio::layoutPanels()
 {
     const float W = width(), H = height(), m = 12;
-    header->setBounds (m, m, W - 2 * m, 62);
-    const float top = m + 62 + 14;
+    const float hk = std::min (1.15f, (W - 2 * m) / 1652.0f), hw = 1652 * hk, hh = 286 * hk;
+    header->setBounds ((W - hw) / 2, m, hw, hh);
+    const float top = m + hh + 10;
     const float rackW = std::clamp (W * 0.22f, 300.0f, 380.0f);
     rack->setBounds (W - m - rackW, top, rackW, H - top - m);
     const float mainX = m, mainW = W - 2 * m - rackW - 14, mainH = H - top - m;
@@ -1654,6 +1749,22 @@ void Studio::setHistory (std::vector<std::string> entries, int current)
 
 void Studio::setHistoryVisible (bool v) { historyPanel->setVisible (v); footer->redraw(); }
 bool Studio::isHistoryVisible() const { return historyPanel->isVisible(); }
+
+void Studio::setHeader (HeaderState h) { hdr = std::move (h); header->redraw(); }
+
+void Studio::pushMonitor (const float* level, const int* vel, int n)
+{
+    if (monLevel.empty()) { monLevel.assign (300, 0.0f); monVel.assign (300, 0); }
+    for (int q = 0; q < n; ++q)
+    {
+        // two monitor points per column, keeping the louder (the spike survives)
+        static int half = 0;
+        if (half == 0) { monHead = (monHead + 1) % (int) monLevel.size(); monLevel[(size_t) monHead] = 0; }
+        monLevel[(size_t) monHead] = std::max (monLevel[(size_t) monHead], level[q]);
+        monVel[(size_t) monHead] = vel[q];
+        half = (half + 1) % 2;
+    }
+}
 
 void Studio::setStep (Step s)
 {

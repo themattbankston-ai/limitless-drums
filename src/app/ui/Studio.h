@@ -43,7 +43,25 @@ struct StudioModel
     int referenceTrack = 0;
 };
 
-enum class Step { importStep, align, levels, tune, mix, exportStep };
+enum class Step { session, hits, align, tune, mix, level, exportStep };
+
+/** What the header shows (Hitline's steps, Auto Prep and transport). */
+struct HeaderState
+{
+    std::string sessionLine = "No session", detailLine = "Drop a folder of mics";
+    std::string status[7];            ///< per step: "7 MICS", "36 HITS", ...
+    bool done[7] {};
+    bool exportReady = false, canUndo = false, canRedo = false;
+    int historyCount = 0;
+    int vel = -1, rr = -1, hit = -1, hits = 0, midiLo = 0, midiHi = 0;
+    std::vector<float> hitWave;       ///< the selected hit, peak per point, for the readout
+    bool processed = true, chain = false, playing = false, prepping = false;
+    std::string mode = "hit";
+    bool loop = false, follow = true, lm = true, pads = false;
+    float phase = NAN, meterL = 0, meterR = 0;
+    std::string monitorMic;           ///< the mic the heart monitor follows
+    int velocities = 6;
+};
 
 class Studio : public visage::Frame
 {
@@ -63,6 +81,10 @@ public:
     void setHistoryVisible (bool);
     bool isHistoryVisible() const;
     void setStep (Step);
+    void setHeader (HeaderState);
+    HeaderState& headerState() { return hdr; }
+    /** The heart monitor: the selected mic's level and the velocity of the hit it belongs to, ~600 points/s. */
+    void pushMonitor (const float* level, const int* vel, int n);
     Step step() const { return currentStep; }
     void zoomToFit();
     void zoomBy (double factor, double anchorSeconds);
@@ -72,6 +94,12 @@ public:
 
     // What you did
     std::function<void()> onImport, onPlay, onRewind, onRecord, onThemeToggled, onHistoryToggled;
+    // the header
+    std::function<void (Step)> onStepClicked;
+    std::function<void()> onAutoPrep, onUndo, onRedo, onPrevHit, onNextHit;
+    std::function<void (int)> onAB;                    ///< 0 = A, 1 = B, 2 = A then B
+    std::function<void (const std::string&)> onMode, onToggle;
+    std::function<void (int)> onSelectTrack;           ///< the mic the heart monitor follows
     std::function<void (double)> onSeek;
     std::function<void (int, bool)> onSolo, onMute;
     std::function<void (int, float)> onVolume, onPan;
@@ -102,8 +130,11 @@ public:
     std::vector<std::string> history;
     int historyIndex = 0;
     bool day = false;
-    Step currentStep = Step::levels;
+    Step currentStep = Step::session;
     StudioModel data;
+    HeaderState hdr;
+    std::vector<float> monLevel; std::vector<int> monVel; int monHead = 0;
+    int selectedTrack = 0;
 
     float laneHeight() const;
     float screenContentTop() const;   ///< y (in screen coords) where lanes start

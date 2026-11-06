@@ -122,12 +122,15 @@ if(LD_BUILD_APP)
         assets/fonts/InterDisplay-Bold.otf
         assets/fonts/Inter-Medium.otf
         assets/fonts/DejaVuSansMono.ttf
-        assets/fonts/DejaVuSansMono-Bold.ttf)
+        assets/fonts/DejaVuSansMono-Bold.ttf
+        assets/ui/header-plate.png)
 
     target_sources(LimitlessDrums PRIVATE
         src/app/Main.cpp
         src/app/MainComponent.cpp
         src/app/SessionModel.cpp
+        src/app/Engine.cpp
+        src/app/Audition.cpp
         src/app/ui/VisageHost.cpp
         src/app/ui/Studio.cpp)
     target_link_libraries(LimitlessDrums PRIVATE
@@ -150,7 +153,10 @@ if(LD_BUILD_TESTS)
         tests/ProjectTests.cpp
         tests/ParityTests.cpp
         tests/ExportParityTests.cpp
-        tests/PrepParityTests.cpp)
+        tests/PrepParityTests.cpp
+        tests/AuditionTests.cpp
+        src/app/Audition.cpp
+        src/app/Engine.cpp)
     target_compile_definitions(LDTests PRIVATE LD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()
