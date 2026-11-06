@@ -401,7 +401,7 @@ void MainComponent::refreshModel()
     const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
                      : takeTitle();
     const auto view = studio.view;
-    studio.setModel (buildStudioModel (*edit, currentRoles, title, engineState.get()));
+    studio.setModel (buildStudioModel (*edit, currentRoles, title, engineState));
     studio.view = view;
 }
 

@@ -1,4 +1,7 @@
 #include "SessionModel.h"
+#include <map>
+#include <numeric>
+#include <tuple>
 
 namespace ld
 {
@@ -37,8 +40,9 @@ std::vector<juce::File> editFiles (te::Edit& edit)
     return out;
 }
 
-ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& roles, const juce::String& title, const EngineState* es)
+ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& roles, const juce::String& title, std::shared_ptr<const EngineState> esp)
 {
+    const EngineState* es = esp.get();
     ui::StudioModel m;
     m.hasSession = true;
     m.title = title.toStdString();
@@ -70,11 +74,14 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
         if (auto* vp = t->getVolumePlugin()) { info.volumeDb = vp->getVolumeDb(); info.pan = vp->getPan(); }
 
         hl::F32 mono;
+        auto wave = std::make_shared<ui::Wave>();
         if (map[i] >= 0)
         {
             // Hitline's own mic name ("Room Close", not the file's "RmCls.cm6"), and its colour from that name
             const auto& tr = S->tracks[(size_t) map[i]];
             mono = tr.mono; info.stereo = tr.ch.size() > 1;
+            wave->a = std::shared_ptr<const ui::Wave::Chans> (esp, &tr.ch);
+            wave->sampleRate = S->sr;
             info.name = tr.mic;
             const auto r = classifyMic (juce::String (S->drum == "kit" ? std::string() : S->drum + " ") + juce::String (tr.mic));   // "Top" alone is ambiguous: "Snare Top"
             info.isRoom = isRoom (r.kind);
@@ -86,6 +93,9 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
             info.stereo = r->numChannels > 1;
             juce::AudioBuffer<float> raw ((int) r->numChannels, (int) r->lengthInSamples);
             r->read (&raw, 0, (int) r->lengthInSamples, 0, true, true);
+            auto chans = std::make_shared<ui::Wave::Chans>();
+            for (int ch = 0; ch < raw.getNumChannels(); ++ch) chans->emplace_back (raw.getReadPointer (ch), raw.getReadPointer (ch) + raw.getNumSamples());
+            wave->a = chans; wave->sampleRate = sr;
             mono.assign ((size_t) raw.getNumSamples(), 0.0f);
             for (int ch = 0; ch < raw.getNumChannels(); ++ch)
                 for (int n = 0; n < raw.getNumSamples(); ++n) mono[(size_t) n] += raw.getSample (ch, n) / (float) raw.getNumChannels();
@@ -126,6 +136,24 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
                 }
                 info.peaksB[b] = pk;
             }
+            wave->b = std::shared_ptr<const ui::Wave::Chans> (esp, &proc);
+            wave->lagB = lagInt;
+            for (auto& r : L.regions) wave->regionStart.push_back (r.start);
+            wave->gainB = gk;
+        }
+        {
+            // the pyramids take a moment on a long take: keep them while the audio behind them is the same
+            static std::map<std::tuple<const void*, const void*, float, long>, std::weak_ptr<ui::Wave>> cache;
+            const auto key = std::make_tuple ((const void*) wave->a.get(), (const void*) wave->b.get(),
+                                              wave->gainB.empty() ? 0.0f : std::accumulate (wave->gainB.begin(), wave->gainB.end(), 0.0f), wave->lagB);
+            if (auto hit = cache[key].lock()) info.wave = hit;
+            else
+            {
+                wave->build();
+                cache[key] = wave;
+                info.wave = wave;
+            }
+            for (auto it = cache.begin(); it != cache.end();) it = it->second.expired() ? cache.erase (it) : std::next (it);
         }
         m.length = std::max (m.length, (double) mono.size() / sr);
         m.tracks.push_back (std::move (info));

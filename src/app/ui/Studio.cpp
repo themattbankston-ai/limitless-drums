@@ -525,17 +525,146 @@ struct Studio::Screen : visage::Frame
         }
     }
 
-    void drawLane (Canvas& c, int i, float y, float lh)
+    /** Catmull-Rom through the points, as cubic segments (the liquid edge). */
+    static void smoothTo (visage::Path& p, const std::vector<Point>& pts, bool move)
     {
-        const auto& d = studio.data;
-        const auto& tr = d.tracks[(size_t) i];
-        const float mid = y + lh * 0.5f;
+        if (pts.empty()) return;
+        if (move) p.moveTo (pts[0].x, pts[0].y); else p.lineTo (pts[0].x, pts[0].y);
+        for (size_t i = 0; i + 1 < pts.size(); ++i)
+        {
+            const auto& p0 = pts[i ? i - 1 : 0]; const auto& p1 = pts[i]; const auto& p2 = pts[i + 1]; const auto& p3 = pts[std::min (pts.size() - 1, i + 2)];
+            p.bezierTo (p1.x + (p2.x - p0.x) / 6, p1.y + (p2.y - p0.y) / 6, p2.x - (p3.x - p1.x) / 6, p2.y - (p3.y - p1.y) / 6, p2.x, p2.y);
+        }
+    }
 
-        c.setColor (0x0affffff);
-        c.fill (0, y + lh - 1, width(), 1);
-        c.setColor (draw::withAlpha (tr.colourA, 0.28f));
-        c.fill (0, mid, width(), 1);
+    /** Style A: the real waveform as a liquid. Zoomed out, the min/max envelope with smoothed edges, a gradient
+        across the lane in the mic's colours, a glossy top, a bright rim and a glow (the bloom adds the rest).
+        Zoomed in to single samples, the actual wave as a glowing line filled to the centre. Stereo mics show
+        left above right. A morphs to B (processed) with the A/B switch. */
+    void drawWave (Canvas& c, const TrackInfo& tr, float y, float lh)
+    {
+        const auto& w = *tr.wave;
+        const float mix = w.pyrB.empty() ? 0.0f : studio.abMix;
+        const float pk = w.peak (mix);
+        const float vz = pk > 0 ? std::clamp (0.92f / pk, 1.0f, 12.0f) : 1.0f;
+        const int nch = w.channels();
+        const double sr = w.sampleRate, pps = studio.view.pixelsPerSecond, spp = sr / pps;
+        const float W = width();
+        const Color ca = tr.mute ? Color (0xff59606b) : Color (tr.colourA), cb = tr.mute ? Color (0xff3d434c) : Color (tr.colourB);
+        const float x0 = std::max (0.0f, timeToX (0.0)), x1 = std::min (W, timeToX (w.length() / sr));
+        if (x1 - x0 < 1) return;
+        const Brush across = Brush::linear (visage::Gradient (ca, cb, ca), Point (x0, 0), Point (x1, 0));
 
+        for (int ch = 0; ch < nch; ++ch)
+        {
+            const float band = lh / (float) nch, cy = y + band * (ch + 0.5f), amp = band * 0.44f;
+            if (nch > 1 && ch > 0) { c.setColor (0x0dffffff); c.fill (0, y + band * ch, W, 1); }
+            c.setColor (ca.withAlpha (0.16f));
+            c.fill (0, cy, W, 1);
+            if (nch > 1)
+            {
+                c.setColor (0x47ffffff);
+                draw::text (c, ch ? "R" : "L", boldFont (8.5f), Font::kLeft, 4, y + band * ch + 2, 12, 10);
+            }
+
+            if (spp >= 1.5)
+            {
+                // the envelope, one column per pixel, smoothed a little for the liquid edge
+                const int n = (int) std::ceil (x1 - x0);
+                std::vector<float> hi ((size_t) n), lo ((size_t) n);
+                for (int i = 0; i < n; ++i)
+                {
+                    const double t = studio.view.start + (x0 + i) / pps;
+                    const auto r = w.range (ch, (long) std::floor (t * sr), (long) std::floor ((t + 1.0 / pps) * sr), mix);
+                    hi[(size_t) i] = std::min (1.0f, r.second * vz); lo[(size_t) i] = std::max (-1.0f, r.first * vz);
+                }
+                auto blur = [] (std::vector<float>& v)
+                {
+                    static const float k[5] = { 0.06f, 0.24f, 0.4f, 0.24f, 0.06f };
+                    std::vector<float> o (v.size());
+                    for (size_t i = 0; i < v.size(); ++i)
+                    {
+                        float a = 0;
+                        for (int j = -2; j <= 2; ++j) a += v[std::clamp<size_t> ((size_t) std::max<long> (0, (long) i + j), 0, v.size() - 1)] * k[j + 2];
+                        o[i] = a;
+                    }
+                    v.swap (o);
+                };
+                blur (hi); blur (lo);
+                std::vector<Point> up, dn;
+                for (int i = 0; i < n; i += 2) { up.push_back ({ x0 + i, cy - hi[(size_t) i] * amp }); dn.push_back ({ x0 + i, cy - lo[(size_t) i] * amp }); }
+                if (up.size() < 2) continue;
+                visage::Path body;
+                smoothTo (body, up, true);
+                std::vector<Point> back (dn.rbegin(), dn.rend());
+                smoothTo (body, back, false);
+                body.close();
+                // the rims and glow follow the sound only (silence stays a hairline)
+                visage::Path top, bottom;
+                auto addRuns = [&] (visage::Path& p, const std::vector<Point>& pts, const std::vector<float>& v)
+                {
+                    std::vector<Point> run;
+                    for (size_t k = 0; k < pts.size(); ++k)
+                    {
+                        const bool loud = std::abs (v[std::min (v.size() - 1, k * 2)]) > 0.02f;
+                        if (loud) run.push_back (pts[k]);
+                        if ((! loud || k + 1 == pts.size()) && ! run.empty())
+                        {
+                            if (k > 0 && ! loud) run.push_back (pts[k]);
+                            if (run.size() > 1) smoothTo (p, run, true);
+                            run.clear();
+                            if (! loud && k + 1 < pts.size()) {}
+                        }
+                        else if (loud && run.size() == 1 && k > 0) run.insert (run.begin(), pts[k - 1]);
+                    }
+                };
+                addRuns (top, up, hi); addRuns (bottom, dn, lo);
+                c.setColor (ca.withAlpha (0.10f)); c.stroke (top, 0, 0, W, height(), 7.0f); c.stroke (bottom, 0, 0, W, height(), 7.0f);
+                c.setColor (ca.withAlpha (0.18f)); c.stroke (top, 0, 0, W, height(), 3.0f); c.stroke (bottom, 0, 0, W, height(), 3.0f);
+                c.setColor (across); c.fill (body);
+                c.setColor (Brush::linear (visage::Gradient (Color (0x66ffffff), Color (0x0affffff), Color (0x0d000000), Color (0x5900001e)),
+                                           Point (0, cy - amp), Point (0, cy + amp)));
+                c.fill (body);
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (Color (0xb3ffffff)); c.stroke (top, 0, 0, W, height(), 1.1f);
+                c.setColor (Color (0x47ffffff)); c.stroke (bottom, 0, 0, W, height(), 1.0f);
+                c.setBlendMode (visage::BlendMode::Alpha);
+            }
+            else
+            {
+                // single samples: the actual wave
+                const long s0 = std::max (0L, (long) std::floor ((studio.view.start + x0 / pps) * sr) - 2);
+                const long s1 = std::min (w.length(), (long) std::ceil ((studio.view.start + x1 / pps) * sr) + 2);
+                std::vector<Point> pts;
+                for (long nS = s0; nS < s1; ++nS)
+                {
+                    const auto r = w.range (ch, nS, nS + 1, mix);
+                    const float v = std::clamp ((std::abs (r.second) > std::abs (r.first) ? r.second : r.first) * vz, -1.0f, 1.0f);
+                    pts.push_back ({ timeToX (nS / sr), cy - v * amp });
+                }
+                if (pts.size() < 2) continue;
+                visage::Path fillP;
+                fillP.moveTo (pts.front().x, cy);
+                smoothTo (fillP, pts, false);
+                fillP.lineTo (pts.back().x, cy);
+                fillP.close();
+                visage::Path line;
+                smoothTo (line, pts, true);
+                c.setColor (Brush::linear (visage::Gradient (ca.withAlpha (0.7f), cb.withAlpha (0.1f), ca.withAlpha (0.7f)), Point (0, cy - amp), Point (0, cy + amp)));
+                c.fill (fillP);
+                c.setColor (ca.withAlpha (0.22f)); c.stroke (line, 0, 0, W, height(), 7.0f);
+                c.setColor (across); c.stroke (line, 0, 0, W, height(), 2.6f);
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (Color (0xe6eafcff)); c.stroke (line, 0, 0, W, height(), 1.0f);
+                c.setBlendMode (visage::BlendMode::Alpha);
+            }
+        }
+    }
+
+    /** Without the audio (a file the engine hasn't read yet): the old block peaks. */
+    void drawBlocks (Canvas& c, const TrackInfo& tr, float mid, float lh)
+    {
+        const float y = mid - lh * 0.5f;
         const float mixB = tr.peaksB.size() == tr.peaks.size() ? studio.abMix : 0.0f;
         auto peakAt = [&] (size_t b) { return mixB <= 0 ? tr.peaks[b] : tr.peaks[b] + (tr.peaksB[b] - tr.peaks[b]) * mixB; };
         float lanePeak = 0.0f;
@@ -566,6 +695,22 @@ struct Studio::Screen : visage::Frame
             if (tr.mute) c.setColor (Color (0xff5a606a));
             c.fill ((float) x, mid - a, 1, a * 2);
         }
+
+    }
+
+    void drawLane (Canvas& c, int i, float y, float lh)
+    {
+        const auto& d = studio.data;
+        const auto& tr = d.tracks[(size_t) i];
+        const float mid = y + lh * 0.5f;
+
+        c.setColor (0x0affffff);
+        c.fill (0, y + lh - 1, width(), 1);
+        c.setColor (draw::withAlpha (tr.colourA, 0.28f));
+        c.fill (0, mid, width(), 1);
+
+        if (tr.wave && tr.wave->channels() > 0) drawWave (c, tr, y, lh);
+        else drawBlocks (c, tr, mid, lh);
 
         // level chips at the end of each velocity zone
         if (i < (int) (d.layers.empty() ? 0 : d.layers[0].micDb.size()))

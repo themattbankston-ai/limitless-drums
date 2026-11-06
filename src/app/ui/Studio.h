@@ -1,6 +1,7 @@
 #pragma once
 
 #include <visage/app.h>
+#include "Wave.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,6 +21,7 @@ struct TrackInfo
     std::vector<float> peaks;         ///< max |sample| per block, the recording (A)
     std::vector<float> peaksB;        ///< the same, processed and on its levels (B); empty until ready
     double blocksPerSecond = 750.0;
+    std::shared_ptr<const Wave> wave; ///< the audio, for the lane at any zoom
 };
 
 struct HitInfo { double time = 0.0; int layer = 0, roundRobin = 0; };

@@ -134,6 +134,7 @@ if(LD_BUILD_APP)
         src/app/Library.cpp
         src/app/ui/VisageHost.cpp
         src/app/ui/Studio.cpp
+        src/app/ui/Wave.cpp
         src/app/ui/NewSession.cpp)
     target_link_libraries(LimitlessDrums PRIVATE
         LDShared
@@ -158,6 +159,8 @@ if(LD_BUILD_TESTS)
         tests/PrepParityTests.cpp
         tests/AuditionTests.cpp
         tests/NewSessionTests.cpp
+        tests/WaveTests.cpp
+        src/app/ui/Wave.cpp
         src/app/Audition.cpp
         src/app/Library.cpp
         src/app/Engine.cpp)
