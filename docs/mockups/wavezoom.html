@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+body{margin:0;width:1400px;background:#030304;font-family:'Inter Display','Inter',sans-serif;color:#f2efe8;padding:26px 0}
+.row{position:relative;margin:0 30px 18px;height:178px;border-radius:12px;background:radial-gradient(ellipse at 60% 0%,#0b0e16,#030407 72%);box-shadow:inset 0 3px 12px rgba(0,0,0,.95),inset 0 0 0 1px #191c24}
+.tag{position:absolute;left:18px;top:12px;font-size:13px;font-weight:800;letter-spacing:.06em}
+.tag b{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:7px;background:#ffe14d;color:#0a0a0c;margin-right:10px;font-size:12px}
+.tag span{font-weight:500;color:#9aa0a8;letter-spacing:0;margin-left:10px;font-size:12px}
+canvas{position:absolute;left:10px;top:42px}
+h1{margin:0 30px 16px;font-size:16px;letter-spacing:.18em}
+h1 span{font-weight:500;letter-spacing:0;color:#9aa0a8;font-size:13px;margin-left:12px}
+</style></head><body>
+<h1>STYLE A, ZOOMED <span>Top mic, Snare 1 Center. The same liquid look all the way in; at the closest zoom it becomes the actual wave.</span></h1>
+<div class="row"><div class="tag"><b>1</b>THE WHOLE TAKE<span>86 seconds, all 36 hits: zoomed out, as the screen opens</span></div><canvas id="z1" width="2640" height="250" style="width:1320px;height:125px"></canvas></div>
+<div class="row"><div class="tag"><b>2</b>ONE VELOCITY LAYER<span>18 seconds, the six round robins of velocity 5</span></div><canvas id="z2" width="2640" height="250" style="width:1320px;height:125px"></canvas></div>
+<div class="row"><div class="tag"><b>3</b>ONE HIT<span>0.6 seconds: the attack, the body and the ring of the snare</span></div><canvas id="z3" width="2640" height="250" style="width:1320px;height:125px"></canvas></div>
+<div class="row"><div class="tag"><b>4</b>THE TRANSIENT<span>30 milliseconds: the actual wave, cycle by cycle, as a glowing liquid line</span></div><canvas id="z4" width="2640" height="250" style="width:1320px;height:125px"></canvas></div>
+<script src="wavezoom.js"></script>
+<script>
+const A='#2ee6ff',B='#8b5cff';
+function blur(arr,sig){if(sig<=0)return arr.slice();const r=Math.ceil(sig*3),k=[];let s=0;for(let i=-r;i<=r;i++){const v=Math.exp(-i*i/(2*sig*sig));k.push(v);s+=v}return arr.map((_,i)=>{let a=0;for(let j=-r;j<=r;j++)a+=arr[Math.min(arr.length-1,Math.max(0,i+j))]*k[j+r];return a/s})}
+function sm(c,p,move){if(move)c.moveTo(p[0][0],p[0][1]);for(let i=0;i<p.length-1;i++){const p0=p[Math.max(0,i-1)],p1=p[i],p2=p[i+1],p3=p[Math.min(p.length-1,i+2)];c.bezierCurveTo(p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6,p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6,p2[0],p2[1])}}
+function setup(id){const cv=document.getElementById(id),c=cv.getContext('2d');c.scale(2,2);return [c,cv.width/2,cv.height/2]}
+function hgrad(c,w){const g=c.createLinearGradient(0,0,w,0);g.addColorStop(0,A);g.addColorStop(.5,B);g.addColorStop(1,A);return g}
+function axis(c,w,cy){c.strokeStyle='rgba(46,230,255,.14)';c.beginPath();c.moveTo(0,cy);c.lineTo(w,cy);c.stroke()}
+function gloss(c,cy,amp,w){const g=c.createLinearGradient(0,cy-amp,0,cy+amp);g.addColorStop(0,'rgba(255,255,255,.4)');g.addColorStop(.42,'rgba(255,255,255,.04)');g.addColorStop(.5,'rgba(0,0,0,.05)');g.addColorStop(1,'rgba(0,0,30,.35)');c.fillStyle=g;c.fillRect(0,cy-amp,w,2*amp)}
+// envelope views (min/max)
+function liquid(id,d,sig){const [c,w,h]=setup(id);const cy=h/2,amp=h*.46;let mx=blur(d.mx,sig),mn=blur(d.mn,sig);const m=Math.max(...mx,...mn.map(v=>-v));
+  const up=[],dn=[];for(let i=0;i<mx.length;i+=1){const x=i/(mx.length-1)*w;up.push([x,cy-mx[i]/m*amp]);dn.push([x,cy-mn[i]/m*amp])}
+  const shape=()=>{c.beginPath();sm(c,up,true);const r=dn.slice().reverse();c.lineTo(r[0][0],r[0][1]);sm(c,r,false);c.closePath()};
+  axis(c,w,cy);
+  c.save();c.shadowColor=A;c.shadowBlur=16;shape();c.fillStyle=hgrad(c,w);c.globalAlpha=.92;c.fill();c.restore();
+  c.save();shape();c.clip();gloss(c,cy,amp,w);c.restore();
+  c.save();c.globalCompositeOperation='lighter';c.lineWidth=1.1;c.strokeStyle='rgba(255,255,255,.7)';c.beginPath();sm(c,up,true);c.stroke();c.strokeStyle='rgba(255,255,255,.28)';c.beginPath();sm(c,dn,true);c.stroke();c.restore()}
+liquid('z1',WZ.take,1.2);liquid('z2',WZ.layer,1.6);liquid('z3',WZ.hit,1.6);
+// the actual wave: filled from the axis, glowing line on top
+{const [c,w,h]=setup('z4');const cy=h/2,amp=h*.46;const s=WZ.raw;const p=s.map((v,i)=>[i/(s.length-1)*w,cy-v*amp]);
+  axis(c,w,cy);
+  c.save();c.beginPath();c.moveTo(0,cy);sm(c,p,false);c.lineTo(w,cy);c.closePath();
+  const g=c.createLinearGradient(0,cy-amp,0,cy+amp);g.addColorStop(0,'rgba(46,230,255,.75)');g.addColorStop(.5,'rgba(139,92,255,.12)');g.addColorStop(1,'rgba(46,230,255,.75)');c.fillStyle=g;c.fill();c.restore();
+  for(const [lw,al,bl,col] of [[7,.22,18,A],[2.6,.95,8,null],[1,.9,0,'#eafcff']]){c.save();c.lineWidth=lw;c.globalAlpha=al;c.strokeStyle=col||hgrad(c,w);c.shadowColor=A;c.shadowBlur=bl;c.lineJoin='round';c.beginPath();sm(c,p,true);c.stroke();c.restore()}
+  c.font='10px DejaVu Sans Mono';c.fillStyle='#5f6670';for(let t=0;t<=30;t+=5){const x=(t+2)/30*w;if(x<w-20)c.fillText(t+' ms',x+3,h-4)}}
+</script></body></html>
