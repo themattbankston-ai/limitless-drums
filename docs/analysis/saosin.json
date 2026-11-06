@@ -1,0 +1,159 @@
+{
+ "folder": "Saosin Drums",
+ "sr": 48000,
+ "seconds": 252.227875,
+ "mics": {
+  "Snare Top": {
+   "named": "snare",
+   "close": true,
+   "hits": 1064,
+   "velocity_dB": {
+    "p10": -26.945722366859357,
+    "median": -19.629212182853045,
+    "p90": 0.5384948939185908
+   },
+   "low_share": 0.13539099629925155,
+   "high_share": 0.04873507409817289
+  },
+  "Snare Bottom": {
+   "named": "snare",
+   "close": true,
+   "vs_snare": {
+    "ms": 1.4791666666666665,
+    "flipped": true,
+    "corr": 0.3772919172048569,
+    "spread": 0.2916666666666665,
+    "n": 25
+   },
+   "low_share": 0.06374309238321853,
+   "high_share": 0.1341709235979325
+  },
+  "Rack": {
+   "named": "tom",
+   "close": true,
+   "hits": 439,
+   "velocity_dB": {
+    "p10": -13.217597756796085,
+    "median": -8.752633185752652,
+    "p90": -1.8338336362632959
+   },
+   "low_share": 0.6120497789383804,
+   "high_share": 0.007955256314114733
+  },
+  "Floor": {
+   "named": "tom",
+   "close": true,
+   "hits": 701,
+   "velocity_dB": {
+    "p10": -13.081490867143145,
+    "median": -8.076729388529618,
+    "p90": -1.7592123400273052
+   },
+   "low_share": 0.7210258669060085,
+   "high_share": 0.02471794024217859
+  },
+  "OH Hat": {
+   "named": "hat",
+   "close": false,
+   "vs_snare": {
+    "ms": 0.6458333333333334,
+    "flipped": false,
+    "corr": 0.4711716350913048,
+    "spread": 0.14583333333333337,
+    "n": 25
+   },
+   "low_share": 0.14549375261346556,
+   "high_share": 0.09968465836375001
+  },
+  "OH Ride": {
+   "named": "ride",
+   "close": false,
+   "vs_snare": {
+    "ms": 0.75,
+    "flipped": false,
+    "corr": 0.43369691327214244,
+    "spread": 0.14583333333333326,
+    "n": 25
+   },
+   "low_share": 0.1277771115599903,
+   "high_share": 0.14099644141196138
+  },
+  "Room Violet": {
+   "named": "room",
+   "close": false,
+   "vs_snare": {
+    "ms": 20.708333333333332,
+    "flipped": false,
+    "corr": 0.2464717883337289,
+    "spread": 0.35416666666666785,
+    "n": 25
+   },
+   "low_share": 0.06782368460323009,
+   "high_share": 0.19355639833601826
+  },
+  "Crash": {
+   "named": "crash",
+   "close": true,
+   "hits": 1917,
+   "velocity_dB": {
+    "p10": -26.5984012654527,
+    "median": -22.57871698452796,
+    "p90": -11.77405465899774
+   },
+   "vs_snare": {
+    "ms": 2.1875,
+    "flipped": true,
+    "corr": 0.4024055254459381,
+    "spread": 0.22916666666666652,
+    "n": 25
+   },
+   "low_share": 0.1304053515584094,
+   "high_share": 0.20033993632070202
+  },
+  "Hat": {
+   "named": "hat",
+   "close": true,
+   "hits": 1675,
+   "velocity_dB": {
+    "p10": -26.855070461948404,
+    "median": -22.37143870810179,
+    "p90": -13.107722065661541
+   },
+   "vs_snare": {
+    "ms": 0.7708333333333334,
+    "flipped": false,
+    "corr": 0.39414858186617496,
+    "spread": 0.29166666666666663,
+    "n": 25
+   },
+   "low_share": 0.08434853034509085,
+   "high_share": 0.24603037934001795
+  },
+  "Ride": {
+   "named": "ride",
+   "close": true,
+   "hits": 122,
+   "velocity_dB": {
+    "p10": -24.110939475616025,
+    "median": -18.87208123160091,
+    "p90": -9.04626557986185
+   },
+   "low_share": 0.09734529983652922,
+   "high_share": 0.34344173759770996
+  },
+  "Ceiling": {
+   "named": "room",
+   "close": false,
+   "vs_snare": {
+    "ms": 7.4375,
+    "flipped": true,
+    "corr": 0.36919472336769105,
+    "spread": 0.4375,
+    "n": 25
+   },
+   "low_share": 0.11289656116893554,
+   "high_share": 0.09978815776532204
+  }
+ },
+ "beat_s_guess": 0.3434583333333333
+}

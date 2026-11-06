@@ -1,0 +1,4421 @@
+[
+ {
+  "drum": "Ludwig Chrome Over Maple 22in",
+  "group": "kick",
+  "tunings": {
+   "T01 E2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.09642553329467773,
+    "ring_s": 0.13307256235827664,
+    "label": "E2",
+    "label_hz": 82.4068892282175,
+    "strongest_hz": 63.16967010498047,
+    "cents_from_label": -460.2394968137714,
+    "rr_pitch_spread_cents": 1141.3084794228644
+   },
+   "T02 F2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.1412196159362793,
+    "ring_s": 0.15642857142857142,
+    "label": "F2",
+    "label_hz": 87.30705785825097,
+    "strongest_hz": 76.12323760986328,
+    "cents_from_label": -237.31363546621586,
+    "rr_pitch_spread_cents": 22.930587537245685
+   },
+   "T03 F#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.10027885437011719,
+    "ring_s": 0.1830952380952381,
+    "label": "F#2",
+    "label_hz": 92.4986056779086,
+    "strongest_hz": 61.655616760253906,
+    "cents_from_label": -702.239148070323,
+    "rr_pitch_spread_cents": 657.9212408885678
+   }
+  },
+  "mics": {
+   "Close 1 - Kick In": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.8614215098065015,
+    "high": 0.014812945964485631,
+    "heard_as": "near"
+   },
+   "Close 2 - Kick Out": {
+    "arrival_ms": 0.4308390022675737,
+    "arrival_spread_ms": 0.022675736961451254,
+    "flipped": null,
+    "low": 0.7979922515093668,
+    "high": 0.02198213115592828,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 4.036281179138323,
+    "arrival_spread_ms": 0.09070294784580524,
+    "flipped": null,
+    "low": 0.600622891550887,
+    "high": 0.006927080016071178,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.530612244897959,
+    "arrival_spread_ms": 0.04535147392290284,
+    "flipped": null,
+    "low": 0.6529332208543537,
+    "high": 0.006095329276044996,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.863945578231291,
+    "arrival_spread_ms": 0.06802721088435604,
+    "flipped": null,
+    "low": 0.8271244458104875,
+    "high": 0.002414919671994379,
+    "heard_as": "sub"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 16.394557823129254,
+    "arrival_spread_ms": 0.04535147392290284,
+    "flipped": null,
+    "low": 0.6162348236313099,
+    "high": 0.00249016536674082,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": -0.022675736961451247,
+    "arrival_spread_ms": 0.022675736961451247,
+    "flipped": null,
+    "low": 0.6799974960863974,
+    "high": 0.00360486419493326,
+    "heard_as": "near"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 24in",
+  "group": "kick",
+  "tunings": {
+   "T01 D2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.16015386581420898,
+    "ring_s": 0.18158730158730158,
+    "label": "D2",
+    "label_hz": 73.41619197935188,
+    "strongest_hz": 43.15052032470703,
+    "cents_from_label": -920.064395102432,
+    "rr_pitch_spread_cents": 631.0599215605608
+   },
+   "T02 D#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.19751596450805664,
+    "ring_s": 0.2518934240362812,
+    "label": "D#2",
+    "label_hz": 77.78174593052023,
+    "strongest_hz": 51.141357421875,
+    "cents_from_label": -725.9293976985946,
+    "rr_pitch_spread_cents": 652.5249760812561
+   }
+  },
+  "mics": {
+   "Close 1 - Kick In": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.891587345162437,
+    "high": 0.015945232541521668,
+    "heard_as": "near"
+   },
+   "Close 2 - Kick Out": {
+    "arrival_ms": 0.2947845804988662,
+    "arrival_spread_ms": 0.04535147392290251,
+    "flipped": null,
+    "low": 0.8970968390111658,
+    "high": 0.008278023709361322,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.6394557823129254,
+    "arrival_spread_ms": 0.11337868480725577,
+    "flipped": null,
+    "low": 0.5654080224662914,
+    "high": 0.019614654017069424,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.213151927437642,
+    "arrival_spread_ms": 0.04535147392290284,
+    "flipped": null,
+    "low": 0.6942259245489681,
+    "high": 0.012957321973633413,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.37641723356009,
+    "arrival_spread_ms": 0.022675736961453197,
+    "flipped": null,
+    "low": 0.8279213102243101,
+    "high": 0.006729112421730446,
+    "heard_as": "sub"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 16.58730158730159,
+    "arrival_spread_ms": 0.11337868480725888,
+    "flipped": null,
+    "low": 0.6304355178848786,
+    "high": 0.007282274266128498,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": -0.03401360544217687,
+    "arrival_spread_ms": 0.022675736961451247,
+    "flipped": null,
+    "low": 0.7592391134111549,
+    "high": 0.0041459382323663745,
+    "heard_as": "sub"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 26in",
+  "group": "kick",
+  "tunings": {
+   "T01 B1": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.10876607894897461,
+    "ring_s": 0.20339002267573697,
+    "label": "B1",
+    "label_hz": 61.7354126570155,
+    "strongest_hz": 34.90734100341797,
+    "cents_from_label": -987.0813823497525,
+    "rr_pitch_spread_cents": 125.8108390289977
+   },
+   "T02 C2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.040253639221191406,
+    "ring_s": 0.23970521541950113,
+    "label": "C2",
+    "label_hz": 65.40639132514966,
+    "strongest_hz": 50.804901123046875,
+    "cents_from_label": -437.3567266408025,
+    "rr_pitch_spread_cents": 73.20128655830987
+   },
+   "T03 C#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.011653900146484375,
+    "ring_s": 0.2277097505668934,
+    "label": "C#2",
+    "label_hz": 69.29565774421802,
+    "strongest_hz": 54.59003448486328,
+    "cents_from_label": -412.95281223193086,
+    "rr_pitch_spread_cents": 37.46247673286438
+   }
+  },
+  "mics": {
+   "Close 1 - Kick In": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.8742027894678457,
+    "high": 0.018658296908628413,
+    "heard_as": "near"
+   },
+   "Close 2 - Kick Out": {
+    "arrival_ms": 0.27210884353741494,
+    "arrival_spread_ms": 0.06802721088435376,
+    "flipped": null,
+    "low": 0.8729305522879529,
+    "high": 0.02163100090293573,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.5374149659863945,
+    "arrival_spread_ms": 0.04535147392290284,
+    "flipped": null,
+    "low": 0.5866043929867881,
+    "high": 0.01860027061852409,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.303854875283447,
+    "arrival_spread_ms": 0.06802721088435426,
+    "flipped": null,
+    "low": 0.6946983908245378,
+    "high": 0.017946260363657457,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.47845804988662,
+    "arrival_spread_ms": 0.06802721088435426,
+    "flipped": null,
+    "low": 0.8203005627464587,
+    "high": 0.005651294414260485,
+    "heard_as": "sub"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 16.780045351473923,
+    "arrival_spread_ms": 0.4308390022675752,
+    "flipped": null,
+    "low": 0.6615314834277888,
+    "high": 0.007959475749878375,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": -0.045351473922902494,
+    "arrival_spread_ms": 0.022675736961451247,
+    "flipped": null,
+    "low": 0.7037703062670705,
+    "high": 0.004990693796401181,
+    "heard_as": "near"
+   }
+  }
+ },
+ {
+  "drum": "PDP MX 22in",
+  "group": "kick",
+  "tunings": {
+   "T01 E2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.020730018615722656,
+    "ring_s": 0.13816326530612244,
+    "label": "E2",
+    "label_hz": 82.4068892282175,
+    "strongest_hz": 60.64624786376953,
+    "cents_from_label": -530.8158747419105,
+    "rr_pitch_spread_cents": 389.3571967155815
+   },
+   "T02 F2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.020153045654296875,
+    "ring_s": 0.14714285714285713,
+    "label": "F2",
+    "label_hz": 87.30705785825097,
+    "strongest_hz": 67.79594421386719,
+    "cents_from_label": -437.8791795973365,
+    "rr_pitch_spread_cents": 371.5617824351198
+   },
+   "T03 F#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.013529777526855469,
+    "ring_s": 0.09349206349206349,
+    "label": "F#2",
+    "label_hz": 92.4986056779086,
+    "strongest_hz": 67.79594421386719,
+    "cents_from_label": -537.8791795973364,
+    "rr_pitch_spread_cents": 461.50044328455607
+   }
+  },
+  "mics": {
+   "Close 1 - Kick In": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.8876104990740271,
+    "high": 0.004945929955758782,
+    "heard_as": "sub"
+   },
+   "Close 2 - Kick Out": {
+    "arrival_ms": 1.1337868480725624,
+    "arrival_spread_ms": 0.11337868480725644,
+    "flipped": null,
+    "low": 0.8424228456640724,
+    "high": 0.008777506607229547,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 4.172335600907029,
+    "arrival_spread_ms": 0.0907029478458048,
+    "flipped": null,
+    "low": 0.6240008563843428,
+    "high": 0.009045330439786321,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.575963718820862,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.7196872150478465,
+    "high": 0.010485819477938054,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.0,
+    "arrival_spread_ms": 0.09070294784580568,
+    "flipped": null,
+    "low": 0.850580706241995,
+    "high": 0.003159407462409727,
+    "heard_as": "sub"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 16.575963718820862,
+    "arrival_spread_ms": 0.34013605442176953,
+    "flipped": null,
+    "low": 0.6492056999874031,
+    "high": 0.00392710262301537,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.022675736961451247,
+    "arrival_spread_ms": 0.045351473922902494,
+    "flipped": null,
+    "low": 0.7556665944688702,
+    "high": 0.0014343917737688748,
+    "heard_as": "sub"
+   }
+  }
+ },
+ {
+  "drum": "Ludwig Chrome Over Maple 12in",
+  "group": "tom",
+  "tunings": {
+   "T01 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.2481017112731934,
+    "ring_s": 1.381235827664399,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 114.56336975097656,
+    "cents_from_label": -1129.629228216412,
+    "rr_pitch_spread_cents": 7.632197735328786
+   },
+   "T02 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.6397199630737305,
+    "ring_s": 1.4798526077097507,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 120.78781127929688,
+    "cents_from_label": -1138.0343732432354,
+    "rr_pitch_spread_cents": 4.822382084871501
+   },
+   "T03 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.708627223968506,
+    "ring_s": 1.4415079365079366,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 127.18048095703125,
+    "cents_from_label": -1148.7515047656102,
+    "rr_pitch_spread_cents": 4.579986927948647
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.602938445978421,
+    "high": 0.00928955579457521,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 0.7709750566893424,
+    "arrival_spread_ms": 0.04535147392290251,
+    "flipped": null,
+    "low": 0.5802052032581736,
+    "high": 0.0008796634626479778,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.653061224489796,
+    "arrival_spread_ms": 0.0453514739229024,
+    "flipped": null,
+    "low": 0.48524234316279297,
+    "high": 0.011587146913701342,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.782312925170068,
+    "arrival_spread_ms": 0.15873015873015817,
+    "flipped": null,
+    "low": 0.3015006874611107,
+    "high": 0.021498228077612317,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.342403628117914,
+    "arrival_spread_ms": 0.13605442176870852,
+    "flipped": null,
+    "low": 0.3731691989486638,
+    "high": 0.02402317284473076,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 18.798185941043084,
+    "arrival_spread_ms": 0.11337868480725888,
+    "flipped": null,
+    "low": 0.34534482744176875,
+    "high": 0.0192980834938109,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Ludwig Chrome Over Maple 13in",
+  "group": "tom",
+  "tunings": {
+   "T01 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.1194610595703125,
+    "ring_s": 0.6567120181405895,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 93.03016662597656,
+    "cents_from_label": -1190.079609549249,
+    "rr_pitch_spread_cents": 6.261251125223159
+   },
+   "T02 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.8697547912597656,
+    "ring_s": 1.0351360544217687,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 100.51631927490234,
+    "cents_from_label": -1156.088530389164,
+    "rr_pitch_spread_cents": 2.897463519960092
+   },
+   "T03 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.097620010375977,
+    "ring_s": 1.3086507936507936,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 107.4136734008789,
+    "cents_from_label": -1141.1910421876287,
+    "rr_pitch_spread_cents": 8.134239157274228
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.7095314815904326,
+    "high": 0.013610425792691845,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 0.8390022675736961,
+    "arrival_spread_ms": 0.11337868480725621,
+    "flipped": null,
+    "low": 0.6913143869244237,
+    "high": 0.0009352987948445453,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.403628117913832,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.5193837895526526,
+    "high": 0.01072209200481617,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.782312925170068,
+    "arrival_spread_ms": 0.0907029478458039,
+    "flipped": null,
+    "low": 0.31183371501578616,
+    "high": 0.022130661290153064,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.342403628117914,
+    "arrival_spread_ms": 0.11337868480725533,
+    "flipped": null,
+    "low": 0.37772406448608803,
+    "high": 0.022980975771174816,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 22.290249433106577,
+    "arrival_spread_ms": 4.557823129251698,
+    "flipped": null,
+    "low": 0.45499305204081575,
+    "high": 0.011834850883081338,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Ludwig Chrome Over Maple 16in",
+  "group": "tom",
+  "tunings": {
+   "T01 B2": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.853818416595459,
+    "ring_s": 1.4377891156462583,
+    "label": "B2",
+    "label_hz": 123.47082531403103,
+    "strongest_hz": 59.552764892578125,
+    "cents_from_label": -1262.3157537313004,
+    "rr_pitch_spread_cents": 9.781009345037114
+   },
+   "T02 C3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.2289581298828125,
+    "ring_s": 1.2029705215419502,
+    "label": "C3",
+    "label_hz": 130.8127826502993,
+    "strongest_hz": 64.93606567382812,
+    "cents_from_label": -1212.4939691092006,
+    "rr_pitch_spread_cents": 8.970144674575911
+   },
+   "T03 C#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 5.385417938232422,
+    "ring_s": 1.4472902494331066,
+    "label": "C#3",
+    "label_hz": 138.59131548843604,
+    "strongest_hz": 69.39411163330078,
+    "cents_from_label": -1197.5420428710834,
+    "rr_pitch_spread_cents": 12.590848581170981
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.8316025473844674,
+    "high": 0.013303105313439848,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 1.5419501133786848,
+    "arrival_spread_ms": 0.0226757369614512,
+    "flipped": null,
+    "low": 0.8368774464887447,
+    "high": 0.0006157330281885334,
+    "heard_as": "sub"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.5170068027210886,
+    "arrival_spread_ms": 0.022675736961450976,
+    "flipped": null,
+    "low": 0.603868801390888,
+    "high": 0.01564902045284856,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.551020408163265,
+    "arrival_spread_ms": 0.13605442176870763,
+    "flipped": null,
+    "low": 0.3191240885877741,
+    "high": 0.004837583418502901,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.931972789115648,
+    "arrival_spread_ms": 0.06802721088435426,
+    "flipped": null,
+    "low": 0.43765178343812805,
+    "high": 0.013366922714144844,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 21.67800453514739,
+    "arrival_spread_ms": 0.18140589569161136,
+    "flipped": null,
+    "low": 0.33846790342643324,
+    "high": 0.003409582469247199,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 12in",
+  "group": "tom",
+  "tunings": {
+   "T01 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.2245092391967773,
+    "ring_s": 0.9711451247165532,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 112.62874603271484,
+    "cents_from_label": -1159.1141194417246,
+    "rr_pitch_spread_cents": 73.12482669102972
+   },
+   "T02 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.4230194091796875,
+    "ring_s": 1.386734693877551,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 121.88129425048828,
+    "cents_from_label": -1122.4321583625822,
+    "rr_pitch_spread_cents": 9.538503738589256
+   },
+   "T03 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.9663820266723633,
+    "ring_s": 1.4600680272108844,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 129.36744689941406,
+    "cents_from_label": -1119.2346682767054,
+    "rr_pitch_spread_cents": 6.758241695196391
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.5914400196202786,
+    "high": 0.010872785309413272,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 0.8163265306122449,
+    "arrival_spread_ms": 0.02267573696145131,
+    "flipped": null,
+    "low": 0.5645119057656502,
+    "high": 0.0012139769711132205,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.5170068027210886,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.5192422280569512,
+    "high": 0.009224784630333667,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.736961451247165,
+    "arrival_spread_ms": 0.11337868480725621,
+    "flipped": null,
+    "low": 0.3678712491313512,
+    "high": 0.02183390302526061,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.138321995464853,
+    "arrival_spread_ms": 0.06802721088435248,
+    "flipped": null,
+    "low": 0.38646685567178807,
+    "high": 0.03161547885967816,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 22.22222222222222,
+    "arrival_spread_ms": 3.4693877551020407,
+    "flipped": null,
+    "low": 0.4118880718692169,
+    "high": 0.01611200047395804,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 13in",
+  "group": "tom",
+  "tunings": {
+   "T01 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.213284492492676,
+    "ring_s": 0.805578231292517,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 94.29187774658203,
+    "cents_from_label": -1166.7577384643853,
+    "rr_pitch_spread_cents": 67.18153173260562
+   },
+   "T02 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.303135871887207,
+    "ring_s": 0.9147732426303855,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 101.27334594726562,
+    "cents_from_label": -1143.0988017192547,
+    "rr_pitch_spread_cents": 51.94091727456011
+   },
+   "T03 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.183558464050293,
+    "ring_s": 0.7957369614512472,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 108.08658599853516,
+    "cents_from_label": -1130.3792409334085,
+    "rr_pitch_spread_cents": 43.55535506758795
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.7113612846223044,
+    "high": 0.0058899471895005615,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 0.8843537414965986,
+    "arrival_spread_ms": 0.7482993197278911,
+    "flipped": null,
+    "low": 0.673516166432977,
+    "high": 0.0009551430141794485,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.403628117913832,
+    "arrival_spread_ms": 0.6122448979591835,
+    "flipped": null,
+    "low": 0.519650066194729,
+    "high": 0.008612961770822443,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.714285714285714,
+    "arrival_spread_ms": 0.566893424036282,
+    "flipped": null,
+    "low": 0.33922946389251196,
+    "high": 0.02385025857524683,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.342403628117914,
+    "arrival_spread_ms": 0.204081632653061,
+    "flipped": null,
+    "low": 0.383317179277399,
+    "high": 0.016439386133019093,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 23.219954648526077,
+    "arrival_spread_ms": 1.5192743764172292,
+    "flipped": null,
+    "low": 0.37587166222965623,
+    "high": 0.008389253021038202,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 14in",
+  "group": "tom",
+  "tunings": {
+   "T01 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.23892879486084,
+    "ring_s": 1.7910997732426304,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 73.85215759277344,
+    "cents_from_label": -1189.7498583884676,
+    "rr_pitch_spread_cents": 3.948083921021871
+   },
+   "T02 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.3143959045410156,
+    "ring_s": 1.5793537414965986,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 75.1138687133789,
+    "cents_from_label": -1260.42277568543,
+    "rr_pitch_spread_cents": 11.63207544461291
+   },
+   "T03 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 5.945469856262207,
+    "ring_s": 1.6360770975056689,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 80.58128356933594,
+    "cents_from_label": -1238.7841989474807,
+    "rr_pitch_spread_cents": 21.640707396313935
+   },
+   "T04 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.1435546875,
+    "ring_s": 1.4085941043083898,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 84.70287322998047,
+    "cents_from_label": -1252.4248522227556,
+    "rr_pitch_spread_cents": 17.1580596630822
+   },
+   "T05 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.847339630126953,
+    "ring_s": 1.2157936507936506,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 91.85256958007812,
+    "cents_from_label": -1212.1338447270743,
+    "rr_pitch_spread_cents": 6.341523753921234
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.784580776328346,
+    "high": 0.013287634387961822,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 1.383219954648526,
+    "arrival_spread_ms": 0.15873015873015883,
+    "flipped": null,
+    "low": 0.7564847054429382,
+    "high": 0.0010382637039216258,
+    "heard_as": "sub"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.4263038548752833,
+    "arrival_spread_ms": 0.11337868480725666,
+    "flipped": null,
+    "low": 0.6305333858993115,
+    "high": 0.019260851646441812,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.369614512471656,
+    "arrival_spread_ms": 0.1814058956916096,
+    "flipped": null,
+    "low": 0.31099132862963974,
+    "high": 0.0058453397040715985,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.659863945578232,
+    "arrival_spread_ms": 0.1814058956916096,
+    "flipped": null,
+    "low": 0.33438934891463434,
+    "high": 0.014496188406949564,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 23.60544217687075,
+    "arrival_spread_ms": 0.2947845804988667,
+    "flipped": null,
+    "low": 0.34836558473062446,
+    "high": 0.004928633905402957,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 16in",
+  "group": "tom",
+  "tunings": {
+   "T01 B2": {
+    "rr": 6,
+    "rr_level_spread_dB": 5.213193893432617,
+    "ring_s": 1.192845804988662,
+    "label": "B2",
+    "label_hz": 123.47082531403103,
+    "strongest_hz": 63.590240478515625,
+    "cents_from_label": -1148.7515047656102,
+    "rr_pitch_spread_cents": 4.573936740022713
+   },
+   "T02 C3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.878892421722412,
+    "ring_s": 1.2687074829931972,
+    "label": "C3",
+    "label_hz": 130.8127826502993,
+    "strongest_hz": 65.77720642089844,
+    "cents_from_label": -1190.2126570620744,
+    "rr_pitch_spread_cents": 4.433380269289893
+   },
+   "T03 C#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.4770708084106445,
+    "ring_s": 1.47359410430839,
+    "label": "C#3",
+    "label_hz": 138.59131548843604,
+    "strongest_hz": 71.16050720214844,
+    "cents_from_label": -1154.0257900869572,
+    "rr_pitch_spread_cents": 28.683823831784
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.8465162088703604,
+    "high": 0.010441218825722461,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 1.5873015873015872,
+    "arrival_spread_ms": 0.7256235827664399,
+    "flipped": null,
+    "low": 0.8565648785706905,
+    "high": 0.0009187940841821021,
+    "heard_as": "sub"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.5396825396825395,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.5777124997088112,
+    "high": 0.03053462560374663,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.551020408163265,
+    "arrival_spread_ms": 2.244897959183672,
+    "flipped": null,
+    "low": 0.3413595566654151,
+    "high": 0.007935605579971654,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.841269841269842,
+    "arrival_spread_ms": 0.45351473922902485,
+    "flipped": null,
+    "low": 0.4351170881916158,
+    "high": 0.020305711893774288,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 23.60544217687075,
+    "arrival_spread_ms": 2.1541950113378654,
+    "flipped": null,
+    "low": 0.37548507548844917,
+    "high": 0.004423417919598218,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 18in",
+  "group": "tom",
+  "tunings": {
+   "T01 G2": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.828176498413086,
+    "ring_s": 0.6453628117913832,
+    "label": "G2",
+    "label_hz": 97.99885899543733,
+    "strongest_hz": 49.374961853027344,
+    "cents_from_label": -1186.7823820988347,
+    "rr_pitch_spread_cents": 52.9111010198046
+   },
+   "T02 G#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.34304141998291,
+    "ring_s": 0.9131972789115647,
+    "label": "G#2",
+    "label_hz": 103.82617439498628,
+    "strongest_hz": 55.515289306640625,
+    "cents_from_label": -1083.8557567359182,
+    "rr_pitch_spread_cents": 21.048697570962318
+   },
+   "T03 A2": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.851839065551758,
+    "ring_s": 1.0588548752834468,
+    "label": "A2",
+    "label_hz": 110.0,
+    "strongest_hz": 57.95459747314453,
+    "cents_from_label": -1109.4102065857476,
+    "rr_pitch_spread_cents": 15.076153756694898
+   },
+   "T04 A#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.764144420623779,
+    "ring_s": 0.9830272108843537,
+    "label": "A#2",
+    "label_hz": 116.54094037952248,
+    "strongest_hz": 61.06681823730469,
+    "cents_from_label": -1118.8515282359963,
+    "rr_pitch_spread_cents": 19.077152256250127
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.8175443187483019,
+    "high": 0.007947827778619462,
+    "heard_as": "sub"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 1.5419501133786848,
+    "arrival_spread_ms": 0.06802721088435382,
+    "flipped": null,
+    "low": 0.840902399923793,
+    "high": 0.00082546554823526,
+    "heard_as": "sub"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.5170068027210886,
+    "arrival_spread_ms": 0.06802721088435382,
+    "flipped": null,
+    "low": 0.4467383619388003,
+    "high": 0.025752438872007125,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.233560090702948,
+    "arrival_spread_ms": 0.06802721088435426,
+    "flipped": null,
+    "low": 0.41249096511428524,
+    "high": 0.006579233453213559,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.625850340136054,
+    "arrival_spread_ms": 0.15873015873015817,
+    "flipped": null,
+    "low": 0.4648834338404392,
+    "high": 0.0145071100396966,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 22.84580498866213,
+    "arrival_spread_ms": 2.2675736961451207,
+    "flipped": null,
+    "low": 0.45197151640795485,
+    "high": 0.0019794884516199955,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP MX 10in",
+  "group": "tom",
+  "tunings": {
+   "T01 C4": {
+    "rr": 6,
+    "rr_level_spread_dB": 6.769947052001953,
+    "ring_s": 1.06562358276644,
+    "label": "C4",
+    "label_hz": 261.6255653005986,
+    "strongest_hz": 133.7413787841797,
+    "cents_from_label": -1161.6691536248359,
+    "rr_pitch_spread_cents": 13.082435421216083
+   },
+   "T02 C#4": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.844834327697754,
+    "ring_s": 0.9741269841269842,
+    "label": "C#4",
+    "label_hz": 277.1826309768721,
+    "strongest_hz": 140.8069610595703,
+    "cents_from_label": -1172.5418387704844,
+    "rr_pitch_spread_cents": 6.201442030728768
+   },
+   "T03 D4": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.3607778549194336,
+    "ring_s": 0.8588321995464853,
+    "label": "D4",
+    "label_hz": 293.6647679174076,
+    "strongest_hz": 149.21836853027344,
+    "cents_from_label": -1172.0940606696206,
+    "rr_pitch_spread_cents": 9.764459326006035
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.43079318744358486,
+    "high": 0.03600159894043944,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 0.7029478458049886,
+    "arrival_spread_ms": 0.04535147392290251,
+    "flipped": null,
+    "low": 0.43993332368437055,
+    "high": 0.0023392064657250986,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.562358276643991,
+    "arrival_spread_ms": 0.0453514739229024,
+    "flipped": null,
+    "low": 0.34396225327382984,
+    "high": 0.016564722378799725,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.804988662131519,
+    "arrival_spread_ms": 0.0907029478458048,
+    "flipped": null,
+    "low": 0.2765543202928887,
+    "high": 0.03196582035941338,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.138321995464853,
+    "arrival_spread_ms": 0.204081632653061,
+    "flipped": null,
+    "low": 0.18044617647400596,
+    "high": 0.04931844222102581,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 18.594104308390023,
+    "arrival_spread_ms": 0.1814058956916078,
+    "flipped": null,
+    "low": 0.24670880193026026,
+    "high": 0.03553890635939019,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP MX 12in",
+  "group": "tom",
+  "tunings": {
+   "T01 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.093127250671387,
+    "ring_s": 1.0770748299319728,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 113.72222900390625,
+    "cents_from_label": -1142.3870902922758,
+    "rr_pitch_spread_cents": 7.677325437780829
+   },
+   "T02 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.655214309692383,
+    "ring_s": 1.138718820861678,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 119.86255645751953,
+    "cents_from_label": -1151.3469691035375,
+    "rr_pitch_spread_cents": 9.726059564466334
+   },
+   "T03 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.4827566146850586,
+    "ring_s": 1.1985487528344672,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 127.76927947998047,
+    "cents_from_label": -1140.7550284283973,
+    "rr_pitch_spread_cents": 4.5558817056948
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.596905336699451,
+    "high": 0.010789383686669825,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 0.8616780045351474,
+    "arrival_spread_ms": 0.04535147392290251,
+    "flipped": null,
+    "low": 0.5748121199937001,
+    "high": 0.0009175753868511003,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.4716553287981857,
+    "arrival_spread_ms": 0.0453514739229024,
+    "flipped": null,
+    "low": 0.5153772007021103,
+    "high": 0.007801929546799829,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.759637188208617,
+    "arrival_spread_ms": 0.11337868480725533,
+    "flipped": null,
+    "low": 0.33398567949771424,
+    "high": 0.026829172570718277,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.229024943310657,
+    "arrival_spread_ms": 0.24943310657596385,
+    "flipped": null,
+    "low": 0.42266119412437325,
+    "high": 0.02445285576916638,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 18.798185941043084,
+    "arrival_spread_ms": 0.24943310657596385,
+    "flipped": null,
+    "low": 0.4037078803266488,
+    "high": 0.019189651485065868,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "PDP MX 14in",
+  "group": "tom",
+  "tunings": {
+   "T01 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.9461479187011719,
+    "ring_s": 1.6254421768707483,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 76.20735168457031,
+    "cents_from_label": -1135.4017257754151,
+    "rr_pitch_spread_cents": 11.45252720504501
+   },
+   "T02 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.8002490997314453,
+    "ring_s": 1.7910657596371884,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 79.23545837402344,
+    "cents_from_label": -1167.9425142955572,
+    "rr_pitch_spread_cents": 3.6795636573402626
+   },
+   "T03 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.0717544555664062,
+    "ring_s": 1.6489115646258503,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 82.76824951171875,
+    "cents_from_label": -1192.4250074238093,
+    "rr_pitch_spread_cents": 3.5151972464058603
+   },
+   "T04 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.7159366607666016,
+    "ring_s": 1.5894331065759637,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 89.49737548828125,
+    "cents_from_label": -1157.1034912294697,
+    "rr_pitch_spread_cents": 13.01685868439089
+   },
+   "T05 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.163959503173828,
+    "ring_s": 1.2573809523809523,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 93.78719329833984,
+    "cents_from_label": -1176.0488200616967,
+    "rr_pitch_spread_cents": 6.21628692681613
+   }
+  },
+  "mics": {
+   "Close 1 - Tom Mic 1": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.7909802418208727,
+    "high": 0.01017876497670597,
+    "heard_as": "near"
+   },
+   "Close 2 - Tom Mic 2": {
+    "arrival_ms": 1.0430839002267573,
+    "arrival_spread_ms": 0.0907029478458048,
+    "flipped": null,
+    "low": 0.7889097480058781,
+    "high": 0.0005214770255619022,
+    "heard_as": "sub"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.494331065759637,
+    "arrival_spread_ms": 0.0453514739229024,
+    "flipped": null,
+    "low": 0.6399142647022257,
+    "high": 0.012957456251784013,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.346938775510203,
+    "arrival_spread_ms": 0.1814058956916096,
+    "flipped": null,
+    "low": 0.3214310077120933,
+    "high": 0.0071742033375120605,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.682539682539684,
+    "arrival_spread_ms": 0.15873015873015994,
+    "flipped": null,
+    "low": 0.3630349813635031,
+    "high": 0.015068399805629957,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 21.360544217687075,
+    "arrival_spread_ms": 0.5215419501133773,
+    "flipped": null,
+    "low": 0.3370624325384275,
+    "high": 0.005546882300952952,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Blackwood Drums Skateboard 14x5",
+  "group": "snare",
+  "tunings": {
+   "T01 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2061904761904762,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 178.9947509765625,
+    "cents_from_label": -57.10349122946976,
+    "rr_pitch_spread_cents": 138.186612502487
+   },
+   "T02 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20183673469387753,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 182.94811248779297,
+    "cents_from_label": -119.28279108275355,
+    "rr_pitch_spread_cents": 111.00424693270044
+   },
+   "T03 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20172335600907032,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 210.11695861816406,
+    "cents_from_label": 20.42690009865155,
+    "rr_pitch_spread_cents": 211.67969730302082
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.14339175725109346,
+    "high": 0.0679285866116247,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.3854875283446712,
+    "arrival_spread_ms": 0.022675736961451254,
+    "flipped": null,
+    "low": 0.11187734306044919,
+    "high": 0.22778908391226552,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.038548752834467,
+    "arrival_spread_ms": 0.04535147392290195,
+    "flipped": null,
+    "low": 0.11531448191254251,
+    "high": 0.03641757351162772,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.712018140589569,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.06671258495710733,
+    "high": 0.09096731326749412,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.0,
+    "arrival_spread_ms": 0.24943310657596385,
+    "flipped": null,
+    "low": 0.05818108465225527,
+    "high": 0.07024660426817005,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.63718820861678,
+    "arrival_spread_ms": 0.8616780045351469,
+    "flipped": null,
+    "low": 0.056768542986026134,
+    "high": 0.08535332739780205,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.7936507936507936,
+    "arrival_spread_ms": 0.0680272108843537,
+    "flipped": null,
+    "low": 0.11717563676826606,
+    "high": 0.4058004815371333,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "DW Collectors Series Brass 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 C3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21041950113378685,
+    "label": "C3",
+    "label_hz": 130.8127826502993,
+    "strongest_hz": 152.3305892944336,
+    "cents_from_label": 263.6425833093045,
+    "rr_pitch_spread_cents": 416.32502312970155
+   },
+   "T02 C#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20080498866213153,
+    "label": "C#3",
+    "label_hz": 138.59131548843604,
+    "strongest_hz": 171.00391387939453,
+    "cents_from_label": 363.8309859827819,
+    "rr_pitch_spread_cents": 499.7414559573447
+   },
+   "T03 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.22183673469387755,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 178.4900665283203,
+    "cents_from_label": 338.0083152668203,
+    "rr_pitch_spread_cents": 560.6423852778241
+   },
+   "T04 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20806122448979592,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 172.18151092529297,
+    "cents_from_label": 175.71205059719566,
+    "rr_pitch_spread_cents": 37.52575398753843
+   },
+   "T05 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1859750566893424,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 172.265625,
+    "cents_from_label": 76.55758616910278,
+    "rr_pitch_spread_cents": 3.381317576975688
+   },
+   "T06 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1883673469387755,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 183.78925323486328,
+    "cents_from_label": 88.65866343465564,
+    "rr_pitch_spread_cents": 11.082468886685062
+   },
+   "T07 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.17979591836734693,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 183.95748138427734,
+    "cents_from_label": -9.75740777318535,
+    "rr_pitch_spread_cents": 97.36411527048664
+   },
+   "T08 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18263038548752836,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 196.06990814208984,
+    "cents_from_label": 0.637533123742428,
+    "rr_pitch_spread_cents": 82.76657049494331
+   },
+   "T09 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18963718820861677,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 205.15422821044922,
+    "cents_from_label": -20.95356247547651,
+    "rr_pitch_spread_cents": 51.00567421744275
+   },
+   "T10 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1739002267573696,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 251.1646270751953,
+    "cents_from_label": 229.3557263305523,
+    "rr_pitch_spread_cents": 278.8464650195883
+   },
+   "T11 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18157596371882087,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 241.07093811035156,
+    "cents_from_label": 58.34505928367759,
+    "rr_pitch_spread_cents": 7.248722588759367
+   },
+   "T12 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19722222222222224,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 267.3145294189453,
+    "cents_from_label": 137.24167738732558,
+    "rr_pitch_spread_cents": 5.445849250160219
+   },
+   "T13 C4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19285714285714284,
+    "label": "C4",
+    "label_hz": 261.6255653005986,
+    "strongest_hz": 266.64161682128906,
+    "cents_from_label": 32.8781362012265,
+    "rr_pitch_spread_cents": 148.9913526236842
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.20658378269961636,
+    "high": 0.08190959332739328,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.3854875283446712,
+    "arrival_spread_ms": 0.09070294784580502,
+    "flipped": null,
+    "low": 0.1124285198784877,
+    "high": 0.26086246174634065,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.9024943310657596,
+    "arrival_spread_ms": 0.13605442176870808,
+    "flipped": null,
+    "low": 0.14196803652010978,
+    "high": 0.03359910395624996,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.6439909297052155,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.07094001106791568,
+    "high": 0.09603262146153098,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.0,
+    "arrival_spread_ms": 0.04535147392290284,
+    "flipped": null,
+    "low": 0.046531065772818805,
+    "high": 0.10325612955367207,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.43310657596372,
+    "arrival_spread_ms": 1.2244897959183696,
+    "flipped": null,
+    "low": 0.06211657187571254,
+    "high": 0.08694188665368993,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.6802721088435374,
+    "arrival_spread_ms": 0.0680272108843537,
+    "flipped": null,
+    "low": 0.15292430610864613,
+    "high": 0.3583148939158116,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "DW Performance Series Steel 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2946712018140589,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 171.50859832763672,
+    "cents_from_label": 68.93285818901862,
+    "rr_pitch_spread_cents": 465.2325985354891
+   },
+   "T02 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.26623582766439907,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 249.4823455810547,
+    "cents_from_label": 617.7210451146594,
+    "rr_pitch_spread_cents": 101.55750056061194
+   },
+   "T03 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.24259637188208616,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 267.14630126953125,
+    "cents_from_label": 636.1518227406519,
+    "rr_pitch_spread_cents": 7.624194985597662
+   },
+   "T04 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.29656462585034016,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 293.7263488769531,
+    "cents_from_label": 700.3629985244309,
+    "rr_pitch_spread_cents": 685.608876189023
+   },
+   "T05 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2609750566893424,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 212.3880386352539,
+    "cents_from_label": 39.03879320092619,
+    "rr_pitch_spread_cents": 17.784465078406427
+   },
+   "T06 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.25817460317460317,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 289.26830291748047,
+    "cents_from_label": 473.88566680125166,
+    "rr_pitch_spread_cents": 721.3930293910187
+   },
+   "T07 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.23206349206349208,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 240.56625366210938,
+    "cents_from_label": 54.71690416800478,
+    "rr_pitch_spread_cents": 31.67722807752912
+   },
+   "T08 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.23777777777777775,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 253.68804931640625,
+    "cents_from_label": 46.66244209150007,
+    "rr_pitch_spread_cents": 137.0840674768123
+   },
+   "T09 C4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.24223356009070296,
+    "label": "C4",
+    "label_hz": 261.6255653005986,
+    "strongest_hz": 270.67909240722656,
+    "cents_from_label": 58.89591903723856,
+    "rr_pitch_spread_cents": 45.47592931023407
+   },
+   "T10 C#4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2595691609977324,
+    "label": "C#4",
+    "label_hz": 277.1826309768721,
+    "strongest_hz": 280.85689544677734,
+    "cents_from_label": 22.798039844841885,
+    "rr_pitch_spread_cents": 216.49008650819803
+   },
+   "T11 D4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.26927437641723356,
+    "label": "D4",
+    "label_hz": 293.6647679174076,
+    "strongest_hz": 300.7078170776367,
+    "cents_from_label": 41.03061803283978,
+    "rr_pitch_spread_cents": 1017.9263925573906
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0989875394139146,
+    "high": 0.0975700735679106,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.5668934240362812,
+    "arrival_spread_ms": 0.6349206349206349,
+    "flipped": null,
+    "low": 0.07244558085721246,
+    "high": 0.21427228666756726,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.038548752834467,
+    "arrival_spread_ms": 0.204081632653061,
+    "flipped": null,
+    "low": 0.08604060523834388,
+    "high": 0.041339595278787784,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.666666666666667,
+    "arrival_spread_ms": 0.11337868480725621,
+    "flipped": null,
+    "low": 0.05010118267185602,
+    "high": 0.09043021168671361,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.045351473922901,
+    "arrival_spread_ms": 0.1814058956916096,
+    "flipped": null,
+    "low": 0.03901874980584096,
+    "high": 0.09537867585033455,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.909297052154194,
+    "arrival_spread_ms": 1.2018140589569128,
+    "flipped": null,
+    "low": 0.061819756944017756,
+    "high": 0.07618418802860752,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.8616780045351474,
+    "arrival_spread_ms": 0.9523809523809523,
+    "flipped": null,
+    "low": 0.1022972086838225,
+    "high": 0.3305856327850755,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "DW Performance Series Steel 14x6.5 Open",
+  "group": "snare",
+  "tunings": {
+   "T01 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.4138095238095238,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 267.4827575683594,
+    "cents_from_label": 638.330846375164,
+    "rr_pitch_spread_cents": 75.81699782096815
+   },
+   "T02 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.37994331065759634,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 299.2778778076172,
+    "cents_from_label": 732.7785404896947,
+    "rr_pitch_spread_cents": 719.6107985842342
+   },
+   "T03 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.35121315192743763,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 314.3342971801758,
+    "cents_from_label": 717.7554042259964,
+    "rr_pitch_spread_cents": 723.49186710176
+   },
+   "T04 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.31351473922902495,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 288.7636184692383,
+    "cents_from_label": 470.8625565178108,
+    "rr_pitch_spread_cents": 1414.5402331469045
+   },
+   "T05 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.28214285714285714,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 551.2836456298828,
+    "cents_from_label": 1490.3495352204145,
+    "rr_pitch_spread_cents": 1446.239918390325
+   },
+   "T06 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.28226757369614514,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 260.41717529296875,
+    "cents_from_label": 91.9852935423952,
+    "rr_pitch_spread_cents": 94.46472298002261
+   },
+   "T07 C4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.288718820861678,
+    "label": "C4",
+    "label_hz": 261.6255653005986,
+    "strongest_hz": 268.3238983154297,
+    "cents_from_label": 43.7664365517811,
+    "rr_pitch_spread_cents": 70.80585016588334
+   },
+   "T08 C#4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2849886621315193,
+    "label": "C#4",
+    "label_hz": 277.1826309768721,
+    "strongest_hz": 287.08133697509766,
+    "cents_from_label": 60.7472250877416,
+    "rr_pitch_spread_cents": 1028.7632792095885
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.08304454189542484,
+    "high": 0.15052226748971892,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.5668934240362812,
+    "arrival_spread_ms": 0.5442176870748299,
+    "flipped": null,
+    "low": 0.06632466845117722,
+    "high": 0.22522245740899227,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.0272108843537415,
+    "arrival_spread_ms": 0.0907029478458048,
+    "flipped": null,
+    "low": 0.07627860279236365,
+    "high": 0.04674655934836659,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.678004535147393,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.046579499204683704,
+    "high": 0.08921286305107341,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.05668934240363,
+    "arrival_spread_ms": 0.15873015873015994,
+    "flipped": null,
+    "low": 0.03605225434111303,
+    "high": 0.10487188836070294,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 20.10204081632653,
+    "arrival_spread_ms": 0.9977324263038554,
+    "flipped": null,
+    "low": 0.05291484704859149,
+    "high": 0.07924075929946924,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.8163265306122449,
+    "arrival_spread_ms": 0.7482993197278913,
+    "flipped": null,
+    "low": 0.08571736487823309,
+    "high": 0.31692940262592584,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Ludwig Acrolite Classic Aluminum 14x5",
+  "group": "snare",
+  "tunings": {
+   "T01 A#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.24928571428571428,
+    "label": "A#2",
+    "label_hz": 116.54094037952248,
+    "strongest_hz": 115.57273864746094,
+    "cents_from_label": -14.442867249177162,
+    "rr_pitch_spread_cents": 336.74103043045864
+   },
+   "T02 B2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2565306122448979,
+    "label": "B2",
+    "label_hz": 123.47082531403103,
+    "strongest_hz": 129.53567504882812,
+    "cents_from_label": 83.01514886781939,
+    "rr_pitch_spread_cents": 263.61364396729437
+   },
+   "T03 C3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2743764172335601,
+    "label": "C3",
+    "label_hz": 130.8127826502993,
+    "strongest_hz": 139.62936401367188,
+    "cents_from_label": 112.91861765024733,
+    "rr_pitch_spread_cents": 295.8474603654448
+   },
+   "T04 C#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2082766439909297,
+    "label": "C#3",
+    "label_hz": 138.59131548843604,
+    "strongest_hz": 170.16277313232422,
+    "cents_from_label": 355.29431163904246,
+    "rr_pitch_spread_cents": 297.31449150057705
+   },
+   "T05 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.22755102040816327,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 170.49922943115234,
+    "cents_from_label": 258.71403432938143,
+    "rr_pitch_spread_cents": 307.8436858170285
+   },
+   "T06 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.209421768707483,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 191.27540588378906,
+    "cents_from_label": 357.77743283980027,
+    "rr_pitch_spread_cents": 369.0275345960023
+   },
+   "T07 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20568027210884354,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 197.24750518798828,
+    "cents_from_label": 311.00423505238945,
+    "rr_pitch_spread_cents": 760.0178901385951
+   },
+   "T08 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19706349206349205,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 222.48172760009766,
+    "cents_from_label": 419.41999457076855,
+    "rr_pitch_spread_cents": 29.950640275706785
+   },
+   "T09 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20120181405895693,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 192.62123107910156,
+    "cents_from_label": 69.91584575027048,
+    "rr_pitch_spread_cents": 626.1904955262373
+   },
+   "T10 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19594104308390023,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 272.8660583496094,
+    "cents_from_label": 572.8273112298306,
+    "rr_pitch_spread_cents": 518.7018117520333
+   },
+   "T11 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19323129251700683,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 213.1450653076172,
+    "cents_from_label": 45.19855713807404,
+    "rr_pitch_spread_cents": 178.95983980471297
+   },
+   "T12 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1919954648526077,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 240.9027099609375,
+    "cents_from_label": 157.1365188862107,
+    "rr_pitch_spread_cents": 56.484986326251715
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.2561392244470129,
+    "high": 0.07029666984378645,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.27210884353741494,
+    "arrival_spread_ms": 0.09070294784580496,
+    "flipped": null,
+    "low": 0.16679959583950585,
+    "high": 0.2077932207356615,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.0045351473922906,
+    "arrival_spread_ms": 0.09070294784580435,
+    "flipped": null,
+    "low": 0.19362686171386823,
+    "high": 0.03290697992001598,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.655328798185941,
+    "arrival_spread_ms": 0.11337868480725621,
+    "flipped": null,
+    "low": 0.12620037699940873,
+    "high": 0.08796516337202812,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.977324263038549,
+    "arrival_spread_ms": 0.1133786848072571,
+    "flipped": null,
+    "low": 0.0696895507251287,
+    "high": 0.10131945820352484,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.160997732426303,
+    "arrival_spread_ms": 1.2698412698412724,
+    "flipped": null,
+    "low": 0.12395058870740566,
+    "high": 0.07939017165585069,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.6122448979591837,
+    "arrival_spread_ms": 0.0680272108843537,
+    "flipped": null,
+    "low": 0.20849412362715192,
+    "high": 0.30902511334157734,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Ludwig Black Magic 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.3030045351473923,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 279.00638580322266,
+    "cents_from_label": 611.3535423147296,
+    "rr_pitch_spread_cents": 2.0883404812936823
+   },
+   "T02 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.22452380952380951,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 310.5491638183594,
+    "cents_from_label": 696.781791344032,
+    "rr_pitch_spread_cents": 5.626984528179124
+   },
+   "T03 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.207562358276644,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 288.67950439453125,
+    "cents_from_label": 470.35819116855754,
+    "rr_pitch_spread_cents": 626.0795572831493
+   },
+   "T04 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18958049886621314,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 239.0522003173828,
+    "cents_from_label": 43.786593260439055,
+    "rr_pitch_spread_cents": 6.089468287015595
+   },
+   "T05 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.16941043083900226,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 429.73880767822266,
+    "cents_from_label": 959.1478506487409,
+    "rr_pitch_spread_cents": 1431.034921212856
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.10939457263000489,
+    "high": 0.08776177771883516,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.6349206349206349,
+    "arrival_spread_ms": 0.6122448979591837,
+    "flipped": null,
+    "low": 0.09402479835896965,
+    "high": 0.28134260901637415,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.993197278911565,
+    "arrival_spread_ms": 0.11337868480725577,
+    "flipped": null,
+    "low": 0.091325823547502,
+    "high": 0.03395641019929,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.712018140589569,
+    "arrival_spread_ms": 0.04535147392290195,
+    "flipped": null,
+    "low": 0.05825907215561316,
+    "high": 0.09038747205161923,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.113378684807257,
+    "arrival_spread_ms": 0.06802721088435248,
+    "flipped": null,
+    "low": 0.03655767514030321,
+    "high": 0.09264590065969867,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.61451247165533,
+    "arrival_spread_ms": 0.8616780045351469,
+    "flipped": null,
+    "low": 0.06892801346211261,
+    "high": 0.08447979252079017,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.7256235827664399,
+    "arrival_spread_ms": 0.7482993197278911,
+    "flipped": null,
+    "low": 0.10319420581329099,
+    "high": 0.32272391593531136,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Ludwig Copper Phonic 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 B2": {
+    "rr": 7,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.417437641723356,
+    "label": "B2",
+    "label_hz": 123.47082531403103,
+    "strongest_hz": 155.44281005859375,
+    "cents_from_label": 398.6564358683719,
+    "rr_pitch_spread_cents": 561.2563000908513
+   },
+   "T02 C3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.4311451247165533,
+    "label": "C3",
+    "label_hz": 130.8127826502993,
+    "strongest_hz": 173.77967834472656,
+    "cents_from_label": 491.70703280717436,
+    "rr_pitch_spread_cents": 30.196708264906103
+   },
+   "T03 C#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2692857142857143,
+    "label": "C#3",
+    "label_hz": 138.59131548843604,
+    "strongest_hz": 162.0037078857422,
+    "cents_from_label": 270.227971581254,
+    "rr_pitch_spread_cents": 746.2421801574612
+   },
+   "T04 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20987528344671202,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 191.27540588378906,
+    "cents_from_label": 457.77743283980004,
+    "rr_pitch_spread_cents": 827.6783067422576
+   },
+   "T05 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21454648526077097,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 154.85401153564453,
+    "cents_from_label": -7.913720211009429,
+    "rr_pitch_spread_cents": 880.6046803414969
+   },
+   "T06 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.23653061224489796,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 172.85442352294922,
+    "cents_from_label": 82.46480045195723,
+    "rr_pitch_spread_cents": 630.1092536925091
+   },
+   "T07 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20447845804988662,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 181.26583099365234,
+    "cents_from_label": 64.72417094085544,
+    "rr_pitch_spread_cents": 6.429846013432965
+   },
+   "T08 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2015532879818594,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 180.8452606201172,
+    "cents_from_label": -39.29728045871011,
+    "rr_pitch_spread_cents": 137.95199117760833
+   },
+   "T09 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1937641723356009,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 192.9576873779297,
+    "cents_from_label": -27.062802611907127,
+    "rr_pitch_spread_cents": 59.396358946918724
+   },
+   "T10 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18501133786848073,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 221.05178833007812,
+    "cents_from_label": 108.25705855589823,
+    "rr_pitch_spread_cents": 210.31559965699117
+   },
+   "T11 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2093764172335601,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 314.6707534790039,
+    "cents_from_label": 619.6074868300944,
+    "rr_pitch_spread_cents": 1454.0520237793849
+   },
+   "T12 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21820861678004536,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 240.81859588623047,
+    "cents_from_label": 56.53193216832624,
+    "rr_pitch_spread_cents": 796.9592569857166
+   },
+   "T13 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19638321995464852,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 264.95933532714844,
+    "cents_from_label": 121.92092209867216,
+    "rr_pitch_spread_cents": 995.79988782882
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.21239586882487227,
+    "high": 0.08214326302007333,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.3401360544217687,
+    "arrival_spread_ms": 0.06802721088435376,
+    "flipped": null,
+    "low": 0.12058478923825164,
+    "high": 0.19607396449788092,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.8798185941043086,
+    "arrival_spread_ms": 0.11337868480725666,
+    "flipped": null,
+    "low": 0.16636497895233598,
+    "high": 0.030757766464117948,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.6439909297052155,
+    "arrival_spread_ms": 0.0907029478458048,
+    "flipped": null,
+    "low": 0.09177485923876383,
+    "high": 0.08302713586246553,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.977324263038549,
+    "arrival_spread_ms": 0.11337868480725355,
+    "flipped": null,
+    "low": 0.049908755909111244,
+    "high": 0.08921282855056065,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.43310657596372,
+    "arrival_spread_ms": 1.2471655328798228,
+    "flipped": null,
+    "low": 0.06495268418758332,
+    "high": 0.06489402064363771,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.6575963718820862,
+    "arrival_spread_ms": 0.13605442176870752,
+    "flipped": null,
+    "low": 0.1661445672635485,
+    "high": 0.3076899561973628,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "PDP Concept Maple Classic 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 A2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2143764172335601,
+    "label": "A2",
+    "label_hz": 110.0,
+    "strongest_hz": 118.09616088867188,
+    "cents_from_label": 122.95025053457569,
+    "rr_pitch_spread_cents": 699.4550234648004
+   },
+   "T02 A#2": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.233968253968254,
+    "label": "A#2",
+    "label_hz": 116.54094037952248,
+    "strongest_hz": 128.61042022705078,
+    "cents_from_label": 170.60481580206843,
+    "rr_pitch_spread_cents": 717.351052220407
+   },
+   "T03 B2": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.0708778265543515e-06,
+    "ring_s": 0.24043083900226758,
+    "label": "B2",
+    "label_hz": 123.47082531403103,
+    "strongest_hz": 149.21836853027344,
+    "cents_from_label": 327.9059393303794,
+    "rr_pitch_spread_cents": 17.59598032001582
+   },
+   "T04 C3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.04781123250722885,
+    "ring_s": 0.24656462585034014,
+    "label": "C3",
+    "label_hz": 130.8127826502993,
+    "strongest_hz": 178.32183837890625,
+    "cents_from_label": 536.3758455097766,
+    "rr_pitch_spread_cents": 26.10770003372828
+   },
+   "T05 C#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.15963368117809296,
+    "ring_s": 0.28435374149659864,
+    "label": "C#3",
+    "label_hz": 138.59131548843604,
+    "strongest_hz": 190.6024932861328,
+    "cents_from_label": 551.6761611537218,
+    "rr_pitch_spread_cents": 24.38398125551507
+   },
+   "T06 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21718820861678007,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 191.78009033203125,
+    "cents_from_label": 462.3393170316275,
+    "rr_pitch_spread_cents": 560.1525219439994
+   },
+   "T07 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.2971785068511963,
+    "ring_s": 0.2594444444444445,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 234.59415435791016,
+    "cents_from_label": 711.1962490030774,
+    "rr_pitch_spread_cents": 688.6795265847575
+   },
+   "T08 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.22024943310657596,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 173.27499389648438,
+    "cents_from_label": 86.67193265379976,
+    "rr_pitch_spread_cents": 687.0056933375319
+   },
+   "T09 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21065759637188208,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 272.78194427490234,
+    "cents_from_label": 772.2935563160704,
+    "rr_pitch_spread_cents": 17.098746885935764
+   },
+   "T10 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18351473922902495,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 296.9226837158203,
+    "cents_from_label": 819.1005479593539,
+    "rr_pitch_spread_cents": 1253.5782808998658
+   },
+   "T11 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.035438799590338e-06,
+    "ring_s": 0.1766439909297052,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 181.6864013671875,
+    "cents_from_label": -131.2636973699,
+    "rr_pitch_spread_cents": 1296.0473975101406
+   },
+   "T12 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18859410430839002,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 336.9609832763672,
+    "cents_from_label": 838.093633144352,
+    "rr_pitch_spread_cents": 705.829453916435
+   },
+   "T13 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.14664804935455322,
+    "ring_s": 0.1636734693877551,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 241.57562255859375,
+    "cents_from_label": 161.96562675676455,
+    "rr_pitch_spread_cents": 1328.4235284896486
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.28659374148189876,
+    "high": 0.05521348968365312,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.8843537414965986,
+    "arrival_spread_ms": 0.5442176870748299,
+    "flipped": null,
+    "low": 0.15415570244117202,
+    "high": 0.1985614576506517,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.038548752834467,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.19975646977090608,
+    "high": 0.027014143703441327,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.73469387755102,
+    "arrival_spread_ms": 0.09070294784580568,
+    "flipped": null,
+    "low": 0.10651500493042204,
+    "high": 0.0533549097102079,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.158730158730158,
+    "arrival_spread_ms": 0.15873015873015817,
+    "flipped": null,
+    "low": 0.067258959884968,
+    "high": 0.05280807953183354,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.25170068027211,
+    "arrival_spread_ms": 1.6553287981859377,
+    "flipped": null,
+    "low": 0.13176508060353145,
+    "high": 0.05255609814123223,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 1.2925170068027212,
+    "arrival_spread_ms": 0.7029478458049887,
+    "flipped": null,
+    "low": 0.21288967777174522,
+    "high": 0.27695434981776784,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "PDP Eric Hernandez Signature 14x4",
+  "group": "snare",
+  "tunings": {
+   "T01 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2065873015873016,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 328.54957580566406,
+    "cents_from_label": 694.3290668332529,
+    "rr_pitch_spread_cents": 1788.1573926340945
+   },
+   "T02 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19053287981859413,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 518.3109283447266,
+    "cents_from_label": 1383.5771466163244,
+    "rr_pitch_spread_cents": 1918.1898126177439
+   },
+   "T03 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20478458049886622,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 565.24658203125,
+    "cents_from_label": 1433.6522073684498,
+    "rr_pitch_spread_cents": 2021.6903461412169
+   },
+   "T04 C4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19264172335600907,
+    "label": "C4",
+    "label_hz": 261.6255653005986,
+    "strongest_hz": 203.55606079101562,
+    "cents_from_label": -434.492815236549,
+    "rr_pitch_spread_cents": 213.92957359528526
+   },
+   "T05 C#4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18436507936507937,
+    "label": "C#4",
+    "label_hz": 277.1826309768721,
+    "strongest_hz": 250.40760040283203,
+    "cents_from_label": -175.87020634525376,
+    "rr_pitch_spread_cents": 629.5078592900094
+   },
+   "T06 D4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1711111111111111,
+    "label": "D4",
+    "label_hz": 293.6647679174076,
+    "strongest_hz": 208.6029052734375,
+    "cents_from_label": -592.0931275018121,
+    "rr_pitch_spread_cents": 604.1516591731902
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.05393271912026358,
+    "high": 0.144804190314777,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.2380952380952381,
+    "arrival_spread_ms": 0.13605442176870747,
+    "flipped": null,
+    "low": 0.04496898061252354,
+    "high": 0.3194222497602407,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.072562358276644,
+    "arrival_spread_ms": 0.1814058956916096,
+    "flipped": null,
+    "low": 0.03898398193050774,
+    "high": 0.055293488435917214,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.678004535147393,
+    "arrival_spread_ms": 0.0907029478458048,
+    "flipped": null,
+    "low": 0.028434077573878815,
+    "high": 0.12475991880866333,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.977324263038549,
+    "arrival_spread_ms": 0.0907029478458039,
+    "flipped": null,
+    "low": 0.024496891669563068,
+    "high": 0.13534924846711718,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 20.045351473922903,
+    "arrival_spread_ms": 0.408163265306122,
+    "flipped": null,
+    "low": 0.028245550995653963,
+    "high": 0.09096628179831848,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.5895691609977325,
+    "arrival_spread_ms": 0.1360544217687074,
+    "flipped": null,
+    "low": 0.07710570188221287,
+    "high": 0.4292404356057107,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Panda Bell Brass 14x6.5 - Set 1",
+  "group": "snare",
+  "tunings": {
+   "T01 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.258718820861678,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 212.97683715820312,
+    "cents_from_label": 343.8316134831123,
+    "rr_pitch_spread_cents": 9.561080193427033
+   },
+   "T02 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.23171201814058956,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 215.24791717529297,
+    "cents_from_label": 262.1949046164385,
+    "rr_pitch_spread_cents": 20.31193478758597
+   },
+   "T03 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21325396825396825,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 216.84608459472656,
+    "cents_from_label": 175.00144420308413,
+    "rr_pitch_spread_cents": 122.32100351931713
+   },
+   "T04 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20218820861678005,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 218.023681640625,
+    "cents_from_label": 84.37758963065244,
+    "rr_pitch_spread_cents": 4.002855075907747
+   },
+   "T05 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1872108843537415,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 202.88314819335938,
+    "cents_from_label": -140.2253835507954,
+    "rr_pitch_spread_cents": 280.42140488324117
+   },
+   "T06 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.19196145124716552,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 187.3220443725586,
+    "cents_from_label": -378.37940248554963,
+    "rr_pitch_spread_cents": 219.4787581728901
+   },
+   "T07 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1954875283446712,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 187.82672882080078,
+    "cents_from_label": -473.72137084392904,
+    "rr_pitch_spread_cents": 3.0997932168031586
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.135953384857116,
+    "high": 0.09546529318832186,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.4308390022675737,
+    "arrival_spread_ms": 0.0680272108843537,
+    "flipped": null,
+    "low": 0.07107535884605926,
+    "high": 0.303912911692325,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.9024943310657596,
+    "arrival_spread_ms": 0.13605442176870808,
+    "flipped": null,
+    "low": 0.09256569091917448,
+    "high": 0.04608639711252606,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.6439909297052155,
+    "arrival_spread_ms": 0.13605442176870763,
+    "flipped": null,
+    "low": 0.06341990935042763,
+    "high": 0.1182401502931808,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.977324263038549,
+    "arrival_spread_ms": 0.0907029478458039,
+    "flipped": null,
+    "low": 0.04277267335463742,
+    "high": 0.08140593101004652,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.229024943310655,
+    "arrival_spread_ms": 1.1791383219954668,
+    "flipped": null,
+    "low": 0.05736822705010107,
+    "high": 0.0934568988671328,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.7256235827664399,
+    "arrival_spread_ms": 0.11337868480725632,
+    "flipped": null,
+    "low": 0.11324978755137455,
+    "high": 0.3709823377036251,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Panda Bell Brass 14x6.5 - Set 2",
+  "group": "snare",
+  "tunings": {
+   "T01 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.23800453514739228,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 300.4554748535156,
+    "cents_from_label": 739.5772243145703,
+    "rr_pitch_spread_cents": 1073.085524895931
+   },
+   "T02 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21218820861678006,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 326.61495208740234,
+    "cents_from_label": 784.104776459276,
+    "rr_pitch_spread_cents": 634.7395904300352
+   },
+   "T03 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1778798185941043,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 241.07093811035156,
+    "cents_from_label": 158.34505928367767,
+    "rr_pitch_spread_cents": 2.4162377251780005
+   },
+   "T04 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.18391156462585034,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 299.3619918823242,
+    "cents_from_label": 433.26504718084516,
+    "rr_pitch_spread_cents": 1385.1937756695525
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.1062332550687379,
+    "high": 0.08858497030157991,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.6122448979591837,
+    "arrival_spread_ms": 0.11337868480725632,
+    "flipped": null,
+    "low": 0.062030807883248974,
+    "high": 0.28442415118063213,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.1065759637188206,
+    "arrival_spread_ms": 0.11337868480725577,
+    "flipped": null,
+    "low": 0.09258000137155759,
+    "high": 0.03892386226839719,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.700680272108843,
+    "arrival_spread_ms": 0.02267573696145142,
+    "flipped": null,
+    "low": 0.05883694592967539,
+    "high": 0.09062783498557309,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.056689342403628,
+    "arrival_spread_ms": 0.09070294784580568,
+    "flipped": null,
+    "low": 0.0417843573442591,
+    "high": 0.08579751503922789,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.387755102040817,
+    "arrival_spread_ms": 0.9297052154195029,
+    "flipped": null,
+    "low": 0.07650261565756754,
+    "high": 0.07435117255920445,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 1.1224489795918366,
+    "arrival_spread_ms": 0.7256235827664398,
+    "flipped": null,
+    "low": 0.1174588584974674,
+    "high": 0.33182956655194695,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Pearl Export Steel 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 D3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.23325396825396824,
+    "label": "D3",
+    "label_hz": 146.8323839587038,
+    "strongest_hz": 150.4800796508789,
+    "cents_from_label": 42.48279263139264,
+    "rr_pitch_spread_cents": 471.9887342886945
+   },
+   "T02 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2516213151927438,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 155.10635375976562,
+    "cents_from_label": -5.094885315691652,
+    "rr_pitch_spread_cents": 557.6843620836681
+   },
+   "T03 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.17333333333333334,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 169.23751831054688,
+    "cents_from_label": 45.85509393573535,
+    "rr_pitch_spread_cents": 153.49004036249895
+   },
+   "T04 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21200680272108843,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 181.51817321777344,
+    "cents_from_label": 67.13256555472312,
+    "rr_pitch_spread_cents": 143.24139985215763
+   },
+   "T05 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20789115646258505,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 182.1910858154297,
+    "cents_from_label": -26.461380700904506,
+    "rr_pitch_spread_cents": 14.407023912184982
+   },
+   "T06 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.17557823129251698,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 198.6774444580078,
+    "cents_from_label": 23.509485445691546,
+    "rr_pitch_spread_cents": 709.9932465264233
+   },
+   "T07 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20002267573696145,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 332.25059509277344,
+    "cents_from_label": 813.721911711296,
+    "rr_pitch_spread_cents": 53.72628897375459
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.2180934093481143,
+    "high": 0.0588705672476486,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.5442176870748299,
+    "arrival_spread_ms": 0.8843537414965985,
+    "flipped": null,
+    "low": 0.12238088602586503,
+    "high": 0.2310036712271102,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.038548752834467,
+    "arrival_spread_ms": 0.06802721088435337,
+    "flipped": null,
+    "low": 0.19273769113734612,
+    "high": 0.027519592710217592,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.712018140589569,
+    "arrival_spread_ms": 0.02267573696145142,
+    "flipped": null,
+    "low": 0.1569446145470969,
+    "high": 0.07419806855081468,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.113378684807257,
+    "arrival_spread_ms": 0.045351473922901064,
+    "flipped": null,
+    "low": 0.08680737043982974,
+    "high": 0.08116303197242344,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.591836734693878,
+    "arrival_spread_ms": 1.541950113378686,
+    "flipped": null,
+    "low": 0.18400830518382452,
+    "high": 0.0599748812209565,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.7256235827664399,
+    "arrival_spread_ms": 1.3378684807256236,
+    "flipped": null,
+    "low": 0.1190110563002264,
+    "high": 0.3542796411364203,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Pork Pie Big Black Brass 14x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 D#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.15801587301587303,
+    "label": "D#3",
+    "label_hz": 155.56349186104046,
+    "strongest_hz": 207.42530822753906,
+    "cents_from_label": 498.10608745250966,
+    "rr_pitch_spread_cents": 492.6832217367415
+   },
+   "T02 E3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1710544217687075,
+    "label": "E3",
+    "label_hz": 164.81377845643496,
+    "strongest_hz": 254.52919006347656,
+    "cents_from_label": 752.3931128291874,
+    "rr_pitch_spread_cents": 601.766152494674
+   },
+   "T03 F3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20343537414965987,
+    "label": "F3",
+    "label_hz": 174.61411571650194,
+    "strongest_hz": 278.5858154296875,
+    "cents_from_label": 808.7419351682931,
+    "rr_pitch_spread_cents": 645.0873405432459
+   },
+   "T04 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1946938775510204,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 282.3709487915039,
+    "cents_from_label": 732.105772206163,
+    "rr_pitch_spread_cents": 33.99735768188556
+   },
+   "T05 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.17385487528344673,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 197.5839614868164,
+    "cents_from_label": 13.95478378373912,
+    "rr_pitch_spread_cents": 786.6570493919355
+   },
+   "T06 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.168718820861678,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 344.61536407470703,
+    "cents_from_label": 876.9801991454641,
+    "rr_pitch_spread_cents": 770.7320310995442
+   },
+   "T07 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.16873015873015873,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 242.5008773803711,
+    "cents_from_label": 168.58373196299087,
+    "rr_pitch_spread_cents": 200.09961457708366
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.1580688175729432,
+    "high": 0.1090083069322047,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.5442176870748299,
+    "arrival_spread_ms": 0.43083900226757366,
+    "flipped": null,
+    "low": 0.12724475401068655,
+    "high": 0.21503334319292494,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 2.993197278911565,
+    "arrival_spread_ms": 0.1360544217687072,
+    "flipped": null,
+    "low": 0.134109332310496,
+    "high": 0.04127551146302866,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.73469387755102,
+    "arrival_spread_ms": 0.11337868480725621,
+    "flipped": null,
+    "low": 0.0679295866852121,
+    "high": 0.07988960159947726,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.113378684807257,
+    "arrival_spread_ms": 0.11337868480725533,
+    "flipped": null,
+    "low": 0.04501012821732001,
+    "high": 0.0986077969214619,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.410430839002267,
+    "arrival_spread_ms": 1.4512471655328802,
+    "flipped": null,
+    "low": 0.08753311557725214,
+    "high": 0.07954810429004384,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.8843537414965986,
+    "arrival_spread_ms": 0.7256235827664399,
+    "flipped": null,
+    "low": 0.12792501169998038,
+    "high": 0.3451971024206619,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Slingerland Artist 14x5",
+  "group": "snare",
+  "tunings": {
+   "T01 F#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.257687074829932,
+    "label": "F#3",
+    "label_hz": 184.9972113558172,
+    "strongest_hz": 253.8562774658203,
+    "cents_from_label": 547.8100948011228,
+    "rr_pitch_spread_cents": 892.3922960882574
+   },
+   "T02 G3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21410430839002267,
+    "label": "G3",
+    "label_hz": 195.99771799087463,
+    "strongest_hz": 277.239990234375,
+    "cents_from_label": 600.3582187889649,
+    "rr_pitch_spread_cents": 6.299221197383727
+   },
+   "T03 G#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.15958049886621317,
+    "label": "G#3",
+    "label_hz": 207.65234878997256,
+    "strongest_hz": 295.2404022216797,
+    "cents_from_label": 609.2639643994104,
+    "rr_pitch_spread_cents": 14.742360294870595
+   },
+   "T04 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.14802721088435372,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 162.0037078857422,
+    "cents_from_label": -529.7720284187461,
+    "rr_pitch_spread_cents": 1953.4783390460982
+   },
+   "T05 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.15475056689342404,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 355.8025360107422,
+    "cents_from_label": 732.2879237778773,
+    "rr_pitch_spread_cents": 4.093721578963212
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.110901474023391,
+    "high": 0.06809620332290345,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.4308390022675737,
+    "arrival_spread_ms": 0.022675736961451254,
+    "flipped": null,
+    "low": 0.09261560605152805,
+    "high": 0.24931506622712996,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.129251700680272,
+    "arrival_spread_ms": 0.0453514739229024,
+    "flipped": null,
+    "low": 0.08401539162349116,
+    "high": 0.0313766893560607,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.73469387755102,
+    "arrival_spread_ms": 0.04535147392290284,
+    "flipped": null,
+    "low": 0.05757415579962101,
+    "high": 0.07524737504148492,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.113378684807257,
+    "arrival_spread_ms": 0.11337868480725533,
+    "flipped": null,
+    "low": 0.03892066709202092,
+    "high": 0.08801160866249057,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 19.410430839002267,
+    "arrival_spread_ms": 0.3401360544217731,
+    "flipped": null,
+    "low": 0.07150168786518094,
+    "high": 0.07180352932731747,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.5895691609977325,
+    "arrival_spread_ms": 0.09070294784580502,
+    "flipped": null,
+    "low": 0.17890456436228855,
+    "high": 0.2843180201872585,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Yamaha Brass Nouveau 13x6.5",
+  "group": "snare",
+  "tunings": {
+   "T01 A3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.221859410430839,
+    "label": "A3",
+    "label_hz": 220.0,
+    "strongest_hz": 341.41902923583984,
+    "cents_from_label": 760.8479358063347,
+    "rr_pitch_spread_cents": 775.9320225276329
+   },
+   "T02 A#3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2231859410430839,
+    "label": "A#3",
+    "label_hz": 233.08188075904496,
+    "strongest_hz": 343.1854248046875,
+    "cents_from_label": 669.7817103997321,
+    "rr_pitch_spread_cents": 679.0188897202266
+   },
+   "T03 B3": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21293650793650792,
+    "label": "B3",
+    "label_hz": 246.94165062806206,
+    "strongest_hz": 262.4359130859375,
+    "cents_from_label": 105.35396266863572,
+    "rr_pitch_spread_cents": 18.92077902997986
+   },
+   "T04 C4": {
+    "rr": 6,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2318934240362812,
+    "label": "C4",
+    "label_hz": 261.6255653005986,
+    "strongest_hz": 260.5854034423828,
+    "cents_from_label": -6.896699283414925,
+    "rr_pitch_spread_cents": 134.82482015046
+   }
+  },
+  "mics": {
+   "Close 1 - Top": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.07262410669127423,
+    "high": 0.14938477343001322,
+    "heard_as": "near"
+   },
+   "Close 2 - Bottom": {
+    "arrival_ms": 0.4875283446712018,
+    "arrival_spread_ms": 0.15873015873015872,
+    "flipped": null,
+    "low": 0.05528998552636876,
+    "high": 0.24448665018801335,
+    "heard_as": "bottom"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 3.0272108843537415,
+    "arrival_spread_ms": 0.1360544217687072,
+    "flipped": null,
+    "low": 0.07297878887025498,
+    "high": 0.04628652377763837,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.678004535147393,
+    "arrival_spread_ms": 0.11337868480725621,
+    "flipped": null,
+    "low": 0.04706998750945464,
+    "high": 0.09621012823351442,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.011337868480727,
+    "arrival_spread_ms": 0.13605442176870675,
+    "flipped": null,
+    "low": 0.035862970684459455,
+    "high": 0.09860022036216604,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 20.238095238095237,
+    "arrival_spread_ms": 0.612244897959183,
+    "flipped": null,
+    "low": 0.06401965284762942,
+    "high": 0.06608645525061052,
+    "heard_as": "far"
+   },
+   "Room 5 - Kick-Snare Room": {
+    "arrival_ms": 0.9410430839002268,
+    "arrival_spread_ms": 0.7936507936507938,
+    "flipped": null,
+    "low": 0.05819829955658914,
+    "high": 0.3886504370184265,
+    "heard_as": "bottom"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian A Custom 14in",
+  "group": "hat",
+  "tunings": {
+   "01 Closed": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.207563400268555,
+    "ring_s": 0.15183673469387754
+   },
+   "02 Open 1": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.818586826324463,
+    "ring_s": 0.4651133786848073
+   },
+   "03 Open 2": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.7175283432006836,
+    "ring_s": 1.978265306122449
+   },
+   "04 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.20063492063492064
+   },
+   "05 Stomp": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.15224489795918367
+   }
+  },
+  "mics": {
+   "Close 1 - Hi-Hat Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0016746177477239832,
+    "high": 0.9208723807073074,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.927437641723356,
+    "arrival_spread_ms": 0.31746031746031744,
+    "flipped": null,
+    "low": 0.01851360696381046,
+    "high": 0.8119733187521692,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.575963718820862,
+    "arrival_spread_ms": 1.8820861678004546,
+    "flipped": null,
+    "low": 0.007973959800619802,
+    "high": 0.7796243573836807,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.884353741496598,
+    "arrival_spread_ms": 3.0385487528344672,
+    "flipped": null,
+    "low": 0.020365010828357396,
+    "high": 0.7130397152219166,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 24.05895691609977,
+    "arrival_spread_ms": 32.56235827664399,
+    "flipped": null,
+    "low": 0.13848144234205895,
+    "high": 0.631414875843918,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian A Quick Beats 14in",
+  "group": "hat",
+  "tunings": {
+   "01 Closed": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.8418712615966797,
+    "ring_s": 0.16273242630385487
+   },
+   "02 Open 1": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.6697325706481934,
+    "ring_s": 0.5604988662131519
+   },
+   "03 Open 2": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.0694878101348877,
+    "ring_s": 1.7257709750566894
+   },
+   "04 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2966893424036281
+   },
+   "05 Stomp": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.2068934240362812
+   }
+  },
+  "mics": {
+   "Close 1 - Hi-Hat Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0002475354917575113,
+    "high": 0.952991110391669,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.99546485260771,
+    "arrival_spread_ms": 0.34013605442176886,
+    "flipped": null,
+    "low": 0.0011726947180363584,
+    "high": 0.9118069388919782,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.961451247165534,
+    "arrival_spread_ms": 0.6349206349206344,
+    "flipped": null,
+    "low": 0.0018853600777360188,
+    "high": 0.8799737281643957,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.56689342403628,
+    "arrival_spread_ms": 1.0430839002267582,
+    "flipped": null,
+    "low": 0.0024988733092269665,
+    "high": 0.8195023985175978,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 25.170068027210885,
+    "arrival_spread_ms": 28.75283446712018,
+    "flipped": null,
+    "low": 0.02531905226657366,
+    "high": 0.751931674697052,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian Concept Trap Hats 14in",
+  "group": "hat",
+  "tunings": {
+   "01 Closed": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.0147833824157715,
+    "ring_s": 0.1572562358276644
+   },
+   "02 Open 1": {
+    "rr": 7,
+    "rr_level_spread_dB": 6.768012046813965,
+    "ring_s": 0.3306122448979592
+   },
+   "03 Open 2": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.1533761024475098,
+    "ring_s": 1.2019727891156462
+   },
+   "04 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.3209750566893424
+   },
+   "05 Stomp": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.14160997732426303
+   }
+  },
+  "mics": {
+   "Close 1 - Hi-Hat Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0006482613494553871,
+    "high": 0.9480829934765101,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.9047619047619047,
+    "arrival_spread_ms": 0.09070294784580524,
+    "flipped": null,
+    "low": 0.0013605790258193373,
+    "high": 0.8868679391979665,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.621315192743764,
+    "arrival_spread_ms": 3.4240362811791387,
+    "flipped": null,
+    "low": 0.0008912794018953989,
+    "high": 0.8805551623898141,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.702947845804989,
+    "arrival_spread_ms": 1.1564625850340153,
+    "flipped": null,
+    "low": 0.0005812033971408518,
+    "high": 0.8520953721246189,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 26.099773242630384,
+    "arrival_spread_ms": 34.6485260770975,
+    "flipped": null,
+    "low": 0.015421842206694864,
+    "high": 0.8307415162833547,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Custom Hybrid 14in",
+  "group": "hat",
+  "tunings": {
+   "01 Closed": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.150637626647949,
+    "ring_s": 0.18089569160997732
+   },
+   "02 Open 1": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.4929265975952148,
+    "ring_s": 0.6319501133786848
+   },
+   "03 Open 2": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.9325432777404785,
+    "ring_s": 2.193424036281179
+   },
+   "04 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.34941043083900225
+   },
+   "05 Stomp": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.1593424036281179
+   }
+  },
+  "mics": {
+   "Close 1 - Hi-Hat Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.000446016213282588,
+    "high": 0.9584615179445336,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.9501133786848073,
+    "arrival_spread_ms": 0.22675736961451287,
+    "flipped": null,
+    "low": 0.0009663157461820144,
+    "high": 0.8992421716334194,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.4852607709750565,
+    "arrival_spread_ms": 0.6802721088435382,
+    "flipped": null,
+    "low": 0.0018849717965444496,
+    "high": 0.8565585668627392,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.408163265306122,
+    "arrival_spread_ms": 5.532879818594104,
+    "flipped": null,
+    "low": 0.0027013406595150476,
+    "high": 0.830454263459392,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 24.353741496598637,
+    "arrival_spread_ms": 23.492063492063494,
+    "flipped": null,
+    "low": 0.05013581326599947,
+    "high": 0.7356532087074817,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Light 15in",
+  "group": "hat",
+  "tunings": {
+   "01 Closed": {
+    "rr": 6,
+    "rr_level_spread_dB": 7.76204252243042,
+    "ring_s": 0.14497732426303855
+   },
+   "02 Open 1": {
+    "rr": 6,
+    "rr_level_spread_dB": 5.536174774169922,
+    "ring_s": 0.5419387755102041
+   },
+   "03 Open 2": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.0634369850158691,
+    "ring_s": 1.661031746031746
+   },
+   "04 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.35718820861678
+   },
+   "05 Stomp": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.21571428571428572
+   }
+  },
+  "mics": {
+   "Close 1 - Hi-Hat Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.00042387606648813694,
+    "high": 0.9432959638143641,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.8820861678004535,
+    "arrival_spread_ms": 1.4965986394557826,
+    "flipped": null,
+    "low": 0.003527286696732442,
+    "high": 0.8849644104743454,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.4852607709750565,
+    "arrival_spread_ms": 3.6507936507936503,
+    "flipped": null,
+    "low": 0.003353873269008857,
+    "high": 0.8815061427269885,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 9.841269841269842,
+    "arrival_spread_ms": 4.965986394557823,
+    "flipped": null,
+    "low": 0.0047362044326655075,
+    "high": 0.8267824770693387,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 20.226757369614514,
+    "arrival_spread_ms": 31.08843537414966,
+    "flipped": null,
+    "low": 0.06358966165700598,
+    "high": 0.7371379486141604,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Light 16in",
+  "group": "hat",
+  "tunings": {
+   "01 Closed": {
+    "rr": 6,
+    "rr_level_spread_dB": 5.1340484619140625,
+    "ring_s": 0.15326530612244899
+   },
+   "02 Open 1": {
+    "rr": 7,
+    "rr_level_spread_dB": 9.258516311645508,
+    "ring_s": 0.3268707482993197
+   },
+   "03 Open 2": {
+    "rr": 6,
+    "rr_level_spread_dB": 1.3218059539794922,
+    "ring_s": 2.032063492063492
+   },
+   "04 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.3351700680272109
+   },
+   "05 Stomp": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.15802721088435373
+   }
+  },
+  "mics": {
+   "Close 1 - Hi-Hat Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0006899978912967288,
+    "high": 0.9641706566271879,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.7233560090702948,
+    "arrival_spread_ms": 2.131519274376417,
+    "flipped": null,
+    "low": 0.006784180452804746,
+    "high": 0.87795385823752,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 6.4399092970521545,
+    "arrival_spread_ms": 2.0181405895691613,
+    "flipped": null,
+    "low": 0.006937342874029336,
+    "high": 0.8747903957085907,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 10.34013605442177,
+    "arrival_spread_ms": 1.7687074829931984,
+    "flipped": null,
+    "low": 0.010795961910255001,
+    "high": 0.829763106506581,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 25.736961451247165,
+    "arrival_spread_ms": 13.605442176870747,
+    "flipped": null,
+    "low": 0.0557619768863689,
+    "high": 0.6533592390891118,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian A Mega Bell 21in",
+  "group": "ride",
+  "tunings": {
+   "02 Tip": {
+    "rr": 6,
+    "rr_level_spread_dB": 10.339141845703125,
+    "ring_s": 2.059546485260771
+   },
+   "03 Bell": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.9463791847229004,
+    "ring_s": 0.7342743764172335
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.00019854045435296506,
+    "high": 0.9576356916491193,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.7233560090702948,
+    "arrival_spread_ms": 0.18140589569161003,
+    "flipped": null,
+    "low": 0.0005970508146633495,
+    "high": 0.9196294219147007,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.26077097505669,
+    "arrival_spread_ms": 0.1814058956916096,
+    "flipped": null,
+    "low": 0.000556517319129523,
+    "high": 0.852591567098032,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 8.151927437641724,
+    "arrival_spread_ms": 0.20408163265306278,
+    "flipped": null,
+    "low": 0.0003976631062347129,
+    "high": 0.8577412800971758,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 13.956916099773244,
+    "arrival_spread_ms": 28.049886621315192,
+    "flipped": null,
+    "low": 0.04834022065433268,
+    "high": 0.8076482781085194,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian A Sweet 21in",
+  "group": "ride",
+  "tunings": {
+   "01 Crash": {
+    "rr": 6,
+    "rr_level_spread_dB": 5.410904884338379,
+    "ring_s": 2.5469614512471654
+   },
+   "02 Tip": {
+    "rr": 6,
+    "rr_level_spread_dB": 7.253807067871094,
+    "ring_s": 2.256814058956916
+   },
+   "03 Bell": {
+    "rr": 6,
+    "rr_level_spread_dB": 7.685967445373535,
+    "ring_s": 1.215986394557823
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0023646372222083756,
+    "high": 0.8080071994562937,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.6326530612244898,
+    "arrival_spread_ms": 0.38548752834467126,
+    "flipped": null,
+    "low": 0.002325407579168126,
+    "high": 0.7607347706796838,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.396825396825397,
+    "arrival_spread_ms": 0.36281179138322095,
+    "flipped": null,
+    "low": 0.0036696293413070883,
+    "high": 0.6865823619118242,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 8.299319727891156,
+    "arrival_spread_ms": 0.20408163265306278,
+    "flipped": null,
+    "low": 0.001608454766504429,
+    "high": 0.8452386562339531,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 28.299319727891156,
+    "arrival_spread_ms": 15.215419501133791,
+    "flipped": null,
+    "low": 0.01191402426592278,
+    "high": 0.7488104586606663,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Light 24in",
+  "group": "ride",
+  "tunings": {
+   "01 Crash": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.82904052734375,
+    "ring_s": 3.055827664399093
+   },
+   "02 Tip": {
+    "rr": 6,
+    "rr_level_spread_dB": 6.9207916259765625,
+    "ring_s": 2.8873015873015873
+   },
+   "03 Bell": {
+    "rr": 5,
+    "rr_level_spread_dB": 2.3447036743164062,
+    "ring_s": 1.6680725623582766
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0012629984025416016,
+    "high": 0.877686409090465,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.564625850340136,
+    "arrival_spread_ms": 0.49886621315192725,
+    "flipped": null,
+    "low": 0.004185581462719743,
+    "high": 0.7168596845340153,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.0566893424036286,
+    "arrival_spread_ms": 0.5215419501133782,
+    "flipped": null,
+    "low": 0.006038762531364188,
+    "high": 0.6426935164633603,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 8.253968253968255,
+    "arrival_spread_ms": 2.9024943310657605,
+    "flipped": null,
+    "low": 0.0026699843118794093,
+    "high": 0.6990071364141532,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 26.712018140589567,
+    "arrival_spread_ms": 49.61451247165533,
+    "flipped": null,
+    "low": 0.012546710144827037,
+    "high": 0.6352513380613368,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Sweet 23in",
+  "group": "ride",
+  "tunings": {
+   "01 Crash": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.6153831481933594,
+    "ring_s": 2.9503174603174602
+   },
+   "02 Tip": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.231609344482422,
+    "ring_s": 2.5702834467120184
+   },
+   "03 Bell": {
+    "rr": 6,
+    "rr_level_spread_dB": 2.1563024520874023,
+    "ring_s": 1.372732426303855
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.0015290750709598185,
+    "high": 0.8996822737495713,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 1.5873015873015872,
+    "arrival_spread_ms": 0.4761904761904763,
+    "flipped": null,
+    "low": 0.002201289266310899,
+    "high": 0.8688702756539702,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 5.442176870748299,
+    "arrival_spread_ms": 0.3854875283446715,
+    "flipped": null,
+    "low": 0.004087699037944882,
+    "high": 0.7807384683414165,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 8.299319727891156,
+    "arrival_spread_ms": 1.5192743764172345,
+    "flipped": null,
+    "low": 0.002162034686530411,
+    "high": 0.8659414171245485,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 27.664399092970523,
+    "arrival_spread_ms": 22.290249433106577,
+    "flipped": null,
+    "low": 0.023486732069057395,
+    "high": 0.727621911477432,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian A Custom 19in",
+  "group": "crash",
+  "tunings": {
+   "01 Hit": {
+    "rr": 6,
+    "rr_level_spread_dB": 6.146005630493164,
+    "ring_s": 2.273106575963719
+   },
+   "02 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.57859410430839
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 3.308378396579048e-05,
+    "high": 0.9483123944162448,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": -0.26077097505668934,
+    "arrival_spread_ms": 0.24943310657596374,
+    "flipped": null,
+    "low": 0.0017329156736395398,
+    "high": 0.8763718980145371,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.8684807256235825,
+    "arrival_spread_ms": 0.5895691609977325,
+    "flipped": null,
+    "low": 0.0006995495089662648,
+    "high": 0.8667296708954901,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 15.64625850340136,
+    "arrival_spread_ms": 2.811791383219953,
+    "flipped": null,
+    "low": 0.0007462000553491012,
+    "high": 0.8582268383854812,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 33.85487528344672,
+    "arrival_spread_ms": 2.811791383219962,
+    "flipped": null,
+    "low": 0.002574696342730697,
+    "high": 0.8515405014839907,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian A Custom 20in",
+  "group": "crash",
+  "tunings": {
+   "01 Hit": {
+    "rr": 6,
+    "rr_level_spread_dB": 6.389154434204102,
+    "ring_s": 2.36265306122449
+   },
+   "02 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.5752834467120181
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 7.693571398581956e-05,
+    "high": 0.9578692778286735,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": -1.258503401360544,
+    "arrival_spread_ms": 1.7006802721088432,
+    "flipped": null,
+    "low": 0.0019189390888617753,
+    "high": 0.8783960119433931,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 7.721088435374149,
+    "arrival_spread_ms": 8.095238095238095,
+    "flipped": null,
+    "low": 0.0009504006503984167,
+    "high": 0.876857185152347,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 11.99546485260771,
+    "arrival_spread_ms": 5.034013605442178,
+    "flipped": null,
+    "low": 0.0016065817300326157,
+    "high": 0.8537687447840161,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 43.07256235827664,
+    "arrival_spread_ms": 1.7006802721088476,
+    "flipped": null,
+    "low": 0.0032969452795991354,
+    "high": 0.8622946186472111,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Dark 19in",
+  "group": "crash",
+  "tunings": {
+   "01 Hit": {
+    "rr": 6,
+    "rr_level_spread_dB": 3.5430984497070312,
+    "ring_s": 2.208015873015873
+   },
+   "02 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.5132426303854876
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 6.220691607580882e-05,
+    "high": 0.9433256470765516,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": -0.30612244897959184,
+    "arrival_spread_ms": 0.15873015873015872,
+    "flipped": null,
+    "low": 0.002475019756922337,
+    "high": 0.874616151120652,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 12.335600907029479,
+    "arrival_spread_ms": 5.986394557823129,
+    "flipped": null,
+    "low": 0.0012510649224528572,
+    "high": 0.8534807248662712,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 16.439909297052154,
+    "arrival_spread_ms": 1.1337868480725657,
+    "flipped": null,
+    "low": 0.0005360725624129055,
+    "high": 0.8605465079848638,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 36.07709750566893,
+    "arrival_spread_ms": 0.9977324263038554,
+    "flipped": null,
+    "low": 0.003649964771637753,
+    "high": 0.8331936338045676,
+    "heard_as": "far"
+   }
+  }
+ },
+ {
+  "drum": "Zildjian K Dark 20in",
+  "group": "crash",
+  "tunings": {
+   "01 Hit": {
+    "rr": 6,
+    "rr_level_spread_dB": 4.649909973144531,
+    "ring_s": 2.295907029478458
+   },
+   "02 Choke": {
+    "rr": 1,
+    "rr_level_spread_dB": 0.0,
+    "ring_s": 0.596530612244898
+   }
+  },
+  "mics": {
+   "Close 1 - Ride Mic": {
+    "arrival_ms": 0.0,
+    "arrival_spread_ms": 0.0,
+    "flipped": null,
+    "low": 0.00012673617607300745,
+    "high": 0.9446624325133663,
+    "heard_as": "near"
+   },
+   "Room 1 - Overheads": {
+    "arrival_ms": 0.20408163265306123,
+    "arrival_spread_ms": 0.04535147392290251,
+    "flipped": null,
+    "low": 0.0032255076125825037,
+    "high": 0.8087859473005864,
+    "heard_as": "near"
+   },
+   "Room 2 - U47 Mono Room": {
+    "arrival_ms": 10.918367346938776,
+    "arrival_spread_ms": 3.4240362811791396,
+    "flipped": null,
+    "low": 0.001078975157980697,
+    "high": 0.847575741359412,
+    "heard_as": "far"
+   },
+   "Room 3 - Close Room": {
+    "arrival_ms": 11.666666666666668,
+    "arrival_spread_ms": 3.696145124716553,
+    "flipped": null,
+    "low": 0.0022107054562874647,
+    "high": 0.838448614483106,
+    "heard_as": "far"
+   },
+   "Room 4 - Far Room": {
+    "arrival_ms": 43.492063492063494,
+    "arrival_spread_ms": 0.7256235827664383,
+    "flipped": null,
+    "low": 0.00434857930398312,
+    "high": 0.8335463118689502,
+    "heard_as": "far"
+   }
+  }
+ }
+]

@@ -63,13 +63,25 @@ std::string detectRole (const Session& S, int t)
     if (all <= 0) return "";
     const double lowFrac = low / all, highFrac = high / all;
     // the lead's balance, to compare against
-    double lHigh = 0, lAll = 0;
-    for (int o : ons) { lHigh += bandEnergy (lead, o, o + (long) (0.3 * sr), sr, 2000, true); lAll += energy (lead, o, o + (long) (0.3 * sr)); }
-    const double leadHigh = lAll > 0 ? lHigh / lAll : 0;
-    if (lowFrac > 0.75 && highFrac < 0.008) return "sub";
-    if (std::isfinite (arrMs) && arrMs > 4.5) return "far";
+    double lHigh = 0, lLow = 0, lAll = 0;
+    for (int o : ons)
+    {
+        lHigh += bandEnergy (lead, o, o + (long) (0.3 * sr), sr, 2000, true); lLow += bandEnergy (lead, o, o + (long) (0.3 * sr), sr, 150, false);
+        lAll += energy (lead, o, o + (long) (0.3 * sr));
+    }
+    const double leadHigh = lAll > 0 ? lHigh / lAll : 0, leadLow = lAll > 0 ? lLow / lAll : 0;
+    const bool kick = S.drum == "kick";
+    // a room: hears the hit well after the lead. Only for mics whose name doesn't say what they are: on a kick
+    // the overheads can hear it as late as a close room, and a delayed close mic is still a close mic
+    const auto nm = juce::String (S.tracks[(size_t) t].mic).toLowerCase() + " ";   // the mic name only: the file name also names the drum
+    bool named = false;
+    for (auto w : { "oh", "overhead", "hat", "ride", "crash", "cym", "kick", "kik", "sub", "snare", "sn ", "top", "bottom", "btm", "tom", "rack", "floor" })
+        if (nm.contains (w)) named = true;
+    if (std::isfinite (arrMs) && arrMs > 4.5 && ! named) return "far";
+    // a sub kick: on a kick, at least as low as the lead and with almost none of its beater click
+    if (kick && lowFrac >= leadLow - 0.02 && leadHigh > 0 && highFrac < 0.35 * leadHigh) return "sub";
     // a close mic on the other side of the drum: much brighter than the lead (the wires)
-    if (S.drum != "kick" && std::isfinite (arrMs) && std::abs (arrMs) < 2 && leadHigh > 0 && highFrac > 1.5 * leadHigh) return "bottom";
+    if (! kick && std::isfinite (arrMs) && std::abs (arrMs) < 2 && leadHigh > 0 && highFrac > 1.4 * leadHigh) return "bottom";
     return "near";
 }
 
