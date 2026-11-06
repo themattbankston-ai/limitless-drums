@@ -116,6 +116,16 @@ if(LD_BUILD_APP)
 
     juce_add_binary_data(LDAssets SOURCES
         assets/logo/mark-night.svg
+        assets/ui/rack.png
+        assets/ui/parts/module_top.png
+        assets/ui/parts/module_mid.png
+        assets/ui/parts/module_bot.png
+        assets/ui/parts/knob_mono.png
+        assets/ui/parts/knob_stereo.png
+        assets/ui/parts/cap_small.png
+        assets/ui/parts/cap_big.png
+        assets/ui/parts/bigfader.png
+        assets/ui/parts/title.png
         assets/logo/lockup-horizontal-night.svg
         assets/logo/lockup-horizontal-day.svg
         assets/fonts/InterDisplay-SemiBold.otf

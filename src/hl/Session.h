@@ -55,6 +55,7 @@ struct SessionTrack
     std::vector<AllPass> ap;          ///< phase EQ
     F64 clip;                         ///< clip gain per hit (dB)
     double fader = 0;
+    double panL = -1, panR = 1;   ///< a stereo mic's two pans, as Pro Tools has them (left channel, right channel); hard left/right = Hitline's stereo pan
     bool mute = false, solo = false, lrLock = false;
     std::optional<LrFix> lr;
     double autoAsis = NAN;
@@ -219,6 +220,10 @@ struct StemOptions
 HitStems renderHitStems (const Session&, const MixRender&, const LevelResult&, size_t i, const StemOptions& = {});
 /** The console's pan law: {LL, RL, LR, RR}. A mono channel is equal-power, a stereo channel a balance control. */
 std::array<double, 4> panGains (double pan, bool stereo);
+/** A stereo mic panned per channel (Pro Tools): { left ch to L, right ch to L, left ch to R, right ch to R }. */
+std::array<double, 4> panGainsLR (double panL, double panR);
+/** The gains a track mixes with: Hitline's stereo pan while both channel pans are hard left/right, per channel otherwise. */
+std::array<double, 4> trackPanGains (double pan, double panL, double panR, bool stereo);
 /** The stems summed to stereo as the console stands: faders, mute and solo, pan, the bus fader, the room return. */
 std::pair<F32, F32> mixToStereo (const Session&, const HitStems&);
 /** A typical hard hit: the hardest layer's round robin closest to its median level on the lead. */

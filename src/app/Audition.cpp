@@ -184,7 +184,7 @@ std::vector<PlayEvent> midi (const hl::Session& S, const std::vector<MidiNote>& 
 //==============================================================================
 Audition::Audition (juce::AudioDeviceManager& d) : dm (d)
 {
-    for (int k = 0; k < maxTracks; ++k) { tGain[k] = 1; tPan[k] = 0; tStereo[k] = false; }
+    for (int k = 0; k < maxTracks; ++k) { tGain[k] = 1; tPan[k] = 0; tPanL[k] = -1; tPanR[k] = 1; tStereo[k] = false; }
     dm.addAudioCallback (this);
 }
 
@@ -200,9 +200,14 @@ void Audition::setEngine (std::shared_ptr<EngineState> e) { stop(); engine = std
 
 void Audition::setProcessed (bool b) { wantB.store (b); }
 
-void Audition::setConsole (const std::vector<float>& g, const std::vector<float>& pan, const std::vector<bool>& st, float bus, float room)
+void Audition::setConsole (const std::vector<float>& g, const std::vector<float>& pan, const std::vector<bool>& st, float bus, float room,
+                           const std::vector<float>& panL, const std::vector<float>& panR)
 {
-    for (size_t k = 0; k < g.size() && k < (size_t) maxTracks; ++k) { tGain[k] = g[k]; tPan[k] = k < pan.size() ? pan[k] : 0.0f; tStereo[k] = k < st.size() && st[k]; }
+    for (size_t k = 0; k < g.size() && k < (size_t) maxTracks; ++k)
+    {
+        tGain[k] = g[k]; tPan[k] = k < pan.size() ? pan[k] : 0.0f; tStereo[k] = k < st.size() && st[k];
+        tPanL[k] = k < panL.size() ? panL[k] : -1.0f; tPanR[k] = k < panR.size() ? panR[k] : 1.0f;
+    }
     busGain = bus; roomGain = room;
 }
 
@@ -339,7 +344,7 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
     const float bus = busGain.load(), room = roomGain.load();
     if (snapGains.exchange (false)) { gA = targetA; gB = targetB; }   // a phrase starts at its gains; only A/B flips glide
     float gT[maxTracks]; std::array<double, 4> P[maxTracks];
-    for (int k = 0; k < std::min (nT, maxTracks); ++k) { gT[k] = tGain[k].load(); P[k] = hl::panGains (tPan[k].load(), tStereo[k].load()); }
+    for (int k = 0; k < std::min (nT, maxTracks); ++k) { gT[k] = tGain[k].load(); P[k] = hl::trackPanGains (tPan[k].load(), tPanL[k].load(), tPanR[k].load(), tStereo[k].load()); }
     const int mon = monTrack.load();
     const float ramp = 1.0f - std::exp (-1.0f / (0.02f * (float) deviceRate));
     const float limRel = 1.0f - std::exp (-1.0f / (0.08f * (float) deviceRate));

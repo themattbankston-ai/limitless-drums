@@ -18,13 +18,14 @@ struct TrackInfo
     unsigned colourA = 0xff2ee6ff, colourB = 0xff4c8dff;
     bool solo = false, mute = false;
     float volumeDb = 0.0f, pan = 0.0f;
+    float panL = -1.0f, panR = 1.0f;  ///< a stereo mic's two pans (Pro Tools)
     std::vector<float> peaks;         ///< max |sample| per block, the recording (A)
     std::vector<float> peaksB;        ///< the same, processed and on its levels (B); empty until ready
     double blocksPerSecond = 750.0;
     std::shared_ptr<const Wave> wave; ///< the audio, for the lane at any zoom
 };
 
-struct HitInfo { double time = 0.0; int layer = 0, roundRobin = 0; };
+struct HitInfo { double time = 0.0; int layer = 0, roundRobin = 0; std::vector<float> micDb; /**< its level per track, once measured */ };
 
 struct LayerInfo
 {
@@ -44,6 +45,15 @@ struct StudioModel
     std::vector<LayerInfo> layers;
     std::vector<float> arrivalMs;     ///< per track, relative to the reference mic (NaN = unknown)
     int referenceTrack = 0;
+    /** The Level step as the engine has it, for the rack's Level module. */
+    struct LevelView
+    {
+        bool valid = false;
+        bool linked = false, pro = false;
+        float shape = 0.9f, offsetDb = 0, rangeDb = 24, winMs = 60;
+        int onStandard = 0, total = 0;
+        std::vector<float> curveDb;   ///< the lead's level per velocity layer
+    } level;
 };
 
 enum class Step { session, hits, align, tune, mix, level, exportStep };
@@ -74,7 +84,7 @@ public:
 
     void setModel (StudioModel);
     const StudioModel& model() const { return data; }
-    void setTrackState (int index, bool solo, bool mute, float volumeDb, float pan);
+    void setTrackState (int index, bool solo, bool mute, float volumeDb, float pan, float panL = -1.0f, float panR = 1.0f);
     void setTransport (double seconds, bool playing);
     void setDayMode (bool day);
     bool isDayMode() const { return day; }
@@ -91,6 +101,9 @@ public:
     Step step() const { return currentStep; }
     void zoomToFit();
     void zoomBy (double factor, double anchorSeconds);
+    /** The big fader beside a track's header while its mini fader is held (-1 hides it). */
+    void showBigFader (int track);
+    void flashPad (int velocity);
 
     /** Called ~60 times a second for the playhead, meters and the transient pulses. */
     void tick (double nowSeconds);
@@ -107,6 +120,8 @@ public:
     std::function<void (double)> onSeek;
     std::function<void (int, bool)> onSolo, onMute;
     std::function<void (int, float)> onVolume, onPan;
+    std::function<void (int, int, float)> onPanLR;
+    std::function<void (int)> onPad;                  ///< a velocity pad (0-based): plays a random round robin of it     ///< track, 0 = left channel / 1 = right channel, pan
     std::function<void (int)> onRename, onHistoryJump;
     std::function<void (const std::vector<std::string>&)> onFilesDropped;
     std::function<bool (const visage::KeyEvent&)> onKey;
@@ -146,9 +161,10 @@ public:
     double screenWidthForZoom() const;
 
 private:
-    struct Header; struct Strips; struct Screen; struct Rack; struct Footer; struct HistoryPanel; struct Console;
+    struct Header; struct Strips; struct Screen; struct Rack; struct Footer; struct HistoryPanel; struct Console; struct BigFader;
     std::unique_ptr<Header> header;
     std::unique_ptr<Strips> strips;
+    std::unique_ptr<BigFader> bigFader;
     std::unique_ptr<Screen> screen;
     std::unique_ptr<Console> console;
     std::unique_ptr<Rack> rack;

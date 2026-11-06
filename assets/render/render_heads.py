@@ -105,23 +105,22 @@ def big():
     s = P.reset(); s.render.film_transparent = True; s.cycles.samples = 80
     t = math.radians(9)
     cam = P.camera(s, W, H, max(W, H) * U * math.cos(t)); cam.location = (0, -10 * math.sin(t), 10 * math.cos(t)); cam.rotation_euler = (t, 0, 0)
-    ANOD = P.metal('anod', (0.05, 0.051, 0.058), 0.28, brushed=True, scale=28)
+    ANOD = P.metal('anod', (0.05, 0.051, 0.058), 0.42, brushed=True, scale=28)
     GLASS = mat('glass', (0.003, 0.003, 0.005), 0.06, coat=1.0)
     SLOT = mat('slot', (0.004, 0.004, 0.005), 0.6)
     CAPM = P.metal('cap', (0.72, 0.73, 0.77), 0.2, brushed=True, scale=60)
     plate = box('plate', 2, 2, W - 4, H - 4, 0.16, 0.0, 0.12, 0.016, ANOD)
-    well(plate, 10, 26, 76, 24, 0.05, 0.05, GLASS)
-    well(plate, 44, 66, 8, 228, 0.1, 0.035, SLOT)
     for sx in (12, W - 12):
         for sy in (12, H - 12):
             x, y, _ = at(sx, sy)
             bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=0.04, location=(x, y, 0.07)); h = bpy.context.object; h.scale = (1, 1, 0.42)
             bpy.ops.object.shade_smooth(); h.data.materials.append(P.metal('steel', (0.6, 0.61, 0.64), 0.26))
-    box('cap', 24, 88, 48, 28, 0.16, 0.16, 0.06, 0.02, CAPM)
+    if not os.environ.get('LD_NOCAP'): box('cap', 24, 88, 48, 28, 0.16, 0.16, 0.06, 0.02, CAPM)
     P.area(s, 'key', (-4, 6, 6), 5, 1300)
     P.area(s, 'fill', (6, -5, 5), 6, 160, (0.7, 0.82, 1.0))
-    P.area(s, 'rim', (0, 9, 1.2), 9, 420)
+    P.area(s, 'kick', (5, 3, 2), 2, 200, (1.0, 0.9, 0.8))
     P.render(s, 'bigfader.png')
 
-if os.environ.get('LD_BIG'): big()
+if os.environ.get('LD_NO_BUILD'): pass
+elif os.environ.get('LD_BIG'): big()
 else: build()

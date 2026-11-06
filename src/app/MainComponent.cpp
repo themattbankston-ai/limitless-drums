@@ -109,6 +109,28 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
         auto t = audioTracks();
         if (i < (int) t.size()) if (auto* vp = t[(size_t) i]->getVolumePlugin()) { vp->setVolumeDb (db); pushTrackStates(); }
     };
+    studio.onPad = [this] (int v)
+    {
+        // a random round robin of that velocity (Hitline's pads)
+        const auto& hits = studio.model().hits;
+        std::vector<int> pick;
+        for (int h = 0; h < (int) hits.size(); ++h) if (hits[(size_t) h].layer == v) pick.push_back (h);
+        if (pick.empty()) return;
+        studio.selectedHit = pick[(size_t) juce::Random::getSystemRandom().nextInt ((int) pick.size())];
+        studio.flashPad (v);
+        studio.redrawAll();
+        playModeName = "hit";
+        startPhrase ("hit");
+        updateHeader();
+    };
+    studio.onPanLR = [this] (int i, int side, float v)
+    {
+        auto t = audioTracks();
+        if (i >= (int) t.size() || ! edit) return;
+        t[(size_t) i]->state.setProperty (side ? "ldPanR" : "ldPanL", juce::jlimit (-1.0f, 1.0f, v), &edit->getUndoManager());
+        pushTrackStates();
+        pushConsole();
+    };
     studio.onPan = [this] (int i, float pan)
     {
         auto t = audioTracks();
@@ -269,7 +291,8 @@ void MainComponent::pushTrackStates()
     {
         auto* t = tracks[(size_t) i];
         auto* vp = t->getVolumePlugin();
-        studio.setTrackState (i, t->isSolo (false), t->isMuted (false), vp ? vp->getVolumeDb() : 0.0f, vp ? vp->getPan() : 0.0f);
+        studio.setTrackState (i, t->isSolo (false), t->isMuted (false), vp ? vp->getVolumeDb() : 0.0f, vp ? vp->getPan() : 0.0f,
+                              (float) t->state.getProperty ("ldPanL", -1.0f), (float) t->state.getProperty ("ldPanR", 1.0f));
     }
 }
 
@@ -663,6 +686,7 @@ void MainComponent::exportOneShotFile()
             {
                 tr.mute = tracks[i]->isMuted (false); tr.solo = tracks[i]->isSolo (false);
                 if (auto* vp = tracks[i]->getVolumePlugin()) { tr.fader = vp->getVolumeDb(); tr.strip.pan = vp->getPan(); }
+                tr.panL = (double) tracks[i]->state.getProperty ("ldPanL", -1.0); tr.panR = (double) tracks[i]->state.getProperty ("ldPanR", 1.0);
             }
     const auto shot = hl::exportOneShot (S, *engineState->mix, *engineState->levels);
     if (shot.name.empty()) { setNotice ("The bus is silent: every channel is muted or down."); return; }
@@ -1040,7 +1064,7 @@ void MainComponent::pushConsole()
 {
     if (! audition || ! edit || ! engineState) return;
     const auto& S = engineState->session;
-    std::vector<float> g (S.tracks.size(), 1.0f), pan (S.tracks.size(), 0.0f);
+    std::vector<float> g (S.tracks.size(), 1.0f), pan (S.tracks.size(), 0.0f), panL (S.tracks.size(), -1.0f), panR (S.tracks.size(), 1.0f);
     std::vector<bool> st (S.tracks.size(), false);
     auto tracks = audioTracks();
     bool anySolo = false;
@@ -1055,10 +1079,12 @@ void MainComponent::pushConsole()
         if (auto* vp = t->getVolumePlugin()) { db = vp->getVolumeDb(); p = vp->getPan(); }
         g[(size_t) e] = audible ? (db <= -60 ? 0.0f : std::pow (10.0f, db / 20.0f)) : 0.0f;
         pan[(size_t) e] = p;
+        panL[(size_t) e] = (float) t->state.getProperty ("ldPanL", -1.0f);
+        panR[(size_t) e] = (float) t->state.getProperty ("ldPanR", 1.0f);
         st[(size_t) e] = S.tracks[(size_t) e].ch.size() > 1;
     }
     const float room = hl::roomLive (S) ? std::pow (10.0f, (float) S.room.ret / 20.0f) : 0.0f;
-    audition->setConsole (g, pan, st, 1.0f, room);
+    audition->setConsole (g, pan, st, 1.0f, room, panL, panR);
 }
 
 void MainComponent::updateHeader()
@@ -1129,6 +1155,11 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
     using KC = visage::KeyCode;
     const auto code = k.keyCode();
     if (newSession.isOpen()) return true;   // the window takes its own keys
+    if (! k.isMainModifier() && ! k.isAltDown() && ! k.isShiftDown() && code >= KC::Number1 && code <= KC::Number6)
+    {
+        if (studio.onPad) studio.onPad ((int) code - (int) KC::Number1);
+        return true;
+    }
     const double pos = edit ? edit->getTransport().getPosition().inSeconds() : 0.0;
     if (k.isMainModifier())
     {

@@ -1147,6 +1147,19 @@ std::array<double, 4> panGains (double p, bool stereo)
     return { std::cos (x), 0, std::sin (x), 1 };
 }
 
+std::array<double, 4> panGainsLR (double pl, double pr)
+{
+    const double pi = juce::MathConstants<double>::pi;
+    const double a = (jclamp (pl, -1, 1) + 1) * pi / 4, b = (jclamp (pr, -1, 1) + 1) * pi / 4;
+    return { std::cos (a), std::cos (b), std::sin (a), std::sin (b) };
+}
+
+std::array<double, 4> trackPanGains (double pan, double pl, double pr, bool stereo)
+{
+    if (stereo && (pl != -1 || pr != 1)) return panGainsLR (pl, pr);
+    return panGains (jclamp (pan, -1, 1), stereo);
+}
+
 std::pair<F32, F32> mixToStereo (const Session& S, const HitStems& h)
 {
     const size_t n = (size_t) h.len;
@@ -1162,7 +1175,7 @@ std::pair<F32, F32> mixToStereo (const Session& S, const HitStems& h)
         const double g = (audible ? (tr.fader <= -60 ? 0 : std::pow (10.0, tr.fader / 20)) : 0) * bus;
         if (g == 0) continue;
         const bool st = s.size() > 1;
-        const auto P = panGains (jclamp (tr.strip.pan, -1, 1), st);
+        const auto P = trackPanGains (tr.strip.pan, tr.panL, tr.panR, st);
         const auto& x = s[0]; const auto& y = st ? s[1] : s[0];
         for (size_t q = 0; q < n; ++q)
         {
@@ -1352,7 +1365,7 @@ juce::var settingsToVar (const Session& S)
     {
         auto kt = obj();
         put (kt, "mic", juce::String (t.mic)); put (kt, "alignTo", juce::String (t.alignTo)); put (kt, "amount", t.amount); put (kt, "apOn", t.apOn);
-        put (kt, "fader", t.fader); put (kt, "mute", t.mute); put (kt, "lrLock", t.lrLock);
+        put (kt, "fader", t.fader); put (kt, "panL", t.panL); put (kt, "panR", t.panR); put (kt, "mute", t.mute); put (kt, "lrLock", t.lrLock);
         auto sv = obj();
         put (sv, "trim", t.strip.trim); put (sv, "pan", t.strip.pan); put (sv, "pol", t.strip.pol); put (sv, "send", t.strip.send);
         put (sv, "tone", toneVar (t.strip.tone)); put (sv, "shape", shapeVar (t.strip.shape));
@@ -1419,7 +1432,7 @@ void applySettings (Session& S, const juce::var& st)
                 if (juce::String (t.mic).compareIgnoreCase (kt["mic"].toString()) != 0) continue;
                 t.alignTo = s_ (kt, "alignTo", t.alignTo.c_str()); t.amount = nn (kt, "amount", t.amount);
                 if (kt.hasProperty ("apOn")) t.apOn = truthy (kt, "apOn");
-                t.fader = nn (kt, "fader", t.fader); t.mute = truthy (kt, "mute"); t.lrLock = truthy (kt, "lrLock");
+                t.fader = nn (kt, "fader", t.fader); t.panL = nn (kt, "panL", t.panL); t.panR = nn (kt, "panR", t.panR); t.mute = truthy (kt, "mute"); t.lrLock = truthy (kt, "lrLock");
                 const auto sv = kt["strip"];
                 if (sv.isObject())
                 {

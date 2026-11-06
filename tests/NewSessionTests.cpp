@@ -91,3 +91,22 @@ TEST_CASE ("A new session loads the take without Auto prep, with the window's ch
     auto full = ld::prepareTake (fv, "Center");
     CHECK (full->prepared);
 }
+
+TEST_CASE ("A stereo mic's two pans: hard left/right is Hitline's stereo pan, otherwise each channel pans on its own")
+{
+    using ld::hl::trackPanGains; using ld::hl::panGains;
+    for (double p : { -1.0, -0.4, 0.0, 0.3, 1.0 })
+    {
+        const auto a = trackPanGains (p, -1, 1, true), b = panGains (p, true);
+        for (int k = 0; k < 4; ++k) CHECK (a[(size_t) k] == b[(size_t) k]);   // bit-identical: exports and parity unchanged
+    }
+    // both channels to the centre: equal-power mono of each
+    const auto c = trackPanGains (0, 0, 0, true);
+    CHECK (std::abs (c[0] - std::sqrt (0.5)) < 1e-12); CHECK (std::abs (c[3] - std::sqrt (0.5)) < 1e-12);
+    // channels swapped: left channel hard right, right channel hard left
+    const auto s = trackPanGains (0, 1, -1, true);
+    CHECK (std::abs (s[0]) < 1e-12); CHECK (std::abs (s[2] - 1) < 1e-12); CHECK (std::abs (s[1] - 1) < 1e-12); CHECK (std::abs (s[3]) < 1e-12);
+    // mono tracks ignore the stereo pans
+    const auto m = trackPanGains (0.5, 0, 0, false), n = panGains (0.5, false);
+    for (int k = 0; k < 4; ++k) CHECK (m[(size_t) k] == n[(size_t) k]);
+}

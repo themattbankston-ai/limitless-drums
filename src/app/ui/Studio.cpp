@@ -396,7 +396,7 @@ struct Studio::Screen : visage::Frame
     visage::BloomPostEffect bloom;
     bool scrubbing = false;
 
-    static constexpr float rulerH = 24, stripH = 26;
+    static constexpr float rulerH = 8, stripH = 30;   // the ruler is a thin scrub band; seconds don't matter here
     float top() const { return rulerH + (studio.data.layers.empty() ? 0.0f : stripH); }
     float timeToX (double t) const { return (float) ((t - studio.view.start) * studio.view.pixelsPerSecond); }
     double xToTime (float x) const { return studio.view.start + x / studio.view.pixelsPerSecond; }
@@ -471,22 +471,9 @@ struct Studio::Screen : visage::Frame
 
     void drawRuler (Canvas& c)
     {
-        const double step = gridStep();
-        const auto f = monoFont (10.5f);
-        double t = std::floor (studio.view.start / step) * step;
-        for (; t < xToTime (width()); t += step)
-        {
-            const float x = timeToX (t);
-            if (x < 0) continue;
-            c.setColor (0x0dffffff);
-            c.fill (x, rulerH, 1, height() - rulerH - 2);
-            c.setColor (0x40ffffff);
-            c.fill (x, rulerH - 7, 1, 7);
-            c.setColor (0xff7f8894);
-            const auto label = step >= 1 ? draw::fmt ("%.0fs", t) : draw::fmt (step >= 0.1 ? "%.1fs" : "%.2fs", t);
-            draw::text (c, label, f, Font::kLeft, x + 4, 2, 60, rulerH - 6);
-        }
-        c.setColor (0x22ffffff);
+        c.setColor (0x0dffffff);
+        c.fill (0, 0, width(), rulerH);
+        c.setColor (0x1affffff);
         c.fill (0, rulerH - 1, width(), 1);
     }
 
@@ -504,9 +491,7 @@ struct Studio::Screen : visage::Frame
             c.roundedRectangle (x0, rulerH + 2, x1 - x0, stripH - 9, 3);
             c.setColor (draw::withAlpha (col, 0.9f));
             c.fill (x0, rulerH + 2, 2, stripH - 9);
-            std::string label = "VEL " + std::to_string (k + 1) + "  " + std::to_string (L.midiLow) + "–" + std::to_string (L.midiHigh)
-                                + "  " + std::to_string (L.numHits) + " RR";
-            if (! L.note.empty()) label += "  " + L.note;
+            const std::string label = "VEL " + std::to_string (k + 1) + "   " + std::to_string (L.numHits) + " RR";
             c.setClampBounds (x0, rulerH, x1 - x0, stripH);
             c.setColor (col);
             draw::text (c, label, f, Font::kLeft, x0 + 8, rulerH + 2, x1 - x0, stripH - 9);
@@ -704,28 +689,49 @@ struct Studio::Screen : visage::Frame
         const auto& tr = d.tracks[(size_t) i];
         const float mid = y + lh * 0.5f;
 
-        c.setColor (0x0affffff);
+        // an engraved groove between tracks
+        c.setColor (0xd9000000);
         c.fill (0, y + lh - 1, width(), 1);
+        c.setColor (0x14ffffff);
+        c.fill (0, y + lh, width(), 1);
         c.setColor (draw::withAlpha (tr.colourA, 0.28f));
         c.fill (0, mid, width(), 1);
 
         if (tr.wave && tr.wave->channels() > 0) drawWave (c, tr, y, lh);
         else drawBlocks (c, tr, mid, lh);
 
-        // level chips at the end of each velocity zone
+        // level chips at the end of each velocity zone: small and quiet
         if (i < (int) (d.layers.empty() ? 0 : d.layers[0].micDb.size()))
         {
-            const auto f = monoBold (11);
+            const auto f = monoFont (9.5f);
             for (auto& L : d.layers)
             {
                 const float x1 = timeToX (L.end);
                 if (x1 < 40 || x1 > width() + 40 || ! std::isfinite (L.micDb[(size_t) i])) continue;
                 const auto txt = draw::fmt ("%.1f", (double) L.micDb[(size_t) i]);
+                const float w = textWidth (f, txt) + 8;
+                c.setColor (0x73000000);
+                c.roundedRectangle (x1 - w - 6, y + lh - 17, w, 13, 3);
+                c.setColor (i == d.referenceTrack ? draw::withAlpha (neon::amber, 0.75f) : Color (0x8cc9ced6));
+                draw::text (c, txt, f, Font::kCenter, x1 - w - 6, y + lh - 17, w, 13);
+            }
+        }
+        // the selected hit: this mic's level on it
+        const int sh = studio.selectedHit;
+        if (sh >= 0 && sh < (int) d.hits.size() && i < (int) d.hits[(size_t) sh].micDb.size() && std::isfinite (d.hits[(size_t) sh].micDb[(size_t) i]))
+        {
+            const float x = timeToX (d.hits[(size_t) sh].time);
+            if (x > -60 && x < width() + 10)
+            {
+                const auto f = monoBold (10.5f);
+                const auto txt = draw::fmt ("%.1f", (double) d.hits[(size_t) sh].micDb[(size_t) i]);
                 const float w = textWidth (f, txt) + 10;
-                c.setColor (0xb3000000);
-                c.roundedRectangle (x1 - w - 6, y + lh - 22, w, 16, 3);
-                c.setColor (i == d.referenceTrack ? neon::amber : 0xffc9ced6);
-                draw::text (c, txt, f, Font::kCenter, x1 - w - 6, y + lh - 22, w, 16);
+                c.setColor (0xd9000000);
+                c.roundedRectangle (x + 8, y + 4, w, 16, 4);
+                c.setColor (draw::withAlpha (tr.colourA, 0.7f));
+                c.roundedRectangleBorder (x + 8, y + 4, w, 16, 4, 1);
+                c.setColor (i == d.referenceTrack ? Color (neon::amber) : Color (0xfff2efe8));
+                draw::text (c, txt, f, Font::kCenter, x + 8, y + 4, w, 16);
             }
         }
     }
@@ -837,84 +843,205 @@ struct Studio::Screen : visage::Frame
 
 //==============================================================================
 // Track strips, lined up with the lanes.
+// The track headers: a machined module per mic (rendered parts), Pro Tools style: the name, S and M, the pan
+// (two knobs on a stereo mic, one per channel), the fader's level, a vertical mini fader and the meters.
+// Holding the mini fader brings up the big fader beside it.
+namespace parts
+{
+    #define LD_PART(n) reinterpret_cast<const unsigned char*> (BinaryData::n##_png), BinaryData::n##_pngSize
+    static void image (Canvas& c, const unsigned char* d, int n, float x, float y, float w, float h) { c.setColor (0xffffffff); c.image (d, n, x, y, w, h); }
+}
+
+/** The fader law: Pro Tools-like, +6 dB at the top, 0 dB about three quarters up, -inf at the bottom. */
+static float faderPos (float db) { return db <= -100 ? 0.0f : std::cbrt (std::pow (10.0f, db / 20.0f) / 2.0f); }
+static float faderDb (float p) { return p <= 0.001f ? -100.0f : 20.0f * std::log10 (2.0f * p * p * p); }
+
 struct Studio::Strips : visage::Frame
 {
     explicit Strips (Studio& s) : studio (s) {}
     Studio& studio;
 
+    static constexpr float W = 236, titleH = 40;
     struct Box { float x, y, w, h; bool contains (Point p) const { return p.x >= x && p.x < x + w && p.y >= y && p.y < y + h; } };
-    Box strip (int i) const
+    /** The module of track i (screen coords of this frame). */
+    Box module (int i) const
     {
         const float lh = studio.laneHeight();
-        return { 0, studio.screenContentTop() + i * lh - studio.view.scrollY + 3, width(), lh - 6 };
+        const float y = studio.screenContentTop() + i * lh - studio.view.scrollY;
+        return { 4, y + 2.5f, W - 8, lh - 5 };
     }
-    Box soloBox (int i) const { auto b = strip (i); return { b.w - 54, b.y + b.h - 24, 22, 17 }; }
-    Box muteBox (int i) const { auto b = strip (i); return { b.w - 28, b.y + b.h - 24, 22, 17 }; }
+    // parts of a module, in module coordinates (the render's layout)
+    static Box nameBox() { return { 8, 6.5f, 134, 22 }; }
+    static Box soloBox() { return { 8, 35.5f, 20, 22 }; }
+    static Box muteBox() { return { 32, 35.5f, 20, 22 }; }
+    static Point knobAt (bool stereo, int k) { return stereo ? Point (k ? 95.0f : 69.0f, 46.5f) : Point (74.0f, 46.5f); }
+    static float knobR (bool stereo) { return stereo ? 8.5f : 9.5f; }
+    Box slot (const Box& m) const { return { m.x + 167, m.y + 10, 4, m.h - 20 }; }
+    float capY (const Box& m, float db) const { const auto s = slot (m); return s.y + 4 + (1.0f - faderPos (db) / faderPos (6.0f)) * (s.h - 8); }
+
+    int dragFrom = -1, dropAt = -1; float dragY = 0; bool dragging = false;
+    int faderTrack = -1, panTrack = -1, panSide = 0; float grabY = 0, grabValue = 0;
 
     void draw (Canvas& c) override
     {
-        const auto ch = chrome (studio.day);
         const auto& d = studio.data;
+        // the title plate
+        parts::image (c, LD_PART (title), 0, 0, W, titleH);
+        c.setColor (0xffb9bec6);
+        draw::spaced (c, "TRACKS", boldFont (10), (W - 74) / 2, 13, 14, 3.2f);
+
         c.setClampBounds (0, studio.screenContentTop(), width(), height() - studio.screenContentTop());
         for (int i = 0; i < (int) d.tracks.size(); ++i)
         {
-            const auto b = strip (i);
-            if (b.y + b.h < 0 || b.y > height()) continue;
-            const auto& tr = d.tracks[(size_t) i];
-
-            c.setColor (0x55000000);
-            c.roundedRectangleShadow (b.x, b.y + 2, b.w, b.h, 7, 10);
-            c.setColor (Brush::linear (Color (studio.day ? 0xffe6e8ec : 0xff23262c), Color (studio.day ? 0xffcfd3d9 : 0xff181a1e),
-                                       Point (0, b.y), Point (0, b.y + b.h)));
-            c.roundedRectangle (b.x, b.y, b.w, b.h, 7);
-            c.setColor (studio.day ? 0x30000000 : 0x12ffffff);
-            c.roundedRectangleBorder (b.x, b.y, b.w, b.h, 7, 1);
-
-            // colour bar with glow
-            c.setColor (draw::withAlpha (tr.colourA, 0.35f));
-            c.roundedRectangle (b.x + 5, b.y + 8, 7, b.h - 16, 3);
-            c.setColor (Brush::linear (Color (tr.colourA), Color (tr.colourB), Point (0, b.y + 8), Point (0, b.y + b.h - 8)));
-            c.roundedRectangle (b.x + 7, b.y + 9, 3, b.h - 18, 1.5f);
-
-            c.setColor (ch.ink);
-            draw::text (c, tr.name, uiFont (14.5f), Font::kLeft, b.x + 20, b.y + 6, b.w - 26, 20);
-            if (b.h > 44)
-            {
-                if (tr.isDrumIcon) draw::drumIcon (c, b.x + 20, b.y + 29, draw::withAlpha (tr.colourA, 0.9f).toARGB());
-                else draw::micIcon (c, b.x + 21, b.y + 28, draw::withAlpha (tr.colourA, 0.9f).toARGB());
-                c.setColor (ch.inkQuiet);
-                draw::text (c, tr.model.empty() ? "—" : tr.model, bodyFont (12), Font::kLeft, b.x + 38, b.y + 27, b.w - 44, 18);
-            }
-            if (b.h > 66)
-            {
-                c.setColor (ch.inkDim);
-                draw::text (c, tr.stereo ? "stereo" : "mono", bodyFont (10.5f), Font::kLeft, b.x + 20, b.y + 47, 60, 14);
-            }
-
-            auto button = [&] (Box r, const char* label, bool on, unsigned onColour)
-            {
-                if (on)
-                {
-                    c.setColor (draw::withAlpha (onColour, 0.45f));
-                    c.roundedRectangleShadow (r.x, r.y, r.w, r.h, 4, 10);
-                    c.setColor (onColour);
-                }
-                else
-                    c.setColor (studio.day ? 0xffbfc3ca : 0xff2c2f36);
-                c.roundedRectangle (r.x, r.y, r.w, r.h, 4);
-                c.setColor (on ? 0xff1a1306 : ch.inkQuiet);
-                draw::text (c, label, boldFont (10.5f), Font::kCenter, r.x, r.y, r.w, r.h);
-            };
-            button (soloBox (i), "S", tr.solo, neon::gold);
-            button (muteBox (i), "M", tr.mute, neon::red);
+            const auto m = module (i);
+            if (m.y + m.h < 0 || m.y > height()) continue;
+            drawModule (c, i, m);
         }
         c.setClampBounds (0, 0, width(), height());
         if (dragging && dropAt >= 0)
         {
             const float lh = studio.laneHeight(), y = studio.screenContentTop() - studio.view.scrollY + dropAt * lh;
+            c.setColor (Color (neon::cyan).withAlpha (0.35f)); c.roundedRectangle (2, y - 4, width() - 4, 8, 4);
             c.setColor (Color (neon::cyan)); c.roundedRectangle (4, y - 1.5f, width() - 8, 3, 1.5f);
         }
     }
+
+    void drawModule (Canvas& c, int i, const Box& m)
+    {
+        const auto& tr = studio.data.tracks[(size_t) i];
+        const Color ca (tr.colourA), cb (tr.colourB);
+        const bool sel = i == studio.selectedTrack;
+        // the metal: top, a stretched middle, bottom
+        const float topH = std::min (66.0f, m.h - 10), botH = 10;
+        parts::image (c, LD_PART (module_top), m.x, m.y, m.w, topH);
+        if (m.h - topH - botH > 0) parts::image (c, LD_PART (module_mid), m.x, m.y + topH, m.w, m.h - topH - botH);
+        parts::image (c, LD_PART (module_bot), m.x, m.y + m.h - botH, m.w, botH);
+        if (sel)
+        {
+            c.setColor (ca.withAlpha (0.16f)); c.roundedRectangleShadow (m.x, m.y, m.w, m.h, 5, 12);
+            c.setColor (ca.withAlpha (0.55f)); c.roundedRectangleBorder (m.x, m.y, m.w, m.h, 5, 1.2f);
+        }
+        // the colour strip down the left edge
+        c.setColor (ca.withAlpha (0.35f)); c.roundedRectangle (m.x + 1.5f, m.y + 6, 6, m.h - 12, 3);
+        c.setColor (Brush::linear (ca, cb, Point (0, m.y + 6), Point (0, m.y + m.h - 6)));
+        c.roundedRectangle (m.x + 3, m.y + 7, 2.5f, m.h - 14, 1.25f);
+
+        // name in the glass, LEAD in amber at its right; the activity LED flashes with the mic's sound
+        const auto nb = nameBox();
+        const bool lead = i == studio.data.referenceTrack;
+        c.setColor (0xfff2efe8);
+        draw::text (c, tr.name, uiFont (13), Font::kCenter, m.x + nb.x + (lead ? 0 : 0), m.y + nb.y - 0.5f, nb.w - (lead ? 30 : 0), nb.h);
+        if (lead)
+        {
+            c.setColor (neon::amber);
+            draw::text (c, "LEAD", boldFont (8), Font::kRight, m.x + nb.x, m.y + nb.y - 0.5f, nb.w - 8, nb.h);
+        }
+        const float act = i < (int) meters.size() ? meters[(size_t) i] : 0.0f;
+        {
+            const float lx = m.x + 150, ly = m.y + 17.5f;
+            c.setColor (0xff1a1c20); c.circle (lx - 3, ly - 3, 6);
+            if (act > 0.02f)
+            {
+                const float a = std::min (1.0f, act * 1.6f);
+                c.setColor (ca.withAlpha (0.45f * a)); c.circle (lx - 6, ly - 6, 12);
+                c.setColor (ca.withAlpha (a)); c.circle (lx - 2.5f, ly - 2.5f, 5);
+            }
+        }
+
+        // S and M: the buttons are in the render; the lit state and the letters are drawn
+        auto button = [&] (Box b, const char* label, bool on, unsigned col)
+        {
+            const float bx = m.x + b.x, by = m.y + b.y - 2;
+            if (on)
+            {
+                c.setColor (Color (col).withAlpha (0.5f)); c.roundedRectangleShadow (bx, by, b.w, b.h, 3, 10);
+                c.setColor (col); c.roundedRectangle (bx + 1, by + 1, b.w - 2, b.h - 2, 3);
+            }
+            c.setColor (on ? 0xff1a1200 : 0xff8b9099);
+            draw::text (c, label, boldFont (10), Font::kCenter, bx, by, b.w, b.h);
+        };
+        button (soloBox(), "S", tr.solo, neon::gold);
+        button (muteBox(), "M", tr.mute, neon::red);
+
+        // pan: one knob, or two on a stereo mic (left channel, right channel)
+        const int nk = tr.stereo ? 2 : 1;
+        for (int k = 0; k < nk; ++k)
+        {
+            const auto kp = knobAt (tr.stereo, k);
+            const float r = knobR (tr.stereo), cx = m.x + kp.x, cy = m.y + kp.y;
+            const float p = tr.stereo ? (k ? tr.panR : tr.panL) : tr.pan;
+            const float side = r * 3.2f;
+            if (tr.stereo) parts::image (c, LD_PART (knob_stereo), cx - side / 2, cy - side / 2 + 1.5f, side, side);
+            else parts::image (c, LD_PART (knob_mono), cx - side / 2, cy - side / 2 + 1.5f, side, side);
+            // the lit arc on the acrylic ring, from centre to the value
+            const float R = r * 1.26f, a1 = p * 0.75f * 3.14159265f;
+            c.setBlendMode (visage::BlendMode::Add);
+            if (std::abs (p) > 0.01f)
+            {
+                const float lo = std::min (0.0f, a1), hi = std::max (0.0f, a1);
+                c.setColor (ca.withAlpha (0.35f)); c.arc (cx - R - 2.5f, cy - R - 2.5f, 2 * R + 5, 5.0f, (lo + hi) / 2 - 1.5707963f, (hi - lo) / 2, true);
+                c.setColor (ca); c.arc (cx - R - 1, cy - R - 1, 2 * R + 2, 2.0f, (lo + hi) / 2 - 1.5707963f, (hi - lo) / 2, true);
+            }
+            else
+            {
+                c.setColor (ca.withAlpha (0.5f)); c.circle (cx - 3.5f, cy - R - 3.5f, 7);
+                c.setColor (ca); c.circle (cx - 1.5f, cy - R - 1.5f, 3);
+            }
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (0xff1b1d21);
+            c.segment (cx + std::sin (a1) * 2.5f, cy - std::cos (a1) * 2.5f, cx + std::sin (a1) * r * 0.72f, cy - std::cos (a1) * r * 0.72f, 1.6f, true);
+            if (tr.stereo)
+            {
+                c.setColor (0xff6a707a);
+                draw::text (c, k ? "R" : "L", boldFont (7.5f), Font::kCenter, cx - 6, m.y + 57, 12, 9);
+            }
+        }
+        c.setColor (0xffd6dbe2);
+        draw::text (c, tr.volumeDb <= -99 ? "-inf" : draw::fmt ("%.1f", (double) tr.volumeDb), monoBold (10), Font::kRight, m.x + 106, m.y + 40, 38, 14);
+
+        // the mini fader: a milled slot lit below the cap, the cap from the render
+        const auto sl = slot (m);
+        c.setColor (0xff020203); c.roundedRectangle (sl.x - 0.5f, sl.y - 0.5f, sl.w + 1, sl.h + 1, 2.5f);
+        c.setColor (0x10ffffff); c.fill (sl.x, sl.y + sl.h, sl.w, 1);
+        const float cyF = capY (m, tr.volumeDb);
+        const float fillTop = cyF + 7;
+        if (sl.y + sl.h - fillTop > 1)
+        {
+            c.setColor (ca.withAlpha (0.35f)); c.roundedRectangle (sl.x - 2, fillTop, sl.w + 4, sl.y + sl.h - fillTop, 3);
+            c.setColor (Brush::linear (ca, cb, Point (0, fillTop), Point (0, sl.y + sl.h)));
+            c.roundedRectangle (sl.x + 0.5f, fillTop, sl.w - 1, sl.y + sl.h - fillTop, 1.5f);
+        }
+        for (float db : { 0.0f, -12.0f, -40.0f })
+        {
+            const float ty = capY (m, db);
+            c.setColor (db == 0 ? 0x73ffffff : 0x33ffffff);
+            c.fill (sl.x + 8, ty, db == 0 ? 7 : 4, 1);
+        }
+        parts::image (c, LD_PART (cap_small), sl.x + 2 - 16, cyF - 10, 32, 20);
+        c.setColor (ca); c.roundedRectangle (sl.x + 2 - 9, cyF - 1.6f, 18, 2, 1);
+        c.setColor (ca.withAlpha (0.45f)); c.roundedRectangle (sl.x + 2 - 11, cyF - 3, 22, 5, 2.5f);
+        if (faderTrack == i) { c.setColor (ca.withAlpha (0.8f)); c.roundedRectangleBorder (sl.x + 2 - 13, cyF - 7.5f, 26, 14, 3, 1.5f); }
+
+        // meters: one window, or two on a stereo mic
+        const int nm = tr.stereo ? 2 : 1;
+        for (int k = 0; k < nm; ++k)
+        {
+            const float mx = m.x + 192 + k * 8, my = sl.y, mh = sl.h;
+            c.setColor (0xff020203); c.roundedRectangle (mx, my, 6, mh, 2);
+            c.setColor (0x0dffffff); c.fill (mx, my + mh, 6, 1);
+            const float lv = std::min (1.0f, k < (int) chanMeters[(size_t) i].size() ? chanMeters[(size_t) i][(size_t) k] : 0.0f);
+            if (lv > 0.002f)
+            {
+                const float bh = (mh - 2) * lv;
+                c.setColor (Brush::linear (visage::Gradient (Color (0xff3dffd2), Color (neon::lime), Color (neon::amber), Color (neon::magenta)),
+                                           Point (0, my + mh), Point (0, my)));
+                c.roundedRectangle (mx + 1, my + mh - 1 - bh, 4, bh, 1.5f);
+            }
+        }
+    }
+
+    std::vector<float> meters;                       ///< per track, for the activity LED
+    std::vector<std::vector<float>> chanMeters;      ///< per track, per channel
 
     void mouseDown (const visage::MouseEvent& e) override
     {
@@ -922,16 +1049,60 @@ struct Studio::Strips : visage::Frame
         auto& d = studio.data;
         for (int i = 0; i < (int) d.tracks.size(); ++i)
         {
-            if (soloBox (i).contains (e.position)) { if (studio.onSolo) studio.onSolo (i, ! d.tracks[(size_t) i].solo); return; }
-            if (muteBox (i).contains (e.position)) { if (studio.onMute) studio.onMute (i, ! d.tracks[(size_t) i].mute); return; }
-            if (strip (i).contains (e.position) && e.repeatClickCount() >= 2 && studio.onRename) { studio.onRename (i); return; }
-            if (strip (i).contains (e.position)) { studio.selectedTrack = i; dragFrom = i; dragY = e.position.y; dragging = false; if (studio.onSelectTrack) studio.onSelectTrack (i); studio.redrawAll(); return; }
+            const auto m = module (i);
+            if (! m.contains (e.position)) continue;
+            const Point p (e.position.x - m.x, e.position.y - m.y);
+            const auto& tr = d.tracks[(size_t) i];
+            if (soloBox().contains (p)) { if (studio.onSolo) studio.onSolo (i, ! tr.solo); return; }
+            if (muteBox().contains (p)) { if (studio.onMute) studio.onMute (i, ! tr.mute); return; }
+            for (int k = 0; k < (tr.stereo ? 2 : 1); ++k)
+            {
+                const auto kp = knobAt (tr.stereo, k);
+                if (std::hypot (p.x - kp.x, p.y - kp.y) > knobR (tr.stereo) + 5) continue;
+                if (e.repeatClickCount() >= 2)
+                {
+                    if (tr.stereo) { if (studio.onPanLR) studio.onPanLR (i, k, k ? 1.0f : -1.0f); }
+                    else if (studio.onPan) studio.onPan (i, 0.0f);
+                    return;
+                }
+                panTrack = i; panSide = k; grabY = e.position.y; grabValue = tr.stereo ? (k ? tr.panR : tr.panL) : tr.pan;
+                return;
+            }
+            const auto sl = slot (m);
+            if (e.position.x > sl.x - 14 && e.position.x < sl.x + 18 && e.position.y > sl.y - 8 && e.position.y < sl.y + sl.h + 8)
+            {
+                if (e.repeatClickCount() >= 2) { if (studio.onVolume) studio.onVolume (i, 0.0f); return; }
+                faderTrack = i; grabY = e.position.y; grabValue = faderPos (tr.volumeDb);
+                studio.showBigFader (i);
+                redraw();
+                return;
+            }
+            if (nameBox().contains (p) && e.repeatClickCount() >= 2 && studio.onRename) { studio.onRename (i); return; }
+            studio.selectedTrack = i; dragFrom = i; dragY = e.position.y; dragging = false;
+            if (studio.onSelectTrack) studio.onSelectTrack (i);
+            studio.redrawAll();
+            return;
         }
     }
 
-    int dragFrom = -1, dropAt = -1; float dragY = 0; bool dragging = false;
     void mouseDrag (const visage::MouseEvent& e) override
     {
+        if (faderTrack >= 0)
+        {
+            // the travel of the big fader: fine control whatever the lane height
+            const float travel = 220;
+            const float p = std::clamp (grabValue - (e.position.y - grabY) / travel * faderPos (6.0f), 0.0f, faderPos (6.0f));
+            if (studio.onVolume) studio.onVolume (faderTrack, faderDb (p));
+            return;
+        }
+        if (panTrack >= 0)
+        {
+            const float v = std::clamp (grabValue - (e.position.y - grabY) / 120.0f, -1.0f, 1.0f);
+            const auto& tr = studio.data.tracks[(size_t) panTrack];
+            if (tr.stereo) { if (studio.onPanLR) studio.onPanLR (panTrack, panSide, v); }
+            else if (studio.onPan) studio.onPan (panTrack, v);
+            return;
+        }
         if (dragFrom < 0) return;
         if (! dragging && std::abs (e.position.y - dragY) < 6) return;
         dragging = true;
@@ -939,8 +1110,11 @@ struct Studio::Strips : visage::Frame
         dropAt = std::clamp ((int) std::floor ((e.position.y - top) / lh + 0.5f), 0, (int) studio.data.tracks.size());
         redraw();
     }
+
     void mouseUp (const visage::MouseEvent&) override
     {
+        if (faderTrack >= 0) { faderTrack = -1; studio.showBigFader (-1); redraw(); return; }
+        panTrack = -1;
         if (dragging && dropAt >= 0 && dropAt != dragFrom && dropAt != dragFrom + 1 && studio.onMoveTrack)
             studio.onMoveTrack (dragFrom, dropAt > dragFrom ? dropAt - 1 : dropAt);
         dragFrom = dropAt = -1; dragging = false;
@@ -955,6 +1129,57 @@ struct Studio::Strips : visage::Frame
         studio.view.scrollY = std::clamp (studio.view.scrollY - dy, 0.0f, std::max (0.0f, content - visible));
         studio.redrawAll();
         return true;
+    }
+};
+
+//==============================================================================
+// The big fader: the same plate, slot and cap as a mini fader, larger, beside the mic while its fader is held.
+struct Studio::BigFader : visage::Frame
+{
+    explicit BigFader (Studio& s) : studio (s) { setIgnoresMouseEvents (true, false); setVisible (false); }
+    Studio& studio;
+    int track = -1;
+    static constexpr float W = 96, H = 316, slotY = 66, slotH = 228;
+
+    void draw (Canvas& c) override
+    {
+        if (track < 0 || track >= (int) studio.data.tracks.size()) return;
+        const auto& tr = studio.data.tracks[(size_t) track];
+        const Color ca (tr.colourA), cb (tr.colourB);
+        c.setColor (0xd9000000); c.roundedRectangleShadow (8, 26, W, H, 12, 34);
+        c.setColor (ca.withAlpha (0.2f)); c.roundedRectangleShadow (8, 12, W, H, 12, 30);
+        const float ox = 8, oy = 12;
+        parts::image (c, LD_PART (bigfader), ox, oy, W, H);
+        c.setColor (ca);
+        draw::text (c, tr.name, boldFont (8.5f), Font::kCenter, ox + 16, oy + 6, W - 32, 14);
+        // the readout
+        draw::glass (c, ox + 10, oy + 26, 76, 24, 5);
+        c.setColor (neon::amber);
+        draw::text (c, tr.volumeDb <= -99 ? "-inf" : draw::fmt ("%+.1f dB", (double) tr.volumeDb), monoBold (13), Font::kCenter, ox + 10, oy + 26, 76, 24);
+        // the slot, lit below the cap, and the scale
+        const float sx = ox + 44, sy = oy + slotY;
+        c.setColor (0xff020203); c.roundedRectangle (sx, sy, 8, slotH, 4);
+        c.setColor (0x14ffffff); c.fill (sx, sy + slotH, 8, 1);
+        auto yOf = [&] (float db) { return sy + 6 + (1.0f - faderPos (db) / faderPos (6.0f)) * (slotH - 12); };
+        const float cy = yOf (tr.volumeDb);
+        if (sy + slotH - cy - 14 > 1)
+        {
+            c.setColor (ca.withAlpha (0.4f)); c.roundedRectangle (sx - 3, cy + 14, 14, sy + slotH - cy - 14, 7);
+            c.setColor (Brush::linear (ca, cb, Point (0, cy + 14), Point (0, sy + slotH)));
+            c.roundedRectangle (sx + 1.5f, cy + 14, 5, sy + slotH - cy - 16, 2.5f);
+        }
+        for (float db : { 6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -40.0f, -60.0f })
+        {
+            const float ty = yOf (db);
+            c.setColor (db == 0 ? 0x8cffffff : 0x40ffffff);
+            c.fill (sx + 14, ty, db == 0 ? 14 : 9, 1);
+            if (std::abs (ty - cy) < 16) continue;
+            c.setColor (0xff9aa0a8);
+            draw::text (c, db > 0 ? "+6" : draw::fmt ("%.0f", (double) db), monoFont (8.5f), Font::kRight, ox + 4, ty - 6, 34, 12);
+        }
+        parts::image (c, LD_PART (cap_big), sx + 4 - 30, cy - 20, 60, 40);
+        c.setColor (ca.withAlpha (0.55f)); c.roundedRectangle (sx + 4 - 22, cy - 4, 44, 8, 4);
+        c.setColor (ca); c.roundedRectangle (sx + 4 - 20, cy - 1.2f, 40, 2.5f, 1.2f);
     }
 };
 
@@ -1083,314 +1308,183 @@ struct Studio::Rack : visage::Frame
 {
     explicit Rack (Studio& s) : studio (s) {}
     Studio& studio;
-    std::map<std::string, float> knobs { { "curve", 0.62f }, { "rrvary", 0.35f }, { "target", 0.5f }, { "lock", 1.0f },
-                                         { "freq", 0.42f }, { "gain", 0.58f }, { "input", 0.55f }, { "ratio", 0.33f },
-                                         { "send", 0.4f }, { "decay", 0.55f }, { "predelay", 0.3f }, { "mixr", 0.5f } };
-    struct KnobHit { std::string id; float cx, cy, r; };
-    std::vector<KnobHit> knobHits;
-    std::string dragging;
-    float dragY = 0, dragV = 0;
     float roomMeter = 0, masterMeter = 0;
+    double padFlash[8] {};
+    static constexpr float DW = 318, DH = 664;
+    float k = 1, ox = 0;
+    float X (float v) const { return ox + v * k; }
+    float Y (float v) const { return v * k; }
+    float S (float v) const { return v * k; }
+    static constexpr float padX[3] = { 30, 123, 216 }, padY[2] = { 384, 456 };
 
-    struct Style { unsigned top, bottom, title, accent; bool light = false; };
-    static Style style (const std::string& kind)
+    void resized() override
     {
-        if (kind == "align")    return { 0xff2a2d33, 0xff1a1c20, neon::cyan, neon::cyan };
-        if (kind == "velocity") return { 0xff1a1a1c, 0xff0e0e10, neon::amber, neon::amber };
-        if (kind == "tune")     return { 0xffe9ebee, 0xffb9bdc4, 0xff1b1d21, neon::lime, true };
-        if (kind == "eq")       return { 0xff1d2a52, 0xff121a36, neon::cyan, neon::magenta };
-        if (kind == "comp")     return { 0xff3a2a1c, 0xff21170f, neon::amber, neon::orange };
-        if (kind == "room")     return { 0xff3a1f3c, 0xff221224, neon::magenta, neon::violet };
-        return { 0xff202226, 0xff141518, 0xffd8dce2, neon::lime };
+        k = std::min (width() / DW, height() / DH);
+        ox = std::round ((width() - DW * k) / 2);
     }
 
-    float unitTop (Canvas& c, float y, float h, const std::string& kind, const std::string& title, const std::string& sub)
+    void arcKnob (Canvas& c, float cx, float cy, float v, unsigned col)
     {
-        const auto st = style (kind);
-        draw::plate (c, 24, y, width() - 48, h, st.top, st.bottom, 0xff060708, 9, false);
-        c.setColor (st.title);
-        draw::spaced (c, title, boldFont (13), 42, y + 10, 20, 2.2f);
-        c.setColor (st.light ? 0xff4a4f57 : 0xffa3a9b3);
-        const auto f = boldFont (10);
-        float w = 0; for (char32_t ch : visage::String::convertToUtf32 (sub)) w += f.stringWidth (std::u32string (1, ch)) + 1.4f;
-        draw::spaced (c, sub, f, width() - 40 - w, y + 12, 18, 1.4f);
-        return y + 38;
+        // the lit value on the frosted ring, and the pointer on the silver cap
+        const float R = S (21 * 1.24f), a0 = -0.75f * 3.14159265f, a1 = a0 + 1.5f * 3.14159265f * std::clamp (v, 0.0f, 1.0f);
+        const float mid = (a0 + a1) / 2 - 1.5707963f, half = (a1 - a0) / 2;
+        c.setBlendMode (visage::BlendMode::Add);
+        c.setColor (Color (col).withAlpha (0.28f)); c.arc (X (cx) - R - S (5), Y (cy) - R - S (5), 2 * R + S (10), S (10), mid, half, true);
+        c.setColor (Color (col).withAlpha (0.95f)); c.arc (X (cx) - R - S (1.6f), Y (cy) - R - S (1.6f), 2 * R + S (3.2f), S (3.2f), mid, half, true);
+        c.setColor (Color (0xb3ffffff)); c.arc (X (cx) - R - S (0.5f), Y (cy) - R - S (0.5f), 2 * R + S (1), S (1), mid, half, true);
+        c.setBlendMode (visage::BlendMode::Alpha);
+        c.setColor (0xff1b1d21);
+        c.segment (X (cx) + std::sin (a1) * S (5), Y (cy - 3) - std::cos (a1) * S (5), X (cx) + std::sin (a1) * S (14), Y (cy - 3) - std::cos (a1) * S (14), S (2.2f), true);
     }
 
-    void knob (Canvas& c, const std::string& id, float cx, float cy, const std::string& label, const std::string& value, unsigned col, bool light = false)
+    void silk (Canvas& c, const std::string& t, float x, float y, unsigned col, float size = 9, float sp = 1.8f)
     {
-        draw::knob (c, cx, cy, 17, knobs[id], col, light);
-        knobHits.push_back ({ id, cx, cy, 24 });
-        c.setColor (light ? 0xff3b4047 : 0xffa3a9b3);
-        draw::spaced (c, label, boldFont (9.5f), cx - textWidth (boldFont (9.5f), label) * 0.5f - label.size() * 0.6f, cy + 26, 14, 1.2f);
         c.setColor (col);
-        draw::text (c, value, monoFont (10.5f), Font::kCenter, cx - 40, cy + 41, 80, 14);
+        draw::spaced (c, t, boldFont (S (size)), X (x), Y (y), S (12), S (sp));
     }
 
     void draw (Canvas& c) override
     {
-        knobHits.clear();
-        // rails
-        for (float rx : { 4.0f, width() - 16.0f })
-        {
-            c.setColor (0xff0c0d10);
-            c.roundedRectangle (rx, 0, 12, height(), 3);
-            for (float yy = 24; yy < height() - 10; yy += 54)
-            {
-                c.setColor (0xff2a2d33);
-                c.roundedRectangle (rx + 3, yy, 6, 9, 3);
-            }
-        }
-
-        const float meterH = 128;
-        float y = 0;
-        const float avail = height() - meterH - 10;
-        switch (studio.currentStep)
-        {
-            case Step::session:    y = session (c, y); break;
-            case Step::hits:       y = velocity (c, y); break;
-            case Step::align:      y = align (c, y, avail - 10); break;
-            case Step::level:      y = align (c, y, 186); y = velocity (c, y + 10); break;
-            case Step::tune:       y = tune (c, y); y = velocity (c, y + 10); break;
-            case Step::mix:        y = eq (c, y); y = comp (c, y + 10); if (y + 170 < avail) y = roomAux (c, y + 10); break;
-            case Step::exportStep: y = exportUnit (c, y); break;
-        }
-        meterUnit (c, height() - meterH, meterH);
-    }
-
-    float session (Canvas& c, float y)
-    {
+        c.setColor (0xff050506);
+        c.fill (0, 0, width(), height());
+        c.setColor (0xffffffff);
+        c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_png), BinaryData::rack_pngSize, ox, 0, DW * k, DH * k);
         const auto& d = studio.data;
-        float b = unitTop (c, y, 190, "align", "SESSION", "IMPORT");
-        const auto f = bodyFont (12.5f);
-        auto row = [&] (const std::string& k, const std::string& v)
-        {
-            c.setColor (0xff8a919c); draw::text (c, k, f, Font::kLeft, 42, b, 120, 20);
-            c.setColor (0xffe8ebef); draw::text (c, v, monoFont (12), Font::kRight, 42, b, width() - 84, 20);
-            b += 24;
-        };
-        row ("Take", d.hasSession ? d.title : "—");
-        row ("Mics", d.hasSession ? std::to_string (d.tracks.size()) : "—");
-        row ("Length", d.hasSession ? draw::clock (d.length) : "—");
-        row ("Hits", d.hasSession ? std::to_string (d.hits.size()) : "—");
-        row ("Velocities", d.hasSession ? std::to_string (d.layers.size()) : "—");
-        return y + 190;
-    }
+        const auto& lv = d.level;
+        const unsigned green = 0xff7cff9b;
 
-    float align (Canvas& c, float y, float h)
-    {
-        const auto& d = studio.data;
-        const float b = unitTop (c, y, h, "align", "ALIGN", "ARRIVAL · PHASE");
-        // the arrival graphic: rings spreading from the source
-        const float gx = 40, gy = b, gw = 118, gh = h - 54;
-        draw::glass (c, gx, gy, gw, gh);
-        c.setClampBounds (gx, gy, gw, gh);
-        const float sx = gx + 18, sy = gy + gh * 0.5f;
-        for (int i = 0; i < 5; ++i)
-        {
-            const float r = 18 + i * 22.0f;
-            const unsigned col = Color (neon::cyan).interpolateWith (Color (neon::magenta), i / 4.0f).toARGB();
-            c.setColor (draw::withAlpha (col, 0.9f - i * 0.12f));
-            c.flatArc (sx - r, sy - r, 2 * r, 2.0f, 3.14159265f * 0.5f, 3.14159265f * 0.62f);
-        }
-        draw::led (c, sx, sy, neon::amber, true, 4);
-        c.setClampBounds (0, 0, width(), height());
+        // LEVEL module
+        silk (c, "LEVEL", 36, 18, green, 9.5f, 2.2f);
+        c.setColor (Color (green).withAlpha (lv.valid ? 0.5f : 0.15f)); c.circle (X (30) - S (4), Y (23) - S (4), S (8));
+        c.setColor (lv.valid ? Color (green) : Color (0xff2a2d33)); c.circle (X (30) - S (2), Y (23) - S (2), S (4));
+        c.setColor (0xff8b9099);
+        draw::text (c, lv.valid ? std::to_string (lv.onStandard) + " / " + std::to_string (lv.total) + " ON STANDARD" : std::string ("NOT MEASURED YET"), boldFont (S (8.5f)),
+                    Font::kRight, X (120), Y (16), S (168), S (12));
 
-        const float lx = gx + gw + 12, lw = width() - 40 - lx;
-        const float rowH = std::min (20.0f, (gh) / std::max (1.0f, (float) d.tracks.size()));
-        const auto f = monoFont (std::min (11.5f, rowH * 0.62f));
-        for (int i = 0; i < (int) d.tracks.size(); ++i)
+        // the screen: the lead mic's level per velocity
+        const float sx = 26, sy = 44, sw = 266, sh = 132;
+        c.setColor (0x14789aff);
+        for (int g = 1; g < 4; ++g) c.fill (X (sx + 6), Y (sy + g * sh / 4), S (sw - 12), 1);
+        for (int g = 1; g < 6; ++g) c.fill (X (sx + g * sw / 6), Y (sy + 6), 1, S (sh - 12));
+        silk (c, "LEAD MIC  dB PER VELOCITY", sx + 10, sy + 8, 0xff6a707a, 8, 1.2f);
+        std::vector<float> curve;
+        for (float v : lv.curveDb) if (std::isfinite (v)) curve.push_back (v);
+        if (curve.size() >= 2)
         {
-            const float ry = gy + i * rowH;
-            if (ry + rowH > gy + gh + 2) break;
-            const auto& tr = d.tracks[(size_t) i];
-            draw::led (c, lx + 4, ry + rowH * 0.5f, tr.colourA, true, 2.4f);
-            c.setColor (0xffc4c9d1);
-            draw::text (c, tr.name, f, Font::kLeft, lx + 12, ry, lw - 60, rowH);
-            const float ms = i < (int) d.arrivalMs.size() ? d.arrivalMs[(size_t) i] : NAN;
-            c.setColor (neon::cyan);
-            draw::text (c, std::isnan (ms) ? "—" : draw::fmt ("%.2f ms", (double) ms), f, Font::kRight, lx, ry, lw, rowH);
-        }
-        return y + h;
-    }
-
-    float velocity (Canvas& c, float y)
-    {
-        const auto& d = studio.data;
-        const float h = 200;
-        const float b = unitTop (c, y, h, "velocity", "VELOCITY · RR", "SELECTED HIT");
-        draw::glass (c, 40, b, width() - 80, 56);
-        const int sel = studio.selectedHit;
-        const bool has = sel >= 0 && sel < (int) d.hits.size();
-        const auto& hit = has ? d.hits[(size_t) sel] : HitInfo {};
-        const auto* L = has && hit.layer < (int) d.layers.size() ? &d.layers[(size_t) hit.layer] : nullptr;
-        struct Cell { const char* label; std::string big, small; unsigned col; };
-        const Cell cells[] = {
-            { "HIT", has ? draw::fmt ("%02.0f", sel + 1.0) : "--", "/" + std::to_string (d.hits.size()), 0xffe8ebef },
-            { "VELOCITY", has ? draw::fmt ("%02.0f", hit.layer + 1.0) : "--", "/" + std::to_string (d.layers.size()), neon::amber },
-            { "RR", has ? draw::fmt ("%02.0f", hit.roundRobin + 1.0) : "--", L ? "/" + std::to_string (L->numHits) : "", neon::amber },
-            { "MIDI", L ? std::to_string (L->midiLow) + "–" + std::to_string (L->midiHigh) : "--", "", 0xffe8ebef },
-            { "NOTE", L && ! L->note.empty() ? L->note : "--", "", neon::lime },
-        };
-        const float cw = (width() - 96) / 5.0f;
-        for (int i = 0; i < 5; ++i)
-        {
-            const float cx = 48 + i * cw;
-            c.setColor (0xff8a919c);
-            draw::spaced (c, cells[i].label, boldFont (8), cx, b + 6, 12, 0.9f);
-            c.setColor (cells[i].col);
-            const auto big = monoFont (19);
-            draw::text (c, cells[i].big, big, Font::kLeft, cx, b + 20, cw, 30);
-            if (! cells[i].small.empty())
+            const float lo = *std::min_element (curve.begin(), curve.end()), hi = *std::max_element (curve.begin(), curve.end());
+            const float span = std::max (1.0f, hi - lo);
+            std::vector<Point> pts;
+            for (size_t i = 0; i < curve.size(); ++i)
+                pts.push_back ({ X (sx + 22 + i * (sw - 44) / (curve.size() - 1)), Y (sy + sh - 22 - (curve[i] - lo) / span * (sh - 52)) });
+            visage::Path fillP; fillP.moveTo (pts.front().x, Y (sy + sh - 6));
+            for (auto& p : pts) fillP.lineTo (p.x, p.y);
+            fillP.lineTo (pts.back().x, Y (sy + sh - 6)); fillP.close();
+            c.setColor (Brush::linear (Color (0x4d2ee6ff), Color (0x002ee6ff), Point (0, Y (sy + 20)), Point (0, Y (sy + sh))));
+            c.fill (fillP);
+            visage::Path line; line.moveTo (pts[0].x, pts[0].y); for (size_t i = 1; i < pts.size(); ++i) line.lineTo (pts[i].x, pts[i].y);
+            const Brush grad = Brush::linear (visage::Gradient (Color (neon::blue), Color (neon::cyan), Color (green), Color (neon::amber)),
+                                              Point (pts.front().x, 0), Point (pts.back().x, 0));
+            c.setColor (Color (neon::cyan).withAlpha (0.25f)); c.stroke (line, 0, 0, width(), height(), S (7));
+            c.setColor (grad); c.stroke (line, 0, 0, width(), height(), S (2.4f));
+            for (size_t i = 0; i < pts.size(); ++i)
             {
-                c.setColor (0xff7b818b);
-                draw::text (c, cells[i].small, monoFont (10.5f), Font::kLeft, cx + textWidth (big, cells[i].big) + 1, b + 29, cw, 18);
+                const unsigned col = draw::layerColour ((int) i, (int) pts.size());
+                c.setColor (Color (col).withAlpha (0.35f)); c.circle (pts[i].x - S (8), pts[i].y - S (8), S (16));
+                c.setColor (col); c.circle (pts[i].x - S (4), pts[i].y - S (4), S (8));
+                c.setColor (0xccffffff); c.circle (pts[i].x - S (2.4f), pts[i].y - S (2.4f), S (2.8f));
             }
+            c.setColor (0xff6a707a);
+            draw::text (c, draw::fmt ("%.1f dB LOUDEST", (double) hi), monoFont (S (8.5f)), Font::kRight, X (sx + 100), Y (sy + sh - 18), S (sw - 112), S (12));
         }
-        knob (c, "curve", 74, b + 98, "CURVE", draw::fmt ("%+.1f dB", (knobs["curve"] - 0.5) * 12), neon::amber);
-        knob (c, "rrvary", 150, b + 98, "RR VARY", draw::fmt ("%.1f dB", knobs["rrvary"] * 1.0), neon::amber);
-        return y + h;
-    }
-
-    float tune (Canvas& c, float y)
-    {
-        const float h = 170;
-        const float b = unitTop (c, y, h, "tune", "TUNE", "SNARE · PITCH");
-        draw::glass (c, 40, b, 150, 110);
-        std::string note = "--";
-        for (auto& L : studio.data.layers) if (! L.note.empty()) { note = L.note; break; }
-        c.setColor (neon::lime);
-        draw::text (c, note, monoFont (34), Font::kCenter, 40, b + 18, 150, 50);
-        c.setColor (0xff8a919c);
-        draw::text (c, "detected", bodyFont (11), Font::kCenter, 40, b + 72, 150, 16);
-        knob (c, "target", 226, b + 34, "TARGET", note, 0xff3fd13a, true);
-        knob (c, "lock", width() - 74, b + 34, "LOCK", draw::fmt ("%.0f %%", knobs["lock"] * 100), 0xff3fd13a, true);
-        return y + h;
-    }
-
-    float eq (Canvas& c, float y)
-    {
-        const float h = 150;
-        const float b = unitTop (c, y, h, "eq", "EQ", "TONE");
-        const float gw = width() - 210;
-        draw::glass (c, 40, b, gw, 92);
-        visage::Path p;
-        for (int i = 0; i <= 60; ++i)
+        else
         {
-            const float x = 40 + gw * i / 60.0f;
-            const float t = i / 60.0f;
-            const float yy = b + 46 - 18 * std::exp (-std::pow ((t - knobs["freq"]) * 6, 2)) * (knobs["gain"] - 0.5f) * 4 - 6 * std::sin (t * 3);
-            if (i == 0) p.moveTo (x, yy); else p.lineTo (x, yy);
+            c.setColor (0xff5f6670);
+            draw::text (c, "Run Auto Prep to measure", bodyFont (S (11)), Font::kCenter, X (sx), Y (sy), S (sw), S (sh));
         }
-        c.setColor (Brush::horizontal (Color (neon::magenta), Color (neon::orange)));
-        c.stroke (p, 0, 0, width(), height(), 2.0f);
-        knob (c, "freq", width() - 136, b + 30, "FREQ", draw::fmt ("%.0f", 40 + knobs["freq"] * 900), neon::magenta);
-        knob (c, "gain", width() - 70, b + 30, "GAIN", draw::fmt ("%+.1f", (knobs["gain"] - 0.5) * 24), neon::violet);
-        return y + h;
-    }
 
-    float comp (Canvas& c, float y)
-    {
-        const float h = 150;
-        const float b = unitTop (c, y, h, "comp", "COMP · 76", "DYNAMICS");
-        const float mw = width() - 210;
-        // VU meter
-        c.setColor (Brush::linear (Color (0xfff6d58a), Color (0xffd9a440), Point (0, b), Point (0, b + 92)));
-        c.roundedRectangle (40, b, mw, 92, 6);
-        c.setColor (0xff3a2a10);
-        for (int i = 0; i <= 10; ++i)
+        // the buttons
+        const struct { const char* t; float x; bool on; } btn[4] = { { "PER MIC", 26, ! lv.linked }, { "LINKED", 90, lv.linked }, { "EVEN", 166, ! lv.pro }, { "PRO", 230, lv.pro } };
+        for (auto& b : btn)
         {
-            const float a = -0.9f + 1.8f * i / 10.0f;
-            const float cx = 40 + mw * 0.5f, cy = b + 110;
-            c.segment (cx + std::sin (a) * 80, cy - std::cos (a) * 80, cx + std::sin (a) * 90, cy - std::cos (a) * 90, i > 7 ? 2.0f : 1.2f, true);
-        }
-        const float gr = studio.playing ? studio.data.hasSession ? 0.25f + 0.5f * masterMeter : 0.0f : 0.0f;
-        const float a = -0.9f + 1.8f * (1.0f - gr);
-        c.setColor (0xff1b1408);
-        c.segment (40 + mw * 0.5f, b + 110, 40 + mw * 0.5f + std::sin (a) * 92, b + 110 - std::cos (a) * 92, 1.6f, true);
-        knob (c, "input", width() - 136, b + 30, "INPUT", draw::fmt ("%.0f dB", knobs["input"] * 24 - 12), neon::amber);
-        knob (c, "ratio", width() - 70, b + 30, "RATIO", draw::fmt ("%.0f:1", 2 + knobs["ratio"] * 18), neon::orange);
-        return y + h;
-    }
-
-    float roomAux (Canvas& c, float y)
-    {
-        const float h = 150;
-        const float b = unitTop (c, y, h, "room", "ROOM AUX", "SENDS · RETURN");
-        const float sp = (width() - 80) / 4.0f;
-        knob (c, "send", 40 + sp * 0.5f, b + 30, "SEND", draw::fmt ("%.0f %%", knobs["send"] * 100), neon::violet);
-        knob (c, "decay", 40 + sp * 1.5f, b + 30, "DECAY", draw::fmt ("%.1f s", 0.2 + knobs["decay"] * 3), neon::magenta);
-        knob (c, "predelay", 40 + sp * 2.5f, b + 30, "PRE", draw::fmt ("%.0f ms", knobs["predelay"] * 80), neon::cyan);
-        knob (c, "mixr", 40 + sp * 3.5f, b + 30, "MIX", draw::fmt ("%.0f %%", knobs["mixr"] * 100), 0xffd8dce2);
-        return y + h;
-    }
-
-    float exportUnit (Canvas& c, float y)
-    {
-        const float h = 250;
-        float b = unitTop (c, y, h, "align", "EXPORT", "FILES");
-        const auto f = bodyFont (12.5f);
-        auto row = [&] (const std::string& k, const std::string& v, unsigned col = 0xffe8ebef)
-        {
-            c.setColor (0xff8a919c); draw::text (c, k, f, Font::kLeft, 42, b, 120, 20);
-            c.setColor (col); draw::text (c, v, monoFont (12), Font::kRight, 42, b, width() - 84, 20);
-            b += 26;
-        };
-        row ("Naming", "SPLIT · MY DRUM CORE", neon::cyan);
-        row ("Pattern", "DRUM_ART_RRnn_VELnn");
-        row ("Format", "WAV 24-bit");
-        row ("Time stamp", "BWF");
-        row ("Folders", "One per drum");
-        row ("Audio", "Edits only", neon::amber);
-        return y + h;
-    }
-
-    void meterUnit (Canvas& c, float y, float h)
-    {
-        draw::plate (c, 24, y, width() - 48, h, 0xff1c1e22, 0xff101114, 0xff060708, 9, false);
-        auto meter = [&] (float x, const char* label, float level, unsigned col)
-        {
-            c.setColor (0xffa3a9b3);
-            draw::spaced (c, label, boldFont (10.5f), x, y + 10, 18, 2);
-            const float mx = x, my = y + 36, mw = (width() - 48) * 0.5f - 34, mh = 14;
-            for (int k = 0; k < 2; ++k)
+            const float lx = X (b.x + 10), ly = Y (205);
+            if (b.on)
             {
-                const float yy = my + k * (mh + 8);
-                c.setColor (0xff050608);
-                c.roundedRectangle (mx, yy, mw, mh, 3);
-                const int segs = 24;
-                const int lit = (int) std::round (std::min (1.0f, level * (k ? 0.96f : 1.0f)) * segs);
-                for (int s = 0; s < segs; ++s)
-                {
-                    const unsigned sc = s >= segs - 3 ? neon::red : s >= segs - 7 ? neon::gold : col;
-                    c.setColor (s < lit ? Color (sc) : Color (sc).withAlpha (0.10f));
-                    c.roundedRectangle (mx + 2 + s * (mw - 4) / segs, yy + 2, (mw - 4) / segs - 2, mh - 4, 1.5f);
-                }
+                c.setColor (Color (green).withAlpha (0.45f)); c.circle (lx - S (6), ly - S (6), S (12));
+                c.setColor (green); c.circle (lx - S (2.2f), ly - S (2.2f), S (4.4f));
             }
-            c.setColor (0xff8a919c);
-            draw::text (c, level > 0.0005f ? draw::fmt ("%.1f dB", 20.0 * std::log10 (level)) : "-inf", monoFont (10.5f), Font::kLeft, x, y + h - 30, 90, 16);
+            else { c.setColor (0xff2a2d33); c.circle (lx - S (2.2f), ly - S (2.2f), S (4.4f)); }
+            silk (c, b.t, b.x + 18, 199.5f, b.on ? 0xffe8ece9 : 0xff7d838c, 8.5f, 1.0f);
+        }
+
+        // the knobs: the Level settings
+        const struct { float x; unsigned col; float v; const char* label; std::string val; } kn[4] = {
+            { 59, neon::amber, (lv.shape - 0.3f) / 1.7f, "SHAPE", draw::fmt ("%.2f", (double) lv.shape) },
+            { 126, neon::cyan, (lv.offsetDb + 12) / 24, "OFFSET", draw::fmt ("%+.1f dB", (double) lv.offsetDb) },
+            { 193, neon::magenta, (lv.rangeDb - 6) / 42, "RANGE", draw::fmt ("%.0f dB", (double) lv.rangeDb) },
+            { 260, green, (lv.winMs - 10) / 190, "WINDOW", draw::fmt ("%.0f ms", (double) lv.winMs) } };
+        for (auto& kk : kn)
+        {
+            arcKnob (c, kk.x, 276, kk.v, kk.col);
+            c.setColor (0xffb9bec6);
+            draw::text (c, kk.label, boldFont (S (8.5f)), Font::kCenter, X (kk.x - 32), Y (309), S (64), S (12));
+            c.setColor (kk.col);
+            draw::text (c, kk.val, monoBold (S (10.5f)), Font::kCenter, X (kk.x - 36), Y (322), S (72), S (13));
+        }
+
+        // PADS
+        silk (c, "PADS", 30, 362, 0xffb9bec6);
+        c.setColor (0xff8b9099);
+        draw::text (c, "KEYS 1-6 \xc2\xb7 RANDOM RR", boldFont (S (8)), Font::kRight, X (120), Y (360), S (168), S (12));
+        const int nPads = std::min (6, std::max (1, (int) d.layers.size()));
+        for (int v = 0; v < 6; ++v)
+        {
+            const float px = padX[v % 3], py = padY[v / 3];
+            const bool live = v < nPads && ! d.layers.empty();
+            const unsigned col = draw::layerColour (v, std::max (6, (int) d.layers.size()));
+            const float flash = (float) std::max (0.0, 1.0 - (studio.now - padFlash[v]) / 0.35);
+            const float glow = live ? 0.07f + 0.7f * flash : 0.03f;
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (col).withAlpha (glow)); c.roundedRectangleShadow (X (px + 2), Y (py + 2), S (76), S (56), S (7), S (14));
+            c.setColor (Color (col).withAlpha (glow * 1.2f)); c.roundedRectangle (X (px + 4), Y (py + 38), S (72), S (18), S (6));
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (Color (col).withAlpha (live ? 0.45f + 0.5f * flash : 0.15f));
+            c.roundedRectangleBorder (X (px), Y (py), S (80), S (60), S (7), S (1));
+            silk (c, "VEL " + std::to_string (v + 1), px + 9, py + 8, live ? col : 0xff4a4f57, 8.5f, 1.2f);
+            c.setColor (0xff9aa0a8);
+            draw::text (c, std::to_string (v + 1), monoFont (S (9)), Font::kRight, X (px), Y (py + 42), S (72), S (12));
+        }
+        if (studio.now - *std::max_element (std::begin (padFlash), std::end (padFlash)) < 0.4) redraw();
+
+        // ROOM and MASTER
+        silk (c, "ROOM", 30, 566, 0xffb9bec6); silk (c, "MASTER", 170, 566, 0xffb9bec6);
+        auto meter = [&] (float x, float lvl)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const float w = (126 - 12) * std::min (1.0f, lvl * (ch ? 0.96f : 1.0f));
+                if (w < 0.5f) continue;
+                const float yy = 591 + ch * 9;
+                c.setColor (Brush::linear (visage::Gradient (Color (0xff3dffd2), Color (green), Color (neon::amber), Color (neon::magenta)), Point (X (x + 6), 0), Point (X (x + 120), 0)));
+                c.roundedRectangle (X (x + 6), Y (yy), S (w), S (5), S (2.5f));
+            }
         };
-        meter (42, "ROOM", roomMeter, neon::violet);
-        meter (24 + (width() - 48) * 0.5f + 10, "MASTER", masterMeter, neon::lime);
+        meter (26, roomMeter); meter (166, masterMeter);
+        auto dbOf = [] (float l) { return l > 1e-5f ? 20 * std::log10 (l) : -100.0f; };
+        c.setColor (0xff9aa0a8);
+        draw::text (c, roomMeter > 1e-4f ? draw::fmt ("%.1f dB", (double) dbOf (roomMeter)) : std::string ("-inf"), monoFont (S (10)), Font::kLeft, X (30), Y (618), S (110), S (12));
+        draw::text (c, masterMeter > 1e-4f ? draw::fmt ("%.1f dB PEAK", (double) dbOf (masterMeter)) : std::string ("-inf"), monoFont (S (10)), Font::kLeft, X (170), Y (618), S (120), S (12));
     }
 
     void mouseDown (const visage::MouseEvent& e) override
     {
         studio.requestKeyboardFocus();
-        for (auto& k : knobHits)
-            if (std::hypot (e.position.x - k.cx, e.position.y - k.cy) < k.r)
-            {
-                dragging = k.id; dragY = e.position.y; dragV = knobs[k.id];
-                return;
-            }
+        const float dx = (e.position.x - ox) / k, dy = e.position.y / k;
+        for (int v = 0; v < 6; ++v)
+        {
+            const float px = padX[v % 3], py = padY[v / 3];
+            if (dx >= px && dx < px + 80 && dy >= py && dy < py + 60) { if (studio.onPad) studio.onPad (v); return; }
+        }
     }
-    void mouseDrag (const visage::MouseEvent& e) override
-    {
-        if (dragging.empty()) return;
-        knobs[dragging] = std::clamp (dragV - (e.position.y - dragY) / 150.0f, 0.0f, 1.0f);
-        redraw();
-    }
-    void mouseUp (const visage::MouseEvent&) override { dragging.clear(); }
 };
 
 //==============================================================================
@@ -1551,7 +1645,7 @@ struct Studio::HistoryPanel : visage::Frame
 
 //==============================================================================
 Studio::Studio()
-    : header (std::make_unique<Header> (*this)), strips (std::make_unique<Strips> (*this)),
+    : header (std::make_unique<Header> (*this)), strips (std::make_unique<Strips> (*this)), bigFader (std::make_unique<BigFader> (*this)),
       screen (std::make_unique<Screen> (*this)), console (std::make_unique<Console> (*this)),
       rack (std::make_unique<Rack> (*this)), footer (std::make_unique<Footer> (*this)),
       historyPanel (std::make_unique<HistoryPanel> (*this))
@@ -1565,11 +1659,13 @@ Studio::Studio()
     addChild (footer.get());
     addChild (historyPanel.get(), false);
     historyPanel->setOnTop (true);
+    addChild (bigFader.get(), false);
+    bigFader->setOnTop (true);
 }
 
 Studio::~Studio()
 {
-    for (visage::Frame* f : { (visage::Frame*) historyPanel.get(), (visage::Frame*) footer.get(), (visage::Frame*) rack.get(),
+    for (visage::Frame* f : { (visage::Frame*) bigFader.get(), (visage::Frame*) historyPanel.get(), (visage::Frame*) footer.get(), (visage::Frame*) rack.get(),
                               (visage::Frame*) console.get(), (visage::Frame*) screen.get(), (visage::Frame*) strips.get(), (visage::Frame*) header.get() })
         removeChild (f);
 }
@@ -1578,7 +1674,7 @@ float Studio::laneHeight() const
 {
     const int n = std::max (1, (int) data.tracks.size());
     const float avail = screen->height() - screen->top() - 4;
-    return std::max (64.0f, avail / (float) n);
+    return std::max (76.0f, avail / (float) n);
 }
 
 float Studio::screenContentTop() const { return screen->top(); }
@@ -1613,7 +1709,7 @@ void Studio::layoutPanels()
     rack->setBounds (W - m - rackW, top, rackW, H - top - m);
     const float mainX = m, mainW = W - 2 * m - rackW - 14, mainH = H - top - m;
     const float pad = 16, footerH = 38;
-    const float stripW = 156;
+    const float stripW = Strips::W;
     strips->setBounds (mainX + pad, top + pad, stripW, mainH - 2 * pad - footerH - 6);
     screen->setBounds (mainX + pad + stripW + 10, top + pad, mainW - 2 * pad - stripW - 10, mainH - 2 * pad - footerH - 6);
     console->setBounds (mainX + pad, top + pad, mainW - 2 * pad, mainH - 2 * pad - footerH - 6);
@@ -1633,12 +1729,13 @@ void Studio::setModel (StudioModel m)
     redrawAll();
 }
 
-void Studio::setTrackState (int i, bool solo, bool mute, float volumeDb, float pan)
+void Studio::setTrackState (int i, bool solo, bool mute, float volumeDb, float pan, float panL, float panR)
 {
     if (i < 0 || i >= (int) data.tracks.size()) return;
     auto& t = data.tracks[(size_t) i];
-    if (t.solo == solo && t.mute == mute && t.volumeDb == volumeDb && t.pan == pan) return;
-    t.solo = solo; t.mute = mute; t.volumeDb = volumeDb; t.pan = pan;
+    if (t.solo == solo && t.mute == mute && t.volumeDb == volumeDb && t.pan == pan && t.panL == panL && t.panR == panR) return;
+    t.solo = solo; t.mute = mute; t.volumeDb = volumeDb; t.pan = pan; t.panL = panL; t.panR = panR;
+    if (bigFader->track == i) bigFader->redraw();
     strips->redraw();
     screen->redraw();
     console->redraw();
@@ -1693,6 +1790,33 @@ void Studio::tick (double t)
     };
     float room = 0.0f, master = 0.0f;
     console->meters.resize (data.tracks.size(), 0.0f);
+    strips->meters.resize (data.tracks.size(), 0.0f);
+    strips->chanMeters.resize (data.tracks.size());
+    bool stripsLive = false;
+    for (size_t i = 0; i < data.tracks.size(); ++i)
+    {
+        const auto& tr = data.tracks[i];
+        auto& cm = strips->chanMeters[i];
+        const int nch = tr.wave ? tr.wave->channels() : 1;
+        cm.resize ((size_t) nch, 0.0f);
+        const float g = tr.mute ? 0.0f : std::pow (10.0f, tr.volumeDb / 20.0f);
+        float any = 0;
+        for (int k = 0; k < nch; ++k)
+        {
+            float l = 0;
+            if (playing && tr.wave)
+            {
+                const double sr = tr.wave->sampleRate;
+                const auto r = tr.wave->range (k, (long) ((playhead - 0.05) * sr), (long) ((playhead + 0.01) * sr), abMix);
+                l = std::max (std::abs (r.first), std::abs (r.second)) * g;
+            }
+            cm[(size_t) k] = std::max (l, cm[(size_t) k] * 0.86f);
+            any = std::max (any, cm[(size_t) k]);
+        }
+        strips->meters[i] = any;
+        stripsLive = stripsLive || any > 0.002f;
+    }
+    if (stripsLive || playing) strips->redraw();
     for (size_t i = 0; i < data.tracks.size(); ++i)
     {
         const float l = levelAt (data.tracks[i]);
@@ -1705,6 +1829,21 @@ void Studio::tick (double t)
     rack->redraw();
     if (currentStep == Step::mix) console->redraw();
 }
+
+void Studio::showBigFader (int track)
+{
+    bigFader->track = track;
+    if (track < 0) { bigFader->setVisible (false); return; }
+    const float lh = laneHeight();
+    const float rowMid = strips->y() + screenContentTop() + (track + 0.5f) * lh - view.scrollY;
+    const float h = BigFader::H + 40, w = BigFader::W + 16;
+    const float y = std::clamp (rowMid - h / 2, header->bottom(), height() - h - 4);
+    bigFader->setBounds (strips->right() - 4, y, w, h);
+    bigFader->setVisible (true);
+    bigFader->redraw();
+}
+
+void Studio::flashPad (int v) { if (v >= 0 && v < 8) { rack->padFlash[v] = now; rack->redraw(); } }
 
 void Studio::setDayMode (bool d) { day = d; redrawAll(); }
 

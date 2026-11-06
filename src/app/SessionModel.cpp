@@ -165,7 +165,15 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
     // the hits, each on its velocity layer and round robin (only meaningful when the count matches)
     const bool ok = hl::countsOk (*S);
     for (size_t k = 0; k < S->onsets.size(); ++k)
-        m.hits.push_back ({ (double) S->onsets[k] / sr, ok ? S->velOfHit (k) : 0, ok ? (int) (k % (size_t) S->det.RR) : (int) k });
+    {
+        ui::HitInfo hi { (double) S->onsets[k] / sr, ok ? S->velOfHit (k) : 0, ok ? (int) (k % (size_t) S->det.RR) : (int) k, {} };
+        const auto* Lv = es && es->levels && es->levels->valid ? &*es->levels : nullptr;
+        if (Lv && ok)
+            for (size_t i = 0; i < map.size(); ++i)
+                hi.micDb.push_back (map[i] >= 0 && k < Lv->lvlRaw[(size_t) map[i]].size()
+                                        ? (float) (Lv->lvlRaw[(size_t) map[i]][k] + Lv->gainsDbT[(size_t) map[i]][k]) : NAN);
+        m.hits.push_back (std::move (hi));
+    }
 
     if (ok)
     {
@@ -194,8 +202,22 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
             }
             m.layers.push_back (std::move (li));
         }
+        {
+            auto& lv = m.level;
+            lv.valid = L != nullptr;
+            lv.linked = S->lev.mode == "linked"; lv.pro = S->lev.steps == "pro";
+            lv.shape = (float) S->lev.shape; lv.offsetDb = (float) S->lev.offsetDb; lv.rangeDb = (float) S->lev.rangeDb; lv.winMs = (float) S->lev.winMs;
+            lv.total = (int) S->onsets.size();
+            lv.onStandard = L ? (int) S->onsets.size() : 0;
+        }
         // layers are listed from the first hit in the take
         std::sort (m.layers.begin(), m.layers.end(), [] (auto& a, auto& b) { return a.start < b.start; });
+        if (m.level.valid)
+        {
+            std::vector<std::pair<int, float>> byVel;
+            for (size_t k = 0; k < m.layers.size(); ++k) byVel.push_back ({ (int) k, m.layers[k].micDb.size() > (size_t) m.referenceTrack ? m.layers[k].micDb[(size_t) m.referenceTrack] : NAN });
+            for (auto& [k, db] : byVel) m.level.curveDb.push_back (db);
+        }
     }
 
     // where each mic sits after the lead, as measured

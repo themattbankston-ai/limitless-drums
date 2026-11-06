@@ -49,7 +49,8 @@ public:
     bool processed() const { return wantB.load(); }
 
     /** The console as it stands: per track gain (mute/solo/fader resolved) and pan, the bus and the room return. */
-    void setConsole (const std::vector<float>& trackGain, const std::vector<float>& pan, const std::vector<bool>& stereo, float bus, float room);
+    void setConsole (const std::vector<float>& trackGain, const std::vector<float>& pan, const std::vector<bool>& stereo, float bus, float room,
+                     const std::vector<float>& panL = {}, const std::vector<float>& panR = {});
 
     // what is playing, for the screen (any thread)
     int currentHit() const { return curHit.load(); }
@@ -102,7 +103,7 @@ private:
     double deviceRate = 44100, t = 0;        // audio thread: session seconds since the start
     float gA = 0, gB = 0, limGain = 1;
     static constexpr int maxTracks = 64;
-    std::atomic<float> tGain[maxTracks], tPan[maxTracks];
+    std::atomic<float> tGain[maxTracks], tPan[maxTracks], tPanL[maxTracks], tPanR[maxTracks];
     std::atomic<bool> tStereo[maxTracks];
     std::atomic<float> busGain { 1 }, roomGain { 0 };
     std::atomic<int> curHit { -1 }, curVel { 0 }, monTrack { 0 };
