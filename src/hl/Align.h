@@ -18,6 +18,11 @@ struct AlignOptions
     int allpass = -1;                 ///< -1 = the role's default
     double keepThr = NAN;
     std::vector<double> extra;        ///< extra candidate lags (samples)
+    // The rule book (Limitless; all off = Hitline exactly)
+    std::array<double, 8> weight { 1, 1, 1, 1, 1, 1, 1, 1 };   ///< how much each octave band counts in the score
+    int expectPol = 0;                ///< in a close call, lean to this polarity (-1 for bottoms)
+    bool preferArrival = false;       ///< in a close call, take the delay that matches when the mic first hears the hit
+    double closeEps = 0.03;           ///< "a close call": within this much of the best score
 };
 
 constexpr int numBands = 8;

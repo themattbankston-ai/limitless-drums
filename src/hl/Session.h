@@ -50,6 +50,8 @@ struct SessionTrack
     F32 mono;
     long len = 0;
     std::string alignTo = "lead";
+    std::string role;                 ///< the rule book: what the sound says this mic is (sub, bottom, far, near)
+    std::string roleOverride;         ///< the rule book: what the user says it is (empty: go by the sound)
     double lag = 0;                   ///< applied delay (samples)
     int pol = 1;
     std::vector<AllPass> ap;          ///< phase EQ
@@ -105,6 +107,7 @@ struct Session
     double minGapMs = 180, thrDb = -40;
     bool thrAuto = true, detRan = false;
     bool phaseAnalyzed = false, phaseStale = false, flipped = false, leadFlipAuto = true;
+    bool rules = false;               ///< the rule book (Limitless). Off: Hitline 4.8 exactly
     std::array<std::string, 4> groupAnchors { "auto", "auto", "auto", "auto" };
     TuneSettings tune;
     PitchOptions pitchOpt;            ///< fmin, fmax, skip and window, per drum

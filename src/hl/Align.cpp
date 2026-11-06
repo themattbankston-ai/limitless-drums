@@ -153,7 +153,7 @@ namespace
         return out;
     }
 
-    double scoreOf (const std::vector<XSpec>& Xs, double tau, int pol, const std::vector<AllPass>* aps)
+    double scoreOf (const std::vector<XSpec>& Xs, double tau, int pol, const std::vector<AllPass>* aps, const std::array<double, 8>* bw = nullptr)
     {
         double s = 0, W = 0;
         for (auto& X : Xs)
@@ -162,7 +162,11 @@ namespace
             const ApResp* ap = nullptr;
             if (aps && ! aps->empty()) { r = apResp (X.N, X.H, X.sr, *aps); ap = &r; }
             const auto c = bandCoh (X, tau, pol, ap);
-            for (int b = 0; b < numBands; ++b) { s += X.w[(size_t) b] * c[(size_t) b]; W += X.w[(size_t) b]; }
+            for (int b = 0; b < numBands; ++b)
+            {
+                const double w = X.w[(size_t) b] * (bw ? (*bw)[(size_t) b] : 1.0);
+                s += w * c[(size_t) b]; W += w;
+            }
         }
         return s / (W != 0 ? W : 1);
     }
@@ -231,6 +235,19 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
         arrival = median0 (d);
         if (std::isfinite (arrival)) { minL = std::max (minL, jsRoundI (arrival - 0.002 * sr)); maxL = std::min (maxL, jsRoundI (arrival + 0.004 * sr)); }
     }
+    const bool weighted = std::any_of (o.weight.begin(), o.weight.end(), [] (double w) { return w != 1; });
+    const std::array<double, 8>* BW = weighted ? &o.weight : nullptr;
+    double arrivalNear = NAN;   // the rule book: when this close mic first hears each hit, relative to the lead
+    if (o.preferArrival && role != "far")
+    {
+        F32 mono;
+        if (chans.size() == 1) mono = chans[0];
+        else { mono.resize (chans[0].size()); for (size_t i = 0; i < mono.size(); ++i) mono[i] = (float) (((double) chans[0][i] + chans[1][i]) / 2); }
+        const auto refArr = arrivals (ref, onsets, sr, 3);
+        const auto arr = arrivals (mono, onsets, sr, std::isnan (o.maxMs) ? rr.mxMs : o.maxMs);
+        F64 d; for (size_t k = 0; k < arr.size() && k < refArr.size(); ++k) d.push_back (arr[k] - refArr[k]);
+        arrivalNear = median0 (d);
+    }
     const int negS = std::max (4, -minL + 4), mxS = maxL + 4;
     const int emS = std::isfinite (arrival) && arrival > 0 ? jsRoundI (arrival) : 0;
     std::vector<XSpec> Xl, Xs;
@@ -256,24 +273,55 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
         for (auto& c : pk) put (c.lag, std::max (cand.count (c.lag) ? cand[c.lag] : 0.0, c.sharp));
     }
     if (std::isfinite (arrival) && role == "far") { const int a = jsRoundI (arrival); put (a, cand.count (a) && cand[a] != 0 ? cand[a] : 1); }
+    if (std::isfinite (arrivalNear) && arrivalNear >= minL && arrivalNear <= maxL) { const int a = jsRoundI (arrivalNear); put (a, cand.count (a) && cand[a] != 0 ? cand[a] : 1); }
     for (double l : o.extra)
         if (std::isfinite (l) && l >= minL && l <= maxL) { const int a = jsRoundI (l); put (a, cand.count (a) && cand[a] != 0 ? cand[a] : 1); }
 
     struct Best { double v, tau; int pol; };
     std::optional<Best> best;
+    std::vector<Best> all;   // every candidate tried, for the rule book's close calls
     for (int l0 : order)
         for (int pol : { 1, -1 })
         {
             std::vector<double> grid;
             if (l0 == 0) grid.push_back (0);
             else for (double t = l0 - 0.25e-3 * sr; t <= l0 + 0.25e-3 * sr + 1e-9; t += 0.25) if (t >= minL && t <= maxL) grid.push_back (t);
-            for (double t : grid) { const double v = scoreOf (Xl, t, pol, nullptr); if (! best || v > best->v) best = Best { v, t, pol }; }
+            for (double t : grid)
+            {
+                const double v = scoreOf (Xl, t, pol, nullptr, BW);
+                if (o.expectPol != 0 || o.preferArrival) all.push_back ({ v, t, pol });
+                if (! best || v > best->v) best = Best { v, t, pol };
+            }
         }
-    const double asis = scoreOf (Xl, 0, 1, nullptr);
+    const double topV = best ? best->v : -INFINITY;   // keep-as-is is judged on the best score, as Hitline does
+    if (best && ! all.empty())
+    {
+        // a close call: candidates nearly as good as the best. Lean the way an engineer would.
+        std::vector<Best> close;
+        for (auto& b : all) if (b.v >= best->v - o.closeEps) close.push_back (b);
+        if (o.expectPol != 0)
+        {
+            std::vector<Best> p;
+            for (auto& b : close) if (b.pol == o.expectPol) p.push_back (b);
+            if (! p.empty()) close = p;
+        }
+        Best pick = close.front();
+        for (auto& b : close)
+        {
+            if (std::isfinite (arrivalNear))
+            {
+                const double d = std::abs (b.tau - arrivalNear), e = std::abs (pick.tau - arrivalNear);
+                if (d < e - 0.5 || (std::abs (d - e) <= 0.5 && b.v > pick.v)) pick = b;
+            }
+            else if (b.v > pick.v) pick = b;
+        }
+        best = pick;
+    }
+    const double asis = scoreOf (Xl, 0, 1, nullptr, BW);
     bool kept = false;
     const double keepThr = std::isnan (o.keepThr) ? rr.keepThr : o.keepThr;
     const bool followArrival = role == "far" && std::isfinite (arrival) && arrival > 0.001 * sr;
-    if (! best || (! followArrival && (best->v - asis < keepThr || (best->v < 0.2 && best->v - asis < 0.08)))) { best = Best { asis, 0, 1 }; kept = true; }
+    if (! best || (! followArrival && keepThr >= 0 && (topV - asis < keepThr || (topV < 0.2 && topV - asis < 0.08)))) { best = Best { asis, 0, 1 }; kept = true; }
 
     std::vector<AllPass> aps;
     double cur = best->v;
@@ -291,7 +339,7 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
                     for (int p : { pol, -pol })
                     {
                         auto trial = aps; trial.push_back ({ fc, Q });
-                        const double v = scoreOf (Xl, best->tau, p, &trial);
+                        const double v = scoreOf (Xl, best->tau, p, &trial, BW);
                         if (! c || v > c->v) c = C { v, fc, Q, p };
                     }
             }

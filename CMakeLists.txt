@@ -60,7 +60,8 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Clean.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Shape.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Session.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Prep.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Prep.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Rules.cpp)
 target_include_directories(LDShared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(LDShared INTERFACE
     JUCE_WEB_BROWSER=0
@@ -168,7 +169,8 @@ if(LD_BUILD_TESTS)
         tests/ExportParityTests.cpp
         tests/PrepParityTests.cpp
         tests/AuditionTests.cpp
-        tests/NewSessionTests.cpp
+        tests/RulesTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp
         src/app/ui/Wave.cpp
         src/app/Audition.cpp
