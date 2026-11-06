@@ -118,6 +118,7 @@ if(LD_BUILD_APP)
     juce_add_binary_data(LDAssets SOURCES
         assets/logo/mark-night.svg
         assets/ui/rack.png
+        assets/ui/rack_align.png
         assets/ui/parts/module_top.png
         assets/ui/parts/module_mid.png
         assets/ui/parts/module_bot.png

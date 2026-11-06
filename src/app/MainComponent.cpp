@@ -40,7 +40,9 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
 
     studio.onImport = [this] { openNewSession(); };
     studio.onPlay = [this] { togglePlay(); };
-    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); updateHeader(); };
+    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); if (st == ui::Step::align) refreshAlign(); updateHeader(); };
+    studio.onAlign = [this] (const std::string& a, int mic, double v) { onAlignAction (a, mic, v); };
+    studio.onAlignMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onAlignMenu (w, x, y, ww, h); };
     studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
     studio.onUndo = [this] { undo (false); };
     studio.onRedo = [this] { undo (true); };
@@ -80,7 +82,12 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
         refreshModel();
         updateHeader();
     };
-    studio.onSelectTrack = [this] (int i) { if (audition) audition->setMonitorTrack (engineIndexOf (i)); updateHeader(); };
+    studio.onSelectTrack = [this] (int i)
+    {
+        if (audition) audition->setMonitorTrack (engineIndexOf (i));
+        if (studio.step() == ui::Step::align && engineState && engineIndexOf (i) != engineState->session.refIdx) { alignMic = engineIndexOf (i); refreshAlign(); }
+        updateHeader();
+    };
     studio.onRewind = [this] { if (edit) edit->getTransport().setPosition (te::TimePosition()); };
     studio.onRecord = [this] { setNotice ("Recording comes with Song mode."); };
     studio.onSeek = [this] (double t) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (t)); };
@@ -424,8 +431,178 @@ void MainComponent::refreshModel()
     const auto title = projectFile != juce::File() ? projectFile.getFileNameWithoutExtension()
                      : takeTitle();
     const auto view = studio.view;
-    studio.setModel (buildStudioModel (*edit, currentRoles, title, engineState));
+    auto m = buildStudioModel (*edit, currentRoles, title, engineState);
+    if (engineState) m.align = buildAlignView (*engineState, alignMic, studio.selectedHit, alignSpread, alignSamples);
+    alignMic = m.align.mic; alignHit = studio.selectedHit;
+    studio.setModel (std::move (m));
     studio.view = view;
+}
+
+void MainComponent::refreshAlign()
+{
+    if (! engineState) return;
+    studio.data.align = buildAlignView (*engineState, alignMic, studio.selectedHit, alignSpread, alignSamples);
+    alignMic = studio.data.align.mic; alignHit = studio.selectedHit;
+    studio.redrawAll();
+}
+
+/** A change on the Align step: made on the session (playback stopped, so nothing reads it meanwhile), shown at
+    once, then the mix renders again behind it for the B side and the levels. */
+void MainComponent::alignOp (std::function<void (hl::Session&)> op, const juce::String& what)
+{
+    if (! engineState || ! engineState->session.phaseAnalyzed) return;
+    if (audition) audition->stop();
+    op (engineState->session);
+    refreshModel();
+    updateHeader();
+    setNotice (what);
+    rerender();
+}
+
+void MainComponent::rerender()
+{
+    if (! engineState) return;
+    const int gen = ++renderGeneration;
+    auto copy = std::make_shared<hl::Session> (engineState->session);
+    std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
+    {
+        auto mix = std::make_shared<hl::MixRender> (hl::renderMix (*copy));
+        auto lv = std::make_shared<std::optional<hl::LevelResult>>();
+        if (copy->mode != "kit") *lv = hl::measureLevels (*copy, *mix);
+        juce::MessageManager::callAsync ([sp, st, gen, mix, lv]
+        {
+            if (sp == nullptr || sp->renderGeneration != gen || sp->engineState != st) return;
+            if (sp->audition) sp->audition->stop();
+            st->mix = std::move (*mix);
+            st->levels = std::move (*lv);
+            if (sp->audition) sp->audition->setEngine (st);
+            sp->refreshModel();
+            sp->updateHeader();
+        });
+    }).detach();
+}
+
+void MainComponent::onAlignAction (const std::string& a, int mic, double v)
+{
+    if (! engineState) return;
+    auto& S = engineState->session;
+    const int nT = (int) S.tracks.size();
+    const bool ok = mic >= 0 && mic < nT && mic != S.refIdx;
+    const auto micName = ok ? juce::String (S.tracks[(size_t) mic].mic) : juce::String();
+    if (a == "again")
+    {
+        if (prepping) return;
+        // measure every mic again, off the message thread, on a copy; then it replaces the session's alignment
+        if (audition) audition->stop();
+        setNotice (juce::CharPointer_UTF8 ("Lining up the mics again\xe2\x80\xa6"));
+        const int gen = ++renderGeneration;
+        auto copy = std::make_shared<hl::Session> (S);
+        std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            for (auto& tr : copy->tracks) { tr.manualLag = tr.manualPol = false; }
+            hl::runAnalyze (*copy);
+            juce::MessageManager::callAsync ([sp, st, gen, copy]
+            {
+                if (sp == nullptr || sp->renderGeneration != gen || sp->engineState != st) return;
+                if (sp->audition) sp->audition->stop();
+                st->session = std::move (*copy);
+                sp->refreshModel(); sp->updateHeader();
+                sp->setNotice ("Lined up again.");
+                sp->rerender();
+            });
+        }).detach();
+        return;
+    }
+    if (a.rfind ("timing:", 0) == 0)
+    {
+        const auto mode = a.substr (7);
+        alignOp ([mode] (hl::Session& s) { hl::setTiming (s, mode); },
+                 mode == "pro" ? "Each mic placed where the pros put it." : mode == "natural" ? "Every mic as recorded." : "Every mic lined up tight with the lead.");
+        return;
+    }
+    if (a == "spread") { alignSpread = v != 0; refreshAlign(); return; }
+    if (a == "units") { alignSamples = v != 0; refreshAlign(); return; }
+    if (! ok) return;
+    if (a == "nudge") { const int d = (int) v; alignOp ([mic, d] (hl::Session& s) { hl::nudgeLag (s, mic, d); }, micName + (d < 0 ? " earlier" : " later") + " by " + (std::abs (d) == 4 ? "a sample" : "a quarter sample") + "."); return; }
+    if (a == "lag") { alignOp ([mic, v] (hl::Session& s) { hl::setLag (s, mic, v); }, micName + " moved by hand."); return; }
+    if (a == "snap")
+    {
+        const auto best = studio.data.align.best;
+        if (! std::isfinite (best)) return;
+        alignOp ([mic, best] (hl::Session& s) { hl::setLag (s, mic, best); }, micName + " snapped to where it sums hottest.");
+        return;
+    }
+    if (a == "flip") { alignOp ([mic] (hl::Session& s) { hl::flipMic (s, mic); }, micName + " polarity flipped."); return; }
+    if (a == "eq") { const bool on = ! S.tracks[(size_t) mic].apOn; alignOp ([mic, on] (hl::Session& s) { hl::setPhaseEq (s, mic, on); }, micName + (on ? " phase EQ on." : " phase EQ off.")); return; }
+    if (a == "lr")
+    {
+        if (! S.tracks[(size_t) mic].lr) return;
+        const bool on = ! S.tracks[(size_t) mic].lrLock;
+        alignOp ([mic, on] (hl::Session& s) { hl::setLrLock (s, mic, on); }, micName + (on ? " right side lined up with the left." : " left and right as recorded."));
+        return;
+    }
+    if (a == "reset") { alignOp ([mic] (hl::Session& s) { hl::resetMic (s, mic); }, micName + " back to where it measured."); return; }
+    if (a == "pair" || a == "gain")
+    {
+        if (! audition || ! engineState->mix) { setNotice ("Still preparing the take."); return; }
+        if (a == "gain" && v == 0) { audition->stop(); updateHeader(); return; }
+        if (edit) edit->getTransport().stop (false, false);
+        Audition::Options o;
+        o.mono = true; o.console = false; o.loudnessMatch = false; o.mode = "pair";
+        const int r = hl::alignRef (S, mic) >= 0 ? hl::alignRef (S, mic) : S.refIdx;
+        o.only = { r, mic };
+        if (a == "gain") o.gain = true; else o.side = v != 0 ? 1 : 0;
+        audition->play (modes::hit (S, std::max (0, studio.selectedHit)), o);
+        setNotice (a == "gain" ? juce::String ("What lining up ") + micName + " changed, and nothing else."
+                               : juce::String (S.tracks[(size_t) r].mic) + " + " + micName + " in mono, " + (v != 0 ? "aligned." : "as recorded."));
+        updateHeader();
+        return;
+    }
+}
+
+void MainComponent::onAlignMenu (const std::string& which, float x, float y, float w, float h)
+{
+    if (! engineState) return;
+    const auto& S = engineState->session;
+    const auto opts = juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (x, y + 0, w, h).toNearestInt()))
+                                                .withMinimumWidth ((int) w);
+    juce::PopupMenu m;
+    if (which == "mic")
+    {
+        for (int t = 0; t < (int) S.tracks.size(); ++t)
+            if (t != S.refIdx) m.addItem (t + 1, juce::String (S.tracks[(size_t) t].mic), true, t == alignMic);
+        m.showMenuAsync (opts, [this] (int r) { if (r <= 0) return; alignMic = r - 1; studio.selectedTrack = alignMic; refreshAlign(); });
+        return;
+    }
+    const int mic = alignMic;
+    if (mic < 0 || mic >= (int) S.tracks.size() || mic == S.refIdx) return;
+    const auto& tr = S.tracks[(size_t) mic];
+    std::vector<std::string> keys;
+    auto add = [&] (const std::string& key, const juce::String& label) { keys.push_back (key); m.addItem ((int) keys.size(), label, true, tr.alignTo == key); };
+    add ("lead", juce::String (S.tracks[(size_t) S.refIdx].mic) + " (lead)");
+    {
+        static const std::vector<std::optional<hl::MixRender::Scan>> none;
+        hl::ToneEngine E (S, none);
+        const double T = E.proTarget (mic);
+        if (std::isfinite (T)) add ("pro", "Like the pros (" + juce::String (T / S.sr * 1000, 1) + " ms late)");
+    }
+    m.addSeparator();
+    for (const char* g : { "A", "B", "C", "D" })
+    {
+        juce::String label = juce::String ("Group ") + g;
+        juce::StringArray mem;
+        for (int t = 0; t < (int) S.tracks.size(); ++t) if (t != mic && S.tracks[(size_t) t].alignTo == g) mem.add (S.tracks[(size_t) t].mic);
+        if (! mem.isEmpty()) label += juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + mem.joinIntoString (", ");
+        add (g, label);
+    }
+    m.addSeparator();
+    add ("none", "As recorded");
+    m.showMenuAsync (opts, [this, keys, mic] (int r)
+    {
+        if (r <= 0 || r > (int) keys.size()) return;
+        const auto to = keys[(size_t) r - 1];
+        alignOp ([mic, to] (hl::Session& s) { hl::setAlignTo (s, mic, to); }, "Lines up to " + juce::String (to == "none" ? "nothing: as recorded" : to == "lead" ? "the lead" : to == "pro" ? "where the pros put it" : "group " + to) + ".");
+    });
 }
 
 /** Hitline's Auto prep on the open take, off the message thread: hits, alignment and tuning first (shown as
@@ -1242,6 +1419,7 @@ void MainComponent::timerCallback()
         }
         const bool playingNow = audition->isPlaying();
         if (playingNow && audition->currentHit() >= 0 && audition->currentHit() != studio.selectedHit) { studio.selectedHit = audition->currentHit(); lastSelected = studio.selectedHit; studio.redrawAll(); }
+        if (studio.step() == ui::Step::align && ! playingNow && studio.selectedHit != alignHit) refreshAlign();
         if (studio.selectedHit != lastSelected)
         {
             lastSelected = studio.selectedHit;

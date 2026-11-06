@@ -1348,6 +1348,7 @@ struct Studio::Rack : visage::Frame
         c.setColor (0xff050506);
         c.fill (0, 0, width(), height());
         c.setColor (0xffffffff);
+        if (studio.step() == Step::align) { drawAlign (c); return; }
         c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_png), BinaryData::rack_pngSize, ox, 0, DW * k, DH * k);
         const auto& d = studio.data;
         const auto& lv = d.level;
@@ -1475,10 +1476,294 @@ struct Studio::Rack : visage::Frame
         draw::text (c, masterMeter > 1e-4f ? draw::fmt ("%.1f dB PEAK", (double) dbOf (masterMeter)) : std::string ("-inf"), monoFont (S (10)), Font::kLeft, X (170), Y (618), S (120), S (12));
     }
 
+    // ------------------------------------------------------------------ the Align instrument (Align step)
+    // Three modules: ALIGN (align again, the readout, the timing keys), SCOPE (the two selectors, the CRT, the
+    // jog wheel and its keys), LISTEN (sum by frequency, the pair keys, hear what you gain, back to measured).
+    struct Key { float x, y, w, h; const char* id; };
+    static constexpr Key keys[] = {
+        { 26, 40, 170, 30, "again" }, { 26, 82, 86, 26, "t:tight" }, { 116, 82, 86, 26, "t:pro" }, { 206, 82, 86, 26, "t:natural" },
+        { 26, 150, 130, 28, "menu:mic" }, { 162, 150, 130, 28, "menu:to" },
+        { 26, 350, 40, 26, "n:-4" }, { 70, 350, 40, 26, "n:-1" }, { 208, 350, 40, 26, "n:1" }, { 252, 350, 40, 26, "n:4" },
+        { 26, 386, 84, 26, "spread" }, { 208, 386, 84, 26, "snap" },
+        { 26, 424, 84, 26, "flip" }, { 117, 424, 84, 26, "eq" }, { 208, 424, 84, 26, "lr" },
+        { 26, 586, 130, 28, "pair:0" }, { 162, 586, 130, 28, "pair:1" }, { 26, 620, 130, 28, "gain" }, { 162, 620, 130, 28, "reset" } };
+    static constexpr float scX = 26, scY = 186, scW = 266, scH = 150, jogX = 159, jogY = 380, jogR = 36;
+    std::string pressed;              // the key held down
+    bool jogging = false, dragging = false;
+    float dragFrom = 0, jogA0 = 0, liveDelta = 0;   // samples, while the jog or a drag on the scope moves the mic
+
+    const Key* keyAt (float x, float y) const
+    {
+        for (auto& kk : keys) if (x >= kk.x && x < kk.x + kk.w && y >= kk.y && y < kk.y + kk.h) return &kk;
+        return nullptr;
+    }
+
+    void led (Canvas& c, float x, float y, bool on, unsigned col)
+    {
+        if (on) { c.setColor (Color (col).withAlpha (0.45f)); c.circle (X (x) - S (6), Y (y) - S (6), S (12)); c.setColor (col); }
+        else c.setColor (0xff2a2d33);
+        c.circle (X (x) - S (2.2f), Y (y) - S (2.2f), S (4.4f));
+    }
+
+    void keyLabel (Canvas& c, const Key& kk, const std::string& t, bool on, unsigned col, bool enabled = true, bool withLed = true)
+    {
+        const bool down = pressed == kk.id;
+        if (down) { c.setColor (Color (col).withAlpha (0.18f)); c.roundedRectangle (X (kk.x + 2), Y (kk.y + 2), S (kk.w - 4), S (kk.h - 4), S (4)); }
+        if (withLed) led (c, kk.x + 10, kk.y + kk.h / 2, on && enabled, col);
+        c.setColor (! enabled ? 0xff3e434b : on ? 0xffe8ecf2 : 0xff8d939c);
+        draw::text (c, t, boldFont (S (8)), Font::kCenter, X (kk.x + (withLed ? 14 : 0)), Y (kk.y), S (kk.w - (withLed ? 16 : 0)), S (kk.h));
+    }
+
+    static unsigned heatColour (float h)
+    {
+        // cold (fighting) to hot (locked in), Hitline's heat colours
+        const unsigned stops[4] = { 0xff4d7cff, 0xff9b8cff, 0xffffb347, 0xffff5a3d };
+        const float x = std::clamp (h, 0.0f, 1.0f) * 3; const int i = std::min (2, (int) x); const float f = x - (float) i;
+        return Color (stops[i]).interpolateWith (Color (stops[i + 1]), f).toARGB();
+    }
+
+    void drawAlign (Canvas& c)
+    {
+        c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_align_png), BinaryData::rack_align_pngSize, ox, 0, DW * k, DH * k);
+        const auto& A = studio.data.align;
+        const unsigned vio = neon::violet, hot = 0xffff5a3d, cool = 0xff7cff9b;
+        const bool live = A.valid;
+        auto unit = [&] (float smp) { return A.samples ? draw::fmt ("%+.2f smp", (double) smp) : draw::fmt ("%+.2f ms", (double) (smp / A.sr * 1000)); };
+
+        // ALIGN
+        silk (c, "ALIGN", 36, 18, 0xffcbbcff, 9.5f, 2.2f);
+        led (c, 30, 23, live, vio);
+        c.setColor (0xff8b9099);
+        const int nm = (int) A.mics.size() - (live ? 1 : 0);
+        draw::text (c, live ? std::to_string (std::max (0, nm)) + " MICS \xc2\xb7 " + std::to_string (A.fightingAfter) + " FIGHTING" : std::string ("NOT LINED UP YET"),
+                    boldFont (S (8.5f)), Font::kRight, X (120), Y (16), S (168), S (12));
+        keyLabel (c, keys[0], "ALIGN AGAIN", true, vio, true);
+        c.setColor (0xff5f6670); draw::text (c, "FIGHTING", boldFont (S (6.5f)), Font::kCenter, X (204), Y (42), S (88), S (9));
+        c.setColor (live ? (A.fightingAfter ? hot : cool) : Color (0xff3e434b));
+        draw::text (c, live ? std::to_string (A.fightingBefore) + " \xe2\x86\x92 " + std::to_string (A.fightingAfter) : std::string ("\xe2\x80\x94"), monoBold (S (11)),
+                    Font::kCenter, X (204), Y (51), S (88), S (16));
+        keyLabel (c, keys[1], "TIGHT", A.timing == "tight", vio, live);
+        keyLabel (c, keys[2], "LIKE THE PROS", A.timing == "pro", vio, live);
+        keyLabel (c, keys[3], "AS RECORDED", A.timing == "natural", vio, live);
+
+        // SCOPE: the two selectors
+        silk (c, "MIC", 30, 139, 0xffb9bec6, 7.5f, 1.4f); silk (c, "LINES UP TO", 166, 139, 0xffb9bec6, 7.5f, 1.4f);
+        const auto* M = live && A.mic >= 0 && A.mic < (int) A.mics.size() ? &A.mics[(size_t) A.mic] : nullptr;
+        const std::string micName = M ? M->name : std::string ("\xe2\x80\x94");
+        auto selector = [&] (const Key& kk, const std::string& t)
+        {
+            c.setColor (live ? 0xffe8ecf2 : 0xff4a4f57);
+            draw::text (c, t, bodyFont (S (10.5f)), Font::kLeft, X (kk.x + 9), Y (kk.y), S (kk.w - 28), S (kk.h));
+            c.setColor (Color (vio).withAlpha (live ? 1.0f : 0.3f));
+            const float ax = X (kk.x + kk.w - 14), ay = Y (kk.y + kk.h / 2 - 1);
+            visage::Path tri; tri.moveTo (ax - S (4), ay - S (2)); tri.lineTo (ax + S (4), ay - S (2)); tri.lineTo (ax, ay + S (3)); tri.close();
+            c.fill (tri);
+        };
+        selector (keys[4], micName);
+        selector (keys[5], M ? M->to : std::string ("\xe2\x80\x94"));
+
+        // the CRT: a graticule, the reference filled grey, the mic as recorded as a ghost, the mic where it sits
+        // now in its heat colour; the heat strip along the bottom with the hottest delay (red) and where it is (green)
+        const float gx = scX + 6, gy = scY + 6, gw = scW - 12, gh = scH - 30;
+        c.setColor (0x0f8b5cff); c.fill (X (scX), Y (scY), S (scW), S (scH));
+        c.setColor (0x168b5cff);
+        for (int g = 1; g < 10; ++g) c.fill (X (gx + g * gw / 10), Y (gy), 1, S (gh));
+        for (int g = 1; g < 6; ++g) c.fill (X (gx), Y (gy + g * gh / 6), S (gw), 1);
+        c.setColor (0x308b5cff); c.fill (X (gx), Y (gy + gh / 2), S (gw), 1);
+        if (M && ! A.ref.empty())
+        {
+            const size_t N = A.ref.size();
+            float pk = 1e-6f; for (size_t i = 0; i < N; ++i) pk = std::max ({ pk, std::abs (A.ref[i]), std::abs (A.cur[i]), std::abs (A.rec[i]) });
+            const float shift = liveDelta;    // samples, while dragging or jogging
+            const float spp = A.spanMs / 1000 * A.sr / (float) (N - 1);   // samples per point
+            auto px = [&] (size_t i) { return X (gx + (float) i * gw / (float) (N - 1)); };
+            auto py = [&] (float v) { return Y (gy + gh / 2 - v / pk * gh * 0.46f); };
+            auto shifted = [&] (float pt) -> float
+            {
+                const float q = pt + shift / spp; const long i0 = (long) std::floor (q); const float f = q - (float) i0;
+                auto g = [&] (long j) { return j >= 0 && j < (long) N ? A.cur[(size_t) j] : 0.0f; };
+                return g (i0) * (1 - f) + g (i0 + 1) * f;
+            };
+            visage::Path ref; ref.moveTo (px (0), py (0));
+            for (size_t i = 0; i < N; ++i) ref.lineTo (px (i), py (A.ref[i]));
+            ref.lineTo (px (N - 1), py (0)); ref.close();
+            c.setColor (0x40b9bec6); c.fill (ref);
+            visage::Path rec; rec.moveTo (px (0), py (A.rec[0]));
+            for (size_t i = 1; i < N; ++i) rec.lineTo (px (i), py (A.rec[i]));
+            c.setColor (0x40ffffff); c.stroke (rec, 0, 0, width(), height(), S (0.8f));
+            visage::Path cur; cur.moveTo (px (0), py (shifted (0)));
+            for (size_t i = 1; i < N; ++i) cur.lineTo (px (i), py (shifted ((float) i)));
+            // the heat where it sits (live while moving)
+            float h = A.curHeat;
+            if (shift != 0 && ! A.heat.empty())
+            {
+                const float q = (A.lag + shift - A.heatFrom) / A.heatStep;
+                const int j = std::clamp ((int) std::lround (q), 0, (int) A.heat.size() - 1); h = A.heat[(size_t) j];
+            }
+            const unsigned hc = heatColour (std::isfinite (h) ? h : 0);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (hc).withAlpha (0.25f)); c.stroke (cur, 0, 0, width(), height(), S (5));
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (hc); c.stroke (cur, 0, 0, width(), height(), S (1.6f));
+            // the hit's onset
+            const float ox0 = gx + A.preMs / A.spanMs * gw;
+            c.setColor (0x99ff5a3d);
+            for (float yy = gy; yy < gy + gh; yy += 4) c.fill (X (ox0), Y (yy), S (1), S (2));
+            // readouts
+            c.setColor (0xffe8ecf2);
+            draw::text (c, unit (A.lag + shift) + (M->flipped ? "  flipped" : ""), monoBold (S (9)), Font::kLeft, X (gx + 4), Y (gy + 2), S (150), S (11));
+            c.setColor (hc); c.roundedRectangleBorder (X (gx + gw - 62), Y (gy + 2), S (60), S (13), S (6.5f), S (1));
+            draw::text (c, std::string (h > 0.6f ? "HOT " : h > 0.3f ? "WARM " : "COLD ") + draw::fmt ("%.2f", (double) (std::isfinite (h) ? h : 0)), monoBold (S (8)),
+                        Font::kCenter, X (gx + gw - 62), Y (gy + 2), S (60), S (13));
+            // the heat strip
+            if (A.heat.size() > 1)
+            {
+                const float hy = scY + scH - 20, hh = 14;
+                float lo = *std::min_element (A.heat.begin(), A.heat.end()), hi2 = *std::max_element (A.heat.begin(), A.heat.end());
+                const float spanH = std::max (1e-3f, hi2 - lo);
+                for (size_t j = 0; j < A.heat.size(); ++j)
+                {
+                    const float xx = gx + (float) j * gw / (float) A.heat.size();
+                    const float v = (A.heat[j] - lo) / spanH;
+                    c.setColor (Color (heatColour (A.heat[j])).withAlpha (0.25f + 0.6f * v));
+                    c.fill (X (xx), Y (hy + hh * (1 - v)), S (gw / (float) A.heat.size() + 0.5f), S (hh * v + 1));
+                }
+                auto mark = [&] (float lag, unsigned col)
+                {
+                    const float q = (lag - A.heatFrom) / A.heatStep / (float) A.heat.size();
+                    if (q < 0 || q > 1) return;
+                    c.setColor (col); c.fill (X (gx + q * gw) - S (0.75f), Y (hy - 2), S (1.5f), S (hh + 4));
+                };
+                mark (A.best, 0xffff4d5e); mark (A.lag + shift, cool);
+            }
+        }
+        else
+        {
+            c.setColor (0xff5f6670);
+            draw::text (c, live ? "Pick a mic" : "Run Auto Prep to line the mics up", bodyFont (S (11)), Font::kCenter, X (scX), Y (scY), S (scW), S (scH));
+        }
+
+        // the jog wheel: its ring lights with the heat, the dimple turns with the delay
+        {
+            const float R = S (jogR * 1.1f);
+            const float h = M ? (std::isfinite (A.curHeat) ? A.curHeat : 0) : 0;
+            const float a0 = -0.75f * 3.14159265f, a1 = a0 + 1.5f * 3.14159265f * std::clamp (h, 0.0f, 1.0f);
+            const float mid = (a0 + a1) / 2 - 1.5707963f, half = (a1 - a0) / 2;
+            const unsigned col = heatColour (h);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (col).withAlpha (M ? 0.3f : 0.06f)); c.arc (X (jogX) - R - S (5), Y (jogY) - R - S (5), 2 * R + S (10), S (10), mid, half, true);
+            c.setColor (Color (col).withAlpha (M ? 0.95f : 0.15f)); c.arc (X (jogX) - R - S (1.6f), Y (jogY) - R - S (1.6f), 2 * R + S (3.2f), S (3.2f), mid, half, true);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            const float turn = (A.lag + liveDelta) * 0.25f;   // a quarter turn per sample
+            c.setColor (Color (vio).withAlpha (M ? 0.9f : 0.2f));
+            c.circle (X (jogX) + std::sin (turn) * S (jogR * 0.62f) - S (2.5f), Y (jogY) - std::cos (turn) * S (jogR * 0.62f) - S (2.5f), S (5));
+        }
+        keyLabel (c, keys[6], "\xe2\x88\x92" "1", false, vio, M != nullptr, false);
+        keyLabel (c, keys[7], "\xe2\x88\x92\xc2\xbc", false, vio, M != nullptr, false);
+        keyLabel (c, keys[8], "+\xc2\xbc", false, vio, M != nullptr, false);
+        keyLabel (c, keys[9], "+1", false, vio, M != nullptr, false);
+        c.setColor (0xff6a707a);
+        draw::text (c, "SAMPLES", boldFont (S (6.5f)), Font::kCenter, X (26), Y (338), S (84), S (10));
+        draw::text (c, "SAMPLES", boldFont (S (6.5f)), Font::kCenter, X (208), Y (338), S (84), S (10));
+        keyLabel (c, keys[10], A.spread ? "SPREAD OF HITS" : "THIS HIT", true, vio, M != nullptr);
+        keyLabel (c, keys[11], "SNAP TO HOT", false, hot, M != nullptr);
+        keyLabel (c, keys[12], "\xc3\x98 FLIP", M && M->flipped, neon::magenta, M != nullptr);
+        keyLabel (c, keys[13], "PHASE EQ", M && M->eq, vio, M && M->eqAvail);
+        keyLabel (c, keys[14], "L = R", M && M->lr, neon::cyan, M && M->lrAvail);
+
+        // LISTEN: sum by frequency, before (outline) and after (lit)
+        silk (c, "LISTEN", 36, 478, 0xffb9bec6, 9.5f, 2.2f);
+        c.setColor (0xff8b9099);
+        draw::text (c, "SUM BY FREQUENCY", boldFont (S (8)), Font::kRight, X (120), Y (476), S (168), S (12));
+        {
+            const float bx = 26, by = 500, bw = 266, bh = 74;
+            static const char* lab[8] = { "60", "120", "250", "500", "1k", "2k", "4k", "8k" };
+            for (int b = 0; b < 8; ++b)
+            {
+                const float cx = bx + 12 + b * (bw - 24) / 8, w = (bw - 24) / 8 - 8;
+                c.setColor (0xff4a4f57); draw::text (c, lab[b], monoFont (S (7)), Font::kCenter, X (cx), Y (by + bh - 12), S (w), S (10));
+                if (! M) continue;
+                auto hgt = [&] (float v) { return std::clamp ((v + 1) / 2, 0.0f, 1.0f) * (bh - 22); };
+                const float hb = hgt (M->bandsBefore[(size_t) b]), ha = hgt (M->bandsAfter[(size_t) b]);
+                const unsigned col = M->bandsAfter[(size_t) b] < 0 ? hot : cool;
+                c.setColor (Color (col).withAlpha (0.18f)); c.roundedRectangleShadow (X (cx), Y (by + bh - 14 - ha), S (w), S (ha), S (2), S (6));
+                c.setColor (Color (col).withAlpha (0.85f)); c.roundedRectangle (X (cx), Y (by + bh - 14 - ha), S (w), S (ha), S (2));
+                c.setColor (0xccffffff); c.roundedRectangleBorder (X (cx), Y (by + bh - 14 - hb), S (w), S (std::max (1.0f, hb)), S (2), S (1));
+            }
+            if (M && std::isfinite (M->before) && std::isfinite (M->after))
+            {
+                c.setColor (0xffb9bec6);
+                draw::text (c, draw::fmt ("%+.2f", (double) M->before) + " \xe2\x86\x92 " + draw::fmt ("%+.2f", (double) M->after), monoBold (S (8.5f)), Font::kRight, X (bx), Y (by + 3), S (bw - 8), S (11));
+            }
+            if (M && ! M->eqText.empty()) { c.setColor (0xff8b9099); draw::text (c, M->eqText, bodyFont (S (8)), Font::kLeft, X (bx + 8), Y (by + 3), S (170), S (11)); }
+        }
+        keyLabel (c, keys[15], "\xe2\x96\xb6 PAIR AS RECORDED", false, vio, M != nullptr, false);
+        keyLabel (c, keys[16], "\xe2\x96\xb6 PAIR ALIGNED", false, vio, M != nullptr, false);
+        keyLabel (c, keys[17], "HOLD: HEAR THE GAIN", pressed == "gain", hot, M != nullptr);
+        keyLabel (c, keys[18], "BACK TO MEASURED", M && M->status == "manual", vio, M && M->status == "manual");
+    }
+
+    void alignDown (float x, float y)
+    {
+        const auto& A = studio.data.align;
+        auto fire = [&] (const std::string& a, double v = 0) { if (studio.onAlign) studio.onAlign (a, A.mic, v); };
+        const float dj = std::hypot (x - jogX, y - jogY);
+        if (A.mic >= 0 && dj <= jogR * 1.15f) { jogging = true; jogA0 = std::atan2 (y - jogY, x - jogX); liveDelta = 0; return; }
+        if (A.mic >= 0 && x >= scX && x < scX + scW && y >= scY && y < scY + scH - 22) { dragging = true; dragFrom = x; liveDelta = 0; return; }
+        const Key* kk = keyAt (x, y);
+        if (! kk) return;
+        const std::string id = kk->id;
+        if (! A.valid && id != "again") return;
+        pressed = id; redraw();
+        if (id.rfind ("menu:", 0) == 0) { if (studio.onAlignMenu) studio.onAlignMenu (id.substr (5), X (kk->x), Y (kk->y), S (kk->w), S (kk->h)); return; }
+        if (id.rfind ("t:", 0) == 0) { if (studio.onAlign) studio.onAlign ("timing:" + id.substr (2), A.mic, 0); return; }
+        if (id.rfind ("n:", 0) == 0) { fire ("nudge", std::stoi (id.substr (2))); return; }
+        if (id == "pair:0" || id == "pair:1") { fire ("pair", id.back() == '1'); return; }
+        if (id == "gain") { fire ("gain", 1); return; }
+        if (id == "spread") { fire ("spread", A.spread ? 0 : 1); return; }
+        fire (id);
+    }
+
+    void mouseDrag (const visage::MouseEvent& e) override
+    {
+        if (studio.step() != Step::align) return;
+        const float x = (e.position.x - ox) / k, y = e.position.y / k;
+        const auto& A = studio.data.align;
+        if (jogging)
+        {
+            // a quarter sample per 15 degrees, as far round as you like
+            float a = std::atan2 (y - jogY, x - jogX), d = a - jogA0;
+            if (d > 3.14159265f) d -= 6.2831853f; if (d < -3.14159265f) d += 6.2831853f;
+            jogA0 = a;
+            liveDelta += d / (3.14159265f / 12) * 0.25f;
+            redraw();
+        }
+        else if (dragging && ! A.ref.empty())
+        {
+            // drag the wave: it follows the hand, sample-accurate
+            const float spp = A.spanMs / 1000 * A.sr / (float) (A.ref.size() - 1);
+            const float ptsPerPx = (float) (A.ref.size() - 1) / (scW - 12);
+            liveDelta = -(x - dragFrom) * ptsPerPx * spp;
+            redraw();
+        }
+    }
+
+    void mouseUp (const visage::MouseEvent&) override
+    {
+        if (studio.step() != Step::align) return;
+        const auto& A = studio.data.align;
+        if ((jogging || dragging) && std::abs (liveDelta) >= 0.125f && studio.onAlign)
+            studio.onAlign ("lag", A.mic, std::round ((A.lag + liveDelta) * 4) / 4);
+        if (pressed == "gain" && studio.onAlign) studio.onAlign ("gain", A.mic, 0);
+        jogging = dragging = false; liveDelta = 0; pressed.clear();
+        redraw();
+    }
+
     void mouseDown (const visage::MouseEvent& e) override
     {
         studio.requestKeyboardFocus();
         const float dx = (e.position.x - ox) / k, dy = e.position.y / k;
+        if (studio.step() == Step::align) { alignDown (dx, dy); return; }
         for (int v = 0; v < 6; ++v)
         {
             const float px = padX[v % 3], py = padY[v / 3];

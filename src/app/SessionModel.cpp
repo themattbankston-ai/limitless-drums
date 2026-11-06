@@ -1,4 +1,5 @@
 #include "SessionModel.h"
+#include "hl/Prep.h"
 #include <map>
 #include <numeric>
 #include <tuple>
@@ -230,5 +231,84 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
         else if (tr.autoResult) m.arrivalMs[i] = (float) ((std::isfinite (tr.autoResult->arrival) ? tr.autoResult->arrival : tr.autoResult->lag) / sr * 1000.0);
     }
     return m;
+}
+
+ui::StudioModel::AlignView buildAlignView (const EngineState& es, int mic, int hit, bool spread, bool samples)
+{
+    ui::StudioModel::AlignView v;
+    const auto& S = es.session;
+    v.timing = S.timing; v.spread = spread; v.samples = samples; v.sr = (float) S.sr;
+    if (S.tracks.empty() || ! S.phaseAnalyzed || S.onsets.empty()) return v;
+    v.valid = true;
+    const int nT = (int) S.tracks.size();
+    const double sr = S.sr;
+    double sb = 0, sa = 0; int ns = 0;
+    for (int t = 0; t < nT; ++t)
+    {
+        const auto& tr = S.tracks[(size_t) t];
+        ui::StudioModel::AlignView::Mic m;
+        m.name = tr.mic;
+        m.delayMs = (float) (tr.lag / sr * 1000); m.delaySmp = (float) tr.lag;
+        m.flipped = tr.pol < 0; m.eq = tr.apOn && ! tr.ap.empty(); m.lr = tr.lrLock; m.lrAvail = tr.ch.size() == 2 && tr.lr.has_value();
+        if (t == S.refIdx) { m.status = "lead"; m.to = "Everything lines up to this mic"; v.mics.push_back (m); continue; }
+        m.changed = std::abs (tr.lag) > 0.01 || tr.pol < 0 || ! tr.ap.empty();
+        m.status = tr.manualLag || tr.manualPol ? "manual" : m.changed ? "corrected" : "inphase";
+        const auto& lead = S.tracks[(size_t) S.refIdx].mic;
+        m.to = tr.alignTo == "lead" ? lead + " (lead)" : tr.alignTo == "pro" ? std::string ("Like the pros") : tr.alignTo == "none" ? std::string ("As recorded") : "Group " + tr.alignTo;
+        const auto& res = tr.alignTo.size() == 1 ? tr.grp : tr.autoResult;
+        m.eqAvail = res.has_value() && ! res->ap.empty();
+        if (res && res->valid)
+        {
+            m.before = (float) res->asis; m.after = (float) res->score;
+            for (int b = 0; b < 8; ++b) { m.bandsBefore[(size_t) b] = (float) res->bandsBefore[(size_t) b]; m.bandsAfter[(size_t) b] = (float) res->bandsAfter[(size_t) b]; }
+            if (tr.manualLag || tr.manualPol || tr.alignTo == "pro" || tr.alignTo == "none")
+            {
+                // what it sums like where it sits now
+                const int r = hl::alignRef (S, t) >= 0 ? hl::alignRef (S, t) : S.refIdx;
+                std::vector<int> ons (S.onsets.begin(), S.onsets.end());
+                const auto sc = hl::scoreMic (S.tracks[(size_t) r].mono, tr.ch, ons, sr, tr.lag, tr.pol, tr.apOn ? tr.ap : std::vector<hl::AllPass> {}, res->arrival);
+                if (sc.valid) { m.after = (float) sc.score; for (int b = 0; b < 8; ++b) m.bandsAfter[(size_t) b] = (float) sc.bandsAfter[(size_t) b]; }
+            }
+            sb += m.before; sa += m.after; ++ns;
+            if (m.before < 0) ++v.fightingBefore;
+            if (m.after < 0) ++v.fightingAfter;
+        }
+        if (m.eq)
+        {
+            m.eqText = "all-pass at";
+            for (size_t k = 0; k < tr.ap.size(); ++k) m.eqText += (k ? " + " : " ") + std::to_string ((int) std::lround (tr.ap[k].fc));
+            m.eqText += " Hz, tone unchanged";
+        }
+        v.mics.push_back (m);
+    }
+    if (ns) { v.sumBefore = (float) (sb / ns); v.sumAfter = (float) (sa / ns); }
+
+    // the scope
+    mic = std::clamp (mic, 0, nT - 1);
+    if (mic == S.refIdx) for (int t = 0; t < nT; ++t) if (t != S.refIdx) { mic = t; break; }
+    if (mic == S.refIdx) return v;
+    v.mic = mic;
+    hit = std::clamp (hit < 0 ? (int) S.onsets.size() / 2 : hit, 0, (int) S.onsets.size() - 1);
+    const auto H = hl::overlayHeat (S, mic, hit, spread);
+    const int r = H.ref >= 0 ? H.ref : S.refIdx;
+    const auto& R = S.tracks[(size_t) r]; const auto& M = S.tracks[(size_t) mic];
+    const double pre = 0.0015 * sr, span = H.far ? std::max (0.014 * sr, (M.autoResult && std::isfinite (M.autoResult->arrival) ? M.autoResult->arrival : 0) + 0.01 * sr) : 0.008 * sr;
+    v.preMs = 1.5f; v.spanMs = (float) (span / sr * 1000);
+    const double on = (double) S.onsets[(size_t) hit];
+    const int N = 400;
+    auto at = [] (const hl::F32& x, double p) { const long i = (long) std::floor (p); const double f = p - i; auto g = [&] (long q) { return q >= 0 && q < (long) x.size() ? (double) x[(size_t) q] : 0.0; }; return (float) (g (i) * (1 - f) + g (i + 1) * f); };
+    const double lagR = r == S.refIdx ? 0 : R.lag; const int pR = R.pol ? R.pol : 1, pM = M.pol ? M.pol : 1;
+    for (int n = 0; n < N; ++n)
+    {
+        const double p = on - pre + n * (span + pre) / (N - 1);
+        v.ref.push_back (at (R.mono, p + lagR) * pR);
+        v.cur.push_back (at (M.mono, p + M.lag) * pM);
+        v.rec.push_back (at (M.mono, p));
+    }
+    v.preMs = (float) (pre / sr * 1000); v.spanMs = (float) ((span + pre) / sr * 1000);
+    for (auto& [l, c] : H.curve) v.heat.push_back ((float) c);
+    if (! H.curve.empty()) v.heatFrom = (float) H.curve.front().first;
+    v.best = (float) H.best; v.bestHeat = (float) H.bestC; v.curHeat = (float) H.curC; v.lag = (float) M.lag;
+    return v;
 }
 } // namespace ld

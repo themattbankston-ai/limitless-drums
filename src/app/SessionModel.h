@@ -11,6 +11,9 @@ namespace ld
     engine's state (hits, velocity layers, round robins, per-mic levels per layer, pitch, alignment). */
 ui::StudioModel buildStudioModel (tracktion::Edit&, const std::vector<MicRole>& roles, const juce::String& title, std::shared_ptr<const EngineState>);
 
+/** The Align step's view: every mic's alignment, and the scope on one mic around one hit. */
+ui::StudioModel::AlignView buildAlignView (const EngineState&, int mic, int hit, bool spread, bool samples);
+
 /** The audio files behind the edit's tracks, in track order. */
 std::vector<juce::File> editFiles (tracktion::Edit&);
 } // namespace ld

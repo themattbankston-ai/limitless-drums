@@ -78,6 +78,14 @@ private:
     bool rudimentsOn = false;
     bool chainAB = false, loopOn = false, followOn = true, lmOn = true, padsOn = false, prepping = false;
     int lastSelected = -2;
+    // the Align step
+    int alignMic = -1, alignHit = -2, renderGeneration = 0;
+    bool alignSpread = true, alignSamples = false, alignDirty = true;
+    void refreshAlign();
+    void alignOp (std::function<void (hl::Session&)> op, const juce::String& what);
+    void rerender();
+    void onAlignAction (const std::string& action, int mic, double v);
+    void onAlignMenu (const std::string& which, float x, float y, float w, float h);
     std::vector<modes::MidiNote> midiNotes;
     juce::String midiName;
     int autosaveTicks = 0;

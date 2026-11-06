@@ -2,6 +2,8 @@
 
 #include <visage/app.h>
 #include "Wave.h"
+#include <array>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <string>
@@ -54,6 +56,35 @@ struct StudioModel
         int onStandard = 0, total = 0;
         std::vector<float> curveDb;   ///< the lead's level per velocity layer
     } level;
+    /** The Align step: every mic's alignment, and the scope on the selected mic and hit. */
+    struct AlignView
+    {
+        bool valid = false;
+        std::string timing = "tight";             ///< tight, pro, natural
+        int fightingBefore = 0, fightingAfter = 0;
+        float sumBefore = NAN, sumAfter = NAN;    ///< the mics' average sum with what they line up to
+        struct Mic
+        {
+            std::string name;                     ///< the mic
+            std::string status;                   ///< lead, inphase, corrected, manual
+            std::string to;                       ///< what it lines up to, as the menu says it
+            float delayMs = 0, delaySmp = 0;
+            bool flipped = false, eq = false, eqAvail = false, lr = false, lrAvail = false, changed = false;
+            float before = NAN, after = NAN;
+            std::array<float, 8> bandsBefore {}, bandsAfter {};
+            std::string eqText;                   ///< "all-pass at 190 + 410 Hz"
+        };
+        std::vector<Mic> mics;                    ///< in track order
+        int mic = -1;                             ///< the mic on the scope
+        bool spread = true;                       ///< the heat over a spread of hits (else this hit)
+        bool samples = false;                     ///< delays in samples (else ms)
+        // the scope, around the selected hit: the reference, the mic as it sits now and as recorded
+        std::vector<float> ref, cur, rec;
+        float preMs = 1.5f, spanMs = 8, sr = 44100;
+        std::vector<float> heat;                  ///< the heat curve around the current delay
+        float heatFrom = 0, heatStep = 0.25f;     ///< samples
+        float best = NAN, bestHeat = NAN, curHeat = NAN, lag = 0;
+    } align;
 };
 
 enum class Step { session, hits, align, tune, mix, level, exportStep };
@@ -121,6 +152,10 @@ public:
     std::function<void (int, bool)> onSolo, onMute;
     std::function<void (int, float)> onVolume, onPan;
     std::function<void (int, int, float)> onPanLR;
+    /** The Align module: action ("again", "timing", "select", "to", "nudge", "lag", "snap", "flip", "eq", "lr",
+        "reset", "pair", "gain", "spread", "units"), the mic, a value; for the two menus also where the selector is. */
+    std::function<void (const std::string&, int, double)> onAlign;
+    std::function<void (const std::string&, float, float, float, float)> onAlignMenu;
     std::function<void (int)> onPad;                  ///< a velocity pad (0-based): plays a random round robin of it     ///< track, 0 = left channel / 1 = right channel, pan
     std::function<void (int)> onRename, onHistoryJump;
     std::function<void (const std::vector<std::string>&)> onFilesDropped;
