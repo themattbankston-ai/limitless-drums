@@ -108,6 +108,7 @@ struct Session
     bool thrAuto = true, detRan = false;
     bool phaseAnalyzed = false, phaseStale = false, flipped = false, leadFlipAuto = true;
     std::array<std::string, 4> groupAnchors { "auto", "auto", "auto", "auto" };
+    std::string timing = "tight";     ///< the Align step's timing: tight, pro (like the pros), natural (as recorded)
     TuneSettings tune;
     PitchOptions pitchOpt;            ///< fmin, fmax, skip and window, per drum
     std::string tuneMic = "ref";

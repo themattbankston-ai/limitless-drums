@@ -149,4 +149,5 @@ def build():
     P.area(s, 'under', (0, -9, 1.5), 8, 140, (0.6, 0.75, 1.0))
     P.render(s, 'rack_mix.png' if MIX else 'rack.png')
 
-build()
+if __name__ == "__main__":
+    build()

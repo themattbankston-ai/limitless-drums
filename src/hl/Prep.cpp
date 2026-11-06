@@ -367,7 +367,6 @@ void runAnalyze (Session& S)
             if (i == a) continue;
             auto& tr = S.tracks[(size_t) i];
             AlignOptions o;
-            o.role = roleOfTrack (tr) == "far" || roleOfTrack (A) == "far" ? "far" : "near";
             {
                 const auto r = effectiveRole (S, i);
                 o = alignOptionsFor (r == "far" || effectiveRole (S, a) == "far" ? "far" : r);
@@ -376,6 +375,13 @@ void runAnalyze (Session& S)
             tr.grp = alignMic (A.mono, baseChOf (tr), ons, S.sr, o);
         }
     }
+    resolvePhase (S);
+    S.phaseAnalyzed = true; S.phaseStale = false;
+}
+
+void resolvePhase (Session& S)
+{
+    const int nT = (int) S.tracks.size();
     std::vector<MicAlign> mics;
     for (auto& tr : S.tracks)
     {
@@ -398,7 +404,6 @@ void runAnalyze (Session& S)
         tr.lag = mics[(size_t) t].lag; tr.pol = mics[(size_t) t].pol; tr.ap = mics[(size_t) t].ap;
         tr.autoAsis = tr.autoResult ? tr.autoResult->asis : NAN;
     }
-    S.phaseAnalyzed = true; S.phaseStale = false;
 }
 
 void runPitch (Session& S)
@@ -462,5 +467,170 @@ std::string hitCountAdvice (const Session& S)
     }
     else msg += "Check the markers: Shift-click to add, double-click to remove.";
     return msg;
+}
+
+// ---------------------------------------------------------------------------- the Align step's controls
+int alignRef (const Session& S, int t)
+{
+    const auto& tr = S.tracks[(size_t) t];
+    if (t == S.refIdx || tr.alignTo == "none") return -1;
+    if (tr.alignTo == "lead" || tr.alignTo == "pro") return S.refIdx;
+    const int a = groupAnchor (S, tr.alignTo);
+    return a == t ? -1 : a;
+}
+
+void setTiming (Session& S, const std::string& mode)
+{
+    const int nT = (int) S.tracks.size();
+    if (mode == "pro")
+    {
+        static const std::vector<std::optional<MixRender::Scan>> none;
+        ToneEngine E (S, none);
+        const auto& R = S.tracks[(size_t) S.refIdx];
+        for (int t = 0; t < nT; ++t)
+        {
+            if (t == S.refIdx) continue;
+            auto& tr = S.tracks[(size_t) t];
+            if (groupIndex (tr.alignTo) >= 0) continue;
+            const double lag = E.proLag (t);
+            if (! std::isfinite (E.proTarget (t)) || ! std::isfinite (lag)) { tr.alignTo = "lead"; continue; }
+            tr.alignTo = "pro"; tr.manualLag = false; tr.manualPol = false;
+            // the polarity that sums fuller at that delay (Hitline's proPolarity)
+            const double arr = tr.autoResult && std::isfinite (tr.autoResult->arrival) ? tr.autoResult->arrival : 0;
+            const int leadPol = R.pol;
+            const auto a = scoreMic (R.mono, tr.ch, toInt (S.onsets), S.sr, lag, leadPol, {}, arr);
+            const auto b = scoreMic (R.mono, tr.ch, toInt (S.onsets), S.sr, lag, -leadPol, {}, arr);
+            tr.proPol = a.valid && b.valid && b.score > a.score + 0.01 ? -1 : 1;
+        }
+    }
+    else
+        for (int t = 0; t < nT; ++t)
+        {
+            auto& tr = S.tracks[(size_t) t];
+            if (t == S.refIdx || groupIndex (tr.alignTo) >= 0) continue;
+            tr.alignTo = mode == "natural" ? "none" : "lead"; tr.manualLag = false; tr.manualPol = false;
+        }
+    S.timing = mode;
+    resolvePhase (S);
+}
+
+void setAlignTo (Session& S, int t, const std::string& to)
+{
+    if (t == S.refIdx) return;
+    auto& tr = S.tracks[(size_t) t];
+    tr.alignTo = to; tr.manualLag = false; tr.manualPol = false;
+    resolvePhase (S);
+}
+
+void nudgeLag (Session& S, int t, int dir)
+{
+    if (t == S.refIdx) return;
+    auto& tr = S.tracks[(size_t) t];
+    tr.lag = jsRound ((tr.lag - dir * 0.25) * 4) / 4; tr.manualLag = true;
+    resolvePhase (S);
+}
+
+void setLag (Session& S, int t, double lag)
+{
+    if (t == S.refIdx) return;
+    auto& tr = S.tracks[(size_t) t];
+    tr.lag = lag; tr.manualLag = true;
+    resolvePhase (S);
+}
+
+void flipMic (Session& S, int t)
+{
+    auto& tr = S.tracks[(size_t) t];
+    tr.pol = -(tr.pol ? tr.pol : 1); tr.manualPol = true;
+    resolvePhase (S);
+}
+
+void setPhaseEq (Session& S, int t, bool on) { S.tracks[(size_t) t].apOn = on; resolvePhase (S); }
+void setLrLock (Session& S, int t, bool on) { S.tracks[(size_t) t].lrLock = on; resolvePhase (S); }
+
+void resetMic (Session& S, int t)
+{
+    auto& tr = S.tracks[(size_t) t];
+    tr.manualLag = false; tr.manualPol = false; tr.apOn = true; tr.amount = 1;
+    resolvePhase (S);
+}
+
+Heat overlayHeat (const Session& S, int t, int sel, bool spread)
+{
+    Heat H;
+    if (t < 0 || t >= (int) S.tracks.size() || S.onsets.empty()) return H;
+    const int r = alignRef (S, t) >= 0 ? alignRef (S, t) : S.refIdx;
+    if (r == t) return H;
+    const auto& R = S.tracks[(size_t) r]; const auto& M = S.tracks[(size_t) t];
+    H.ref = r; H.far = roleOfTrack (M) == "far";
+    const double sr = S.sr;
+    H.win = (long) jsRound ((H.far ? 0.025 : 0.008) * sr); H.pre = (long) jsRound (0.0015 * sr);
+    const F32 xR = R.ap.empty() ? baseChOf (R)[0] : applyAllpass (baseChOf (R)[0], sr, R.ap);
+    const F32 xM = M.ap.empty() ? baseChOf (M)[0] : applyAllpass (baseChOf (M)[0], sr, M.ap);
+    const double lagR = r == S.refIdx ? 0 : R.lag; const int pR = R.pol ? R.pol : 1;
+    sel = std::clamp (sel, 0, (int) S.onsets.size() - 1);
+    std::vector<int> hits { sel };
+    if (spread && countsOk (S))
+    {
+        const int n = (int) S.onsets.size(), k = std::min (12, n);
+        for (int j = 0; j < k; ++j) { const int h = (int) jsRound (j * (n - 1) / (double) std::max (1, k - 1)); if (std::find (hits.begin(), hits.end(), h) == hits.end()) hits.push_back (h); }
+    }
+    auto lp = [&] (const F32& x, double fc)
+    {
+        const double a = std::exp (-2 * M_PI * fc / sr); F32 y (x.size()); double s1 = 0, s2 = 0;
+        for (size_t i = 0; i < x.size(); ++i) { s1 = (1 - a) * x[i] + a * s1; s2 = (1 - a) * s1 + a * s2; y[i] = (float) s2; }
+        return y;
+    };
+    auto bands = [&] (const F32& x)
+    {
+        const auto l60 = lp (x, 60), l250 = lp (x, 250), l1k = lp (x, 1000), l4k = lp (x, 4000);
+        std::array<F32, 3> b; for (auto& v : b) v.resize (x.size());
+        for (size_t i = 0; i < x.size(); ++i) { b[0][i] = l250[i] - l60[i]; b[1][i] = l1k[i] - l250[i]; b[2][i] = l4k[i] - l1k[i]; }
+        return b;
+    };
+    const auto BR = bands (xR), BM = bands (xM);
+    struct Seg { long st; std::array<std::vector<double>, 3> a; std::array<double, 3> e; };
+    std::vector<Seg> segs;
+    for (int i : hits)
+    {
+        Seg sg; sg.st = (long) jsRound (S.onsets[(size_t) i] - H.pre + lagR);
+        for (int k = 0; k < 3; ++k)
+        {
+            sg.a[(size_t) k].assign ((size_t) H.win, 0); double e = 0;
+            for (long n = 0; n < H.win; ++n) { const long q = sg.st + n; const double v = (q >= 0 && q < (long) BR[(size_t) k].size() ? BR[(size_t) k][(size_t) q] : 0) * pR; sg.a[(size_t) k][(size_t) n] = v; e += v * v; }
+            sg.e[(size_t) k] = e;
+        }
+        segs.push_back (std::move (sg));
+    }
+    const int pol = M.pol ? M.pol : 1;
+    auto corrAt = [&] (double lag)
+    {
+        double tot = 0;
+        for (int k = 0; k < 3; ++k)
+        {
+            const auto& hM = BM[(size_t) k];
+            double sxy = 0, sxx = 0, syy = 0;
+            for (auto& sg : segs)
+            {
+                const double base = sg.st - lagR + lag;
+                for (long n = 0; n < H.win; ++n)
+                {
+                    const double s2 = base + n; const long i0 = (long) std::floor (s2); const double f = s2 - i0;
+                    auto at = [&] (long q) { return q >= 0 && q < (long) hM.size() ? (double) hM[(size_t) q] : 0.0; };
+                    const double y = (at (i0) * (1 - f) + at (i0 + 1) * f) * pol;
+                    sxy += sg.a[(size_t) k][(size_t) n] * y; syy += y * y;
+                }
+                sxx += sg.e[(size_t) k];
+            }
+            tot += sxy / std::sqrt (sxx * syy + 1e-30);
+        }
+        return tot / 3;
+    };
+    H.cur = M.lag;
+    const long range = (long) jsRound ((H.far ? 0.004 : 0.0015) * sr);
+    for (double l = H.cur - range; l <= H.cur + range + 1e-9; l += 0.25) H.curve.push_back ({ l, corrAt (l) });
+    for (auto& [l, c] : H.curve) if (! std::isfinite (H.bestC) || c > H.bestC) { H.best = l; H.bestC = c; }
+    H.curC = corrAt (H.cur);
+    return H;
 }
 } // namespace ld::hl

@@ -36,6 +36,24 @@ bool countsOk (const Session&);
 void runDetect (Session&);
 /** Lines up every mic with the lead (and group members with their anchor), then resolves what is applied. */
 void runAnalyze (Session&);
+/** Hitline's resolveAlignment over the session: each mic's applied delay, polarity and phase EQ from what was
+    measured and what was set by hand (phaseChanged, without the redraws). */
+void resolvePhase (Session&);
+
+// The Align step's controls (Hitline's phase panel and overlay). Each resolves the session afterwards.
+int alignRef (const Session&, int t);                      ///< what this mic lines up to (-1: nothing)
+void setTiming (Session&, const std::string& mode);         ///< "tight", "pro" (like the pros) or "natural"
+void setAlignTo (Session&, int t, const std::string& to);   ///< "lead", "pro", "none" or a group "A".."D"
+void nudgeLag (Session&, int t, int quarterSamples);        ///< negative: earlier (Hitline's ovlNudge dir)
+void setLag (Session&, int t, double lag);                  ///< by hand (snap to hottest, a drag)
+void flipMic (Session&, int t);
+void setPhaseEq (Session&, int t, bool on);
+void setLrLock (Session&, int t, bool on);
+void resetMic (Session&, int t);                            ///< back to measured
+/** The overlay's heat: how well the mic sums with what it lines up to around each delay near the current one
+    (three bands, each normalised, as the aligner listens), on the selected hit or a spread of hits. */
+struct Heat { std::vector<std::pair<double, double>> curve; double best = NAN, bestC = NAN, cur = 0, curC = NAN; long win = 0, pre = 0; bool far = false; int ref = -1; };
+Heat overlayHeat (const Session&, int t, int sel, bool spread);
 void runPitch (Session&);
 void computeTune (Session&);
 /** Hitline's Auto prep. False when the hit count doesn't match the velocity and round-robin settings. */
