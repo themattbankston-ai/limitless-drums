@@ -1,0 +1,195 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--cyan:#2ee6ff;--blue:#4c8dff;--vio:#9b6bff;--mag:#ff3da8;--pink:#ff7ad9;--amb:#ffb23e;--lime:#7cff9b;--teal:#3dffd2;--ink:#f2efe8;--q:#9aa0a8;--qq:#5f6670}
+*{box-sizing:border-box}
+body{margin:0;width:1680px;height:316px;overflow:hidden;font-family:'Inter Display','Inter',sans-serif;color:var(--ink);background:#050507;position:relative}
+.mono{font-family:'DejaVu Sans Mono',monospace}
+/* the room behind the rack, very dim */
+.bg{position:absolute;inset:0;background:radial-gradient(ellipse 60% 70% at 30% 100%,rgba(155,107,255,.10),transparent 70%),radial-gradient(ellipse 50% 60% at 80% 110%,rgba(46,230,255,.08),transparent 70%)}
+/* chassis: deep black, faint brushing, like the Valhalla and FabFilter renders */
+.chassis{position:absolute;left:14px;right:14px;top:14px;height:286px;border-radius:12px;
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.016) 0 1px,rgba(0,0,0,.025) 1px 2px),linear-gradient(180deg,#17181c,#0b0b0e 60%,#08080a);
+  box-shadow:0 30px 70px rgba(0,0,0,.8),0 1.5px 0 rgba(255,255,255,.07) inset,0 -2px 0 rgba(0,0,0,.7) inset}
+.screw{position:absolute;width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#c9cdd4,#4b4f57 70%);box-shadow:0 1px 2px rgba(0,0,0,.9)}
+.screw:after{content:'';position:absolute;left:2px;right:2px;top:5px;height:1.5px;background:#25282e;transform:rotate(35deg)}
+.groove{position:absolute;left:24px;right:24px;top:188px;height:2px;background:#030304;box-shadow:0 1px 0 rgba(255,255,255,.05)}
+/* logo */
+.logo{position:absolute;left:40px;top:34px;display:flex;align-items:center;gap:14px}
+.logo .w{font-weight:700;font-size:21px;letter-spacing:.28em}
+.logo .s{font-size:10px;letter-spacing:.78em;color:var(--q);margin-top:3px}
+.proj{position:absolute;left:42px;top:104px;width:220px}
+.proj .k{font-size:10px;font-weight:800;letter-spacing:.2em;color:var(--qq)}
+.proj .v{font-size:15px;font-weight:600;margin-top:5px;color:#e6e3dc}
+.proj .v b{color:var(--cyan);font-weight:600}
+.proj .d{font-size:12px;color:var(--q);margin-top:4px}
+/* step tiles, laid out like ShaperBox */
+.steps{position:absolute;left:286px;top:30px;display:flex;gap:9px}
+.tile{position:relative;width:128px;height:142px;border-radius:10px;background:radial-gradient(ellipse at 50% 120%,var(--glow,transparent),transparent 65%),linear-gradient(180deg,#0d0e12,#060608);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),inset 0 2px 10px rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;padding-top:14px}
+.tile .n{font-size:17px;font-weight:600;color:var(--c);text-shadow:0 0 12px color-mix(in srgb,var(--c) 45%,transparent)}
+.tile svg{margin-top:12px;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 70%,transparent)) drop-shadow(0 0 14px color-mix(in srgb,var(--c) 30%,transparent))}
+.tile .st{position:absolute;bottom:13px;font-size:10.5px;font-weight:700;letter-spacing:.14em;color:color-mix(in srgb,var(--c) 75%,#8a8f98)}
+.tile .num{position:absolute;left:10px;top:9px;font-size:9.5px;color:#3f444c;font-weight:700}
+.tile .ok{position:absolute;right:10px;top:10px;width:7px;height:7px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}
+.tile.dim{opacity:.55}.tile.dim svg{filter:none;opacity:.6}.tile.dim .n{text-shadow:none}
+.tile.on{--glow:color-mix(in srgb,var(--c) 28%,transparent);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c) 70%,transparent),inset 0 2px 10px rgba(0,0,0,.6),0 0 22px color-mix(in srgb,var(--c) 22%,transparent)}
+.tile.on:before{content:'';position:absolute;left:28px;right:28px;top:-1px;height:2px;border-radius:2px;background:var(--c);box-shadow:0 0 10px var(--c)}
+/* Auto Prep */
+.auto{position:absolute;left:1258px;top:30px;width:206px;height:142px;border-radius:10px;overflow:hidden;background:#060608;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),inset 0 2px 12px rgba(0,0,0,.9),0 0 26px rgba(155,107,255,.18)}
+.auto svg{position:absolute;left:0;top:0}
+.auto .l{position:absolute;left:0;right:0;top:22px;text-align:center;font-weight:700;font-size:19px;letter-spacing:.16em;text-shadow:0 0 14px rgba(255,255,255,.35)}
+.auto .h{position:absolute;left:0;right:0;bottom:14px;text-align:center;font-size:11px;color:#c9c4d6;letter-spacing:.06em}
+.auto .k{position:absolute;right:10px;top:9px;font-size:10px;color:#6d6880;font-weight:700}
+/* undo / redo / history: knob-style buttons with a coloured ring */
+.tools{position:absolute;left:1484px;top:34px;display:grid;grid-template-columns:repeat(2,58px);gap:12px 14px}
+.rb{width:58px;height:58px;border-radius:50%;position:relative;background:radial-gradient(circle at 40% 30%,#3a3d44,#16171b 62%,#0c0c0f);
+  box-shadow:0 0 0 2px rgba(0,0,0,.9),0 0 0 4px color-mix(in srgb,var(--c) 55%,transparent),0 0 16px color-mix(in srgb,var(--c) 35%,transparent),inset 0 1px 0 rgba(255,255,255,.15);display:grid;place-items:center}
+.rb svg{filter:drop-shadow(0 0 4px var(--c))}
+.rb.off{box-shadow:0 0 0 2px rgba(0,0,0,.9),0 0 0 4px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.12)}.rb.off svg{filter:none;opacity:.35}
+.rbl{font-size:9.5px;font-weight:800;letter-spacing:.18em;color:var(--qq);text-align:center;margin-top:7px}
+/* transport band */
+.tp{position:absolute;left:24px;right:24px;top:202px;height:84px;display:flex;align-items:center;gap:16px;padding:0 10px}
+.nav{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#30333a,#121316);box-shadow:0 0 0 1.5px #000,inset 0 1px 0 rgba(255,255,255,.12);display:grid;place-items:center}
+.play{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 40% 30%,#3c3f46,#141518 62%);
+  box-shadow:0 0 0 2px #000,0 0 0 5px rgba(61,255,210,.75),0 0 26px rgba(61,255,210,.45),inset 0 1px 0 rgba(255,255,255,.18)}
+.lcd{width:286px;height:64px;border-radius:9px;background:radial-gradient(ellipse at 50% 0%,#0b0e16,#030407 70%);box-shadow:inset 0 3px 14px rgba(0,0,0,.95),inset 0 0 0 1px #1a1d25;position:relative;overflow:hidden}
+.lcd .t{position:absolute;left:16px;top:9px;font-size:30px;font-weight:700;color:var(--amb);text-shadow:0 0 12px rgba(255,178,62,.55);letter-spacing:.04em}
+.lcd .i{position:absolute;left:18px;bottom:7px;font-size:10px;letter-spacing:.14em;color:#7b8190}
+.lcd .i b{color:var(--cyan);font-weight:700}
+.lcd svg{position:absolute;right:10px;top:9px}
+.ab{display:flex;border-radius:9px;overflow:hidden;box-shadow:0 0 0 1.5px #000,inset 0 0 0 1px rgba(255,255,255,.06)}
+.ab span{width:44px;height:44px;display:grid;place-items:center;font-weight:700;font-size:15px;color:#6f747d;background:linear-gradient(180deg,#1b1c21,#0e0e11)}
+.ab span.on{color:#fff;background:radial-gradient(ellipse at 50% 120%,rgba(155,107,255,.55),#17121f 75%);text-shadow:0 0 10px var(--vio)}
+.ab span.w{width:58px;font-size:12px}
+.modes{display:flex;gap:7px}
+.m{width:70px;height:62px;border-radius:9px;background:linear-gradient(180deg,#0d0e12,#060608);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),inset 0 2px 8px rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.m svg{opacity:.75}
+.m .ml{font-size:9.5px;font-weight:800;letter-spacing:.14em;color:color-mix(in srgb,var(--c) 70%,#80858e)}
+.m.on{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c) 75%,transparent),0 0 16px color-mix(in srgb,var(--c) 25%,transparent);background:radial-gradient(ellipse at 50% 130%,color-mix(in srgb,var(--c) 30%,transparent),#07070a 70%)}
+.m.on svg{opacity:1;filter:drop-shadow(0 0 5px var(--c))}.m.on .ml{color:var(--c)}
+.tg{display:flex;gap:6px}
+.t2{height:30px;padding:0 11px;border-radius:15px;display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.14em;color:#6f747d;background:#0c0c0f;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.t2 i{width:6px;height:6px;border-radius:50%;background:#2a2d33}
+.t2.on{color:#e9fff9}.t2.on i{background:var(--teal);box-shadow:0 0 8px var(--teal)}
+.meters{margin-left:auto;display:flex;align-items:center;gap:16px}
+.corr{width:150px}
+.corr .bar{height:8px;border-radius:4px;background:linear-gradient(90deg,#ff4d5e,#ffb23e 35%,#2a2d33 50%,#3dffd2 75%,#2ee6ff);opacity:.85;position:relative;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6)}
+.corr .bar:after{content:'';position:absolute;left:78%;top:-5px;width:3px;height:18px;border-radius:2px;background:#fff;box-shadow:0 0 10px #fff}
+.corr .lb{display:flex;justify-content:space-between;font-size:9.5px;color:var(--qq);margin-top:6px;letter-spacing:.14em;font-weight:800}
+.vu{display:flex;gap:4px;height:62px;align-items:flex-end}
+.vu i{width:9px;border-radius:3px;background:linear-gradient(0deg,#2ee6ff,#9b6bff 70%,#ff3da8);box-shadow:0 0 10px rgba(155,107,255,.5)}
+/* hint of the screen below, dimmed */
+.below{position:absolute;left:14px;right:14px;top:316px;height:230px;border-radius:12px;background:#0a0a0d;opacity:.42;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.cap{position:absolute;left:0;right:0;bottom:16px;text-align:center;font-size:12px;color:#5c6069;letter-spacing:.2em;font-weight:700}
+</style></head><body>
+<div class="bg"></div>
+<div class="chassis">
+  <i class="screw" style="left:9px;top:9px"></i><i class="screw" style="right:9px;top:9px"></i><i class="screw" style="left:9px;bottom:9px"></i><i class="screw" style="right:9px;bottom:9px"></i>
+</div>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="gC" x1="0" x2="1"><stop offset="0" stop-color="#2ee6ff"/><stop offset="1" stop-color="#4c8dff"/></linearGradient>
+    <linearGradient id="gM" x1="0" x2="1"><stop offset="0" stop-color="#ff3da8"/><stop offset="1" stop-color="#ff7ad9"/></linearGradient>
+    <linearGradient id="gV" x1="0" x2="1"><stop offset="0" stop-color="#9b6bff"/><stop offset="1" stop-color="#2ee6ff"/></linearGradient>
+    <linearGradient id="gT" x1="0" x2="1"><stop offset="0" stop-color="#3dffd2"/><stop offset="1" stop-color="#2ee6ff"/></linearGradient>
+    <linearGradient id="gA" x1="0" x2="1"><stop offset="0" stop-color="#ffb23e"/><stop offset="1" stop-color="#ff6a3d"/></linearGradient>
+    <linearGradient id="gL" x1="0" x2="1"><stop offset="0" stop-color="#7cff9b"/><stop offset="1" stop-color="#3dffd2"/></linearGradient>
+    <linearGradient id="gP" x1="0" x2="1"><stop offset="0" stop-color="#ff7ad9"/><stop offset="1" stop-color="#9b6bff"/></linearGradient>
+  </defs>
+</svg>
+
+<div class="logo">
+  <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="19" fill="none" stroke="#ffb23e" stroke-width="2.2"/><path d="M12 22c0-4 3-6 5.5-6 5 0 6 12 11 12 2.5 0 5.5-2 5.5-6s-3-6-5.5-6c-5 0-6 12-11 12-2.5 0-5.5-2-5.5-6z" fill="none" stroke="#ffb23e" stroke-width="2.4" style="filter:drop-shadow(0 0 5px rgba(255,178,62,.7))"/></svg>
+  <div><div class="w">LIMITLESS</div><div class="s">DRUMS</div></div>
+</div>
+<div class="proj"><div class="k">SESSION</div><div class="v">Snare · <b>Center</b></div><div class="d">7 mics · 6 vel × 6 RR · 44.1 kHz</div></div>
+
+<div class="steps">
+  <div class="tile" style="--c:var(--cyan)"><span class="num">1</span><span class="ok"></span><div class="n">Session</div>
+    <svg width="64" height="54" viewBox="0 0 64 54" fill="none" stroke="url(#gC)" stroke-width="2.6" stroke-linecap="round"><ellipse cx="32" cy="15" rx="22" ry="7"/><path d="M10 15v20c0 4 10 7 22 7s22-3 22-7V15"/><path d="M14 20l6 20M50 20l-6 20M32 22v20" opacity=".55"/></svg>
+    <div class="st mono">7 MICS</div></div>
+  <div class="tile" style="--c:var(--mag)"><span class="num">2</span><span class="ok"></span><div class="n">Hits</div>
+    <svg width="74" height="54" viewBox="0 0 74 54" fill="none" stroke="url(#gM)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 34h8l3-22 4 34 3-18 3 8 3-4h6l3-14 3 22 2-10 2 4h4l2-8 2 12 2-6h8"/><path d="M14 6l-3-4h6zM42 6l-3-4h6zM60 6l-3-4h6z" fill="#ff3da8" stroke="none"/></svg>
+    <div class="st mono">36 HITS</div></div>
+  <div class="tile on" style="--c:var(--vio)"><span class="num">3</span><span class="ok"></span><div class="n">Align</div>
+    <svg width="74" height="58" viewBox="0 0 74 58" fill="none" stroke="url(#gV)" stroke-width="2.4" stroke-linecap="round"><circle cx="14" cy="29" r="4" fill="#9b6bff" stroke="none"/><path d="M24 19a14 14 0 0 1 0 20M33 12a24 24 0 0 1 0 34M43 6a34 34 0 0 1 0 46" /><path d="M53 2a44 44 0 0 1 0 54" opacity=".45"/></svg>
+    <div class="st mono">5 LINED UP</div></div>
+  <div class="tile" style="--c:var(--teal)"><span class="num">4</span><span class="ok"></span><div class="n">Tune</div>
+    <svg width="70" height="54" viewBox="0 0 70 54" fill="none" stroke="url(#gT)" stroke-width="2.6" stroke-linecap="round"><path d="M26 4v18a9 9 0 0 0 18 0V4"/><path d="M35 31v20"/><path d="M4 30c4-8 8 8 12 0M54 30c4-8 8 8 12 0" opacity=".6"/></svg>
+    <div class="st mono">A#3 · OFF</div></div>
+  <div class="tile" style="--c:var(--amb)"><span class="num">5</span><div class="n">Mix</div>
+    <svg width="66" height="54" viewBox="0 0 66 54" fill="none" stroke="url(#gA)" stroke-width="2.6" stroke-linecap="round"><path d="M13 4v46M33 4v46M53 4v46" opacity=".45"/><rect x="7" y="28" width="12" height="7" rx="2" fill="#ffb23e" stroke="none"/><rect x="27" y="12" width="12" height="7" rx="2" fill="#ff8a3d" stroke="none"/><rect x="47" y="34" width="12" height="7" rx="2" fill="#ff6a3d" stroke="none"/></svg>
+    <div class="st mono">FLAT</div></div>
+  <div class="tile" style="--c:var(--lime)"><span class="num">6</span><span class="ok"></span><div class="n">Level</div>
+    <svg width="70" height="54" viewBox="0 0 70 54" fill="url(#gL)" stroke="none"><rect x="4" y="40" width="8" height="10" rx="2"/><rect x="15" y="34" width="8" height="16" rx="2"/><rect x="26" y="27" width="8" height="23" rx="2"/><rect x="37" y="20" width="8" height="30" rx="2"/><rect x="48" y="12" width="8" height="38" rx="2"/><rect x="59" y="4" width="8" height="46" rx="2"/></svg>
+    <div class="st mono">ON STANDARD</div></div>
+  <div class="tile dim" style="--c:var(--pink)"><span class="num">7</span><div class="n">Export</div>
+    <svg width="70" height="54" viewBox="0 0 70 54" fill="none" stroke="url(#gP)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 28c5-14 9 14 14 0s9 14 14 0"/><path d="M40 28h24M54 18l10 10-10 10"/></svg>
+    <div class="st mono">288 FILES</div></div>
+</div>
+
+<div class="auto">
+  <svg width="206" height="142" viewBox="0 0 206 142">
+    <defs><linearGradient id="ap1" x1="0" x2="1"><stop offset="0" stop-color="#2ee6ff"/><stop offset=".55" stop-color="#9b6bff"/><stop offset="1" stop-color="#ff3da8"/></linearGradient>
+      <linearGradient id="ap2" x1="0" x2="1"><stop offset="0" stop-color="#ff3da8"/><stop offset="1" stop-color="#2ee6ff"/></linearGradient>
+      <filter id="bl"><feGaussianBlur stdDeviation="3"/></filter></defs>
+    <path d="M0 92C30 62 50 120 84 88S140 58 170 86 206 96 206 96V142H0z" fill="url(#ap1)" opacity=".16"/>
+    <path d="M0 92C30 62 50 120 84 88S140 58 170 86 206 96 206 96" fill="none" stroke="url(#ap1)" stroke-width="5" filter="url(#bl)" opacity=".8"/>
+    <path d="M0 92C30 62 50 120 84 88S140 58 170 86 206 96 206 96" fill="none" stroke="url(#ap1)" stroke-width="2"/>
+    <path d="M0 100C34 120 60 70 96 96S150 118 206 84" fill="none" stroke="url(#ap2)" stroke-width="1.6" opacity=".7"/>
+  </svg>
+  <span class="k mono">A</span>
+  <div class="l">AUTO PREP</div>
+  <div class="h">Every step, from your standard</div>
+</div>
+
+<div class="tools">
+  <div><div class="rb" style="--c:#2ee6ff"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2ee6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></div><div class="rbl">UNDO</div></div>
+  <div><div class="rb off" style="--c:#2ee6ff"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></div><div class="rbl">REDO</div></div>
+</div>
+<div style="position:absolute;left:1484px;top:150px;width:130px;display:flex;gap:6px">
+  <span class="t2" style="width:130px;justify-content:center"><i style="background:#9b6bff;box-shadow:0 0 8px #9b6bff"></i>HISTORY · 14</span>
+</div>
+
+<div class="groove"></div>
+
+<div class="tp">
+  <div class="nav"><svg width="14" height="14" viewBox="0 0 24 24" fill="#9aa0a8"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></div>
+  <div class="play"><svg width="24" height="24" viewBox="0 0 24 24" fill="#3dffd2" style="filter:drop-shadow(0 0 6px #3dffd2)"><path d="M7 4v16l13-8z"/></svg></div>
+  <div class="nav"><svg width="14" height="14" viewBox="0 0 24 24" fill="#9aa0a8"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></div>
+  <div class="lcd">
+    <div class="t mono">0:46.047</div>
+    <div class="i mono">HIT <b>23</b> · VEL <b>4</b> · RR <b>5</b></div>
+    <svg width="96" height="46" viewBox="0 0 96 46"><defs><linearGradient id="lw" x1="0" x2="1"><stop offset="0" stop-color="#2ee6ff"/><stop offset=".5" stop-color="#9b6bff"/><stop offset="1" stop-color="#ff3da8" stop-opacity=".3"/></linearGradient></defs>
+      <path d="M2 23C6 23 7 2 10 2s4 42 7 42 4-34 7-34 4 26 7 26 4-18 7-18 4 12 8 12 5-7 9-7 6 4 11 4 8-1 12-2 9 0 10 0" fill="none" stroke="url(#lw)" stroke-width="1.8" style="filter:drop-shadow(0 0 4px rgba(155,107,255,.8))"/></svg>
+  </div>
+  <div class="ab"><span>A</span><span class="on">B</span><span class="w">A→B</span></div>
+  <div class="modes">
+    <div class="m" style="--c:#2ee6ff"><svg width="30" height="22" viewBox="0 0 30 22" fill="none" stroke="#2ee6ff" stroke-width="2.2" stroke-linecap="round"><path d="M2 14h7l3-12 3 18 3-10 2 4h8"/></svg><span class="ml">HIT</span></div>
+    <div class="m on" style="--c:#9b6bff"><svg width="30" height="22" viewBox="0 0 30 22" fill="none" stroke="#9b6bff" stroke-width="2.2" stroke-linecap="round"><path d="M4 4v14M10 4v14M16 4v14M22 4v14M28 4v14"/></svg><span class="ml">LAYER</span></div>
+    <div class="m" style="--c:#ff3da8"><svg width="30" height="22" viewBox="0 0 30 22" fill="none" stroke="#ff3da8" stroke-width="2.2" stroke-linecap="round"><path d="M3 17v3M9 13v7M15 9v11M21 5v15M27 2v18"/></svg><span class="ml">SWEEP</span></div>
+    <div class="m" style="--c:#3dffd2"><svg width="30" height="22" viewBox="0 0 30 22" fill="#3dffd2"><circle cx="4" cy="16" r="2.6"/><circle cx="11" cy="8" r="2"/><circle cx="15" cy="16" r="2.6"/><circle cx="22" cy="12" r="1.6"/><circle cx="26" cy="16" r="2.6"/></svg><span class="ml">GROOVE</span></div>
+    <div class="m" style="--c:#ffb23e"><svg width="30" height="22" viewBox="0 0 30 22" fill="none" stroke="#ffb23e" stroke-width="2.2" stroke-linecap="round"><path d="M3 20 13 4M9 20 19 4"/><path d="M20 18h2M24 18h2M28 18h1" /></svg><span class="ml">RUDIMENTS</span></div>
+    <div class="m" style="--c:#7cff9b"><svg width="26" height="22" viewBox="0 0 26 22" fill="none" stroke="#7cff9b" stroke-width="2"><circle cx="13" cy="11" r="9"/><g fill="#7cff9b" stroke="none"><circle cx="8" cy="10" r="1.5"/><circle cx="18" cy="10" r="1.5"/><circle cx="10" cy="6" r="1.5"/><circle cx="16" cy="6" r="1.5"/><circle cx="13" cy="5" r="1.5"/></g></svg><span class="ml">MIDI</span></div>
+    <div class="m" style="--c:#ff7ad9"><svg width="32" height="22" viewBox="0 0 32 22" fill="none" stroke="#ff7ad9" stroke-width="2"><circle cx="11" cy="11" r="8"/><circle cx="21" cy="11" r="8"/></svg><span class="ml">MONO</span></div>
+  </div>
+  <div class="tg" style="flex-direction:column;gap:6px">
+    <div class="tg"><span class="t2 on"><i></i>LOOP</span><span class="t2"><i></i>FOLLOW</span></div>
+    <div class="tg"><span class="t2 on"><i></i>LM</span><span class="t2"><i></i>PADS</span></div>
+  </div>
+  <div class="meters">
+    <div class="corr"><div class="bar"></div><div class="lb"><span>−1</span><span>PHASE</span><span>+1</span></div></div>
+    <div class="vu"><i style="height:78%"></i><i style="height:70%"></i></div>
+  </div>
+</div>
+
+<div class="below">
+  <svg width="1652" height="230" viewBox="0 0 1652 230">
+    <defs><linearGradient id="wv" x1="0" x2="1"><stop offset="0" stop-color="#2ee6ff"/><stop offset=".5" stop-color="#9b6bff"/><stop offset="1" stop-color="#ff3da8"/></linearGradient></defs>
+    <path d="M0 70H1652M0 160H1652" stroke="#1a1b20"/>
+  </svg>
+  <div class="cap">THE SCREEN · NEXT MOCKUP</div>
+</div>
+</body></html>
