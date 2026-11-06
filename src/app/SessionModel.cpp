@@ -94,6 +94,12 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
         info.blocksPerSecond = sr / block;
         const size_t nb = mono.size() / (size_t) block;
         info.peaks.resize (nb);
+        for (size_t b = 0; b < nb; ++b)
+        {
+            float pk = 0;
+            for (size_t n = b * (size_t) block, e = n + (size_t) block; n < e; ++n) pk = std::max (pk, std::abs (mono[n]));
+            info.peaks[b] = pk;
+        }
         const bool leveled = map[i] >= 0 && es->mix && es->levels && es->levels->valid;
         if (leveled)
         {
@@ -103,6 +109,8 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
             const auto& proc = es->mix->proc[(size_t) t];
             const long lagInt = (long) std::lround (t == S->refIdx ? 0.0 : S->tracks[(size_t) t].lag);
             const double trim = std::pow (10.0, L.trimDb / 20);
+            info.peaksB.assign (nb, 0.0f);
+            std::vector<float> gk; for (double g : L.gainsDbT[(size_t) t]) gk.push_back ((float) (std::pow (10.0, g / 20) * trim));
             size_t k = 0;
             for (size_t b = 0; b < nb; ++b)
             {
@@ -114,18 +122,11 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
                     if (src < 0 || src >= (long) proc[0].size()) continue;
                     float a = 0;
                     for (auto& c : proc) a = std::max (a, std::abs (c[(size_t) src]));
-                    pk = std::max (pk, a * (float) (std::pow (10.0, L.gainsDbT[(size_t) t][k] / 20) * trim));
+                    pk = std::max (pk, a * gk[k]);
                 }
-                info.peaks[b] = pk;
+                info.peaksB[b] = pk;
             }
         }
-        else
-            for (size_t b = 0; b < nb; ++b)
-            {
-                float pk = 0;
-                for (size_t n = b * (size_t) block, e = n + (size_t) block; n < e; ++n) pk = std::max (pk, std::abs (mono[n]));
-                info.peaks[b] = pk;
-            }
         m.length = std::max (m.length, (double) mono.size() / sr);
         m.tracks.push_back (std::move (info));
     }

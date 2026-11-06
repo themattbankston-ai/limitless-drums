@@ -52,7 +52,26 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
         if (k == "loop") loopOn = ! loopOn;
         else if (k == "follow") followOn = ! followOn;
         else if (k == "lm") lmOn = ! lmOn;
+        else if (k == "rudiments") { rudimentsOn = ! rudimentsOn; playModeName = "groove"; }
         else if (k == "pads") { padsOn = false; setNotice ("The pads come with the screen, next."); }
+        updateHeader();
+    };
+    studio.onMoveTrack = [this] (int from, int to)
+    {
+        auto tracks = audioTracks();
+        if (! edit || from < 0 || from >= (int) tracks.size() || to < 0 || to >= (int) tracks.size()) return;
+        // preceding track after the move: the one that will sit just above `to`
+        te::Track* preceding = nullptr;
+        if (to > 0) preceding = tracks[(size_t) (to > from ? to : to - 1)];
+        edit->moveTrack (tracks[(size_t) from], te::TrackInsertPoint (nullptr, preceding));
+        if (from < (int) currentRoles.size() && to < (int) currentRoles.size())
+        {
+            auto r = currentRoles[(size_t) from];
+            currentRoles.erase (currentRoles.begin() + from);
+            currentRoles.insert (currentRoles.begin() + to, r);
+        }
+        studio.selectedTrack = to;
+        refreshModel();
         updateHeader();
     };
     studio.onSelectTrack = [this] (int i) { if (audition) audition->setMonitorTrack (engineIndexOf (i)); updateHeader(); };
@@ -245,6 +264,39 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
     });
 }
 
+/** The tracks as Hitline lays them out: the lead first, every mic named for what it is (Top, Room Far), so the
+    strips, the console and the files agree with the engine. Only while nothing has been edited yet. */
+void MainComponent::adoptEngineOrder()
+{
+    if (! edit || ! engineState || edit->hasChangedSinceSaved()) return;
+    const auto& S = engineState->session;
+    const auto files = editFiles (*edit);
+    std::vector<MicFile> mics;
+    std::vector<MicRole> roles;
+    for (auto& tr : S.tracks)
+        for (auto& f : files)
+            if (f.getFileNameWithoutExtension().toStdString() == tr.name)
+            {
+                mics.push_back ({ juce::String (tr.mic), f });
+                roles.push_back (classifyMic (juce::String (S.drum == "kit" ? std::string() : S.drum + " ") + juce::String (tr.mic)));
+            }
+    if (mics.size() != files.size()) return;
+    auto names = [&] { juce::StringArray a; for (auto* t : audioTracks()) a.add (t->getName()); return a; };
+    juce::StringArray want; for (auto& m : mics) want.add (m.name);
+    if (names() == want) return;
+    auto fresh = createSessionEdit (engine, mics, 120.0, te::Edit::EditRole::forEditing);
+    if (fresh == nullptr) return;
+    edit->getTransport().stop (false, true);
+    edit->getUndoManager().removeChangeListener (this);
+    edit = std::move (fresh);
+    currentRoles = std::move (roles);
+    project::storeRoles (*edit, currentRoles);
+    edit->resetChangedStatus();
+    edit->getUndoManager().clearUndoHistory();
+    edit->getUndoManager().addChangeListener (this);
+    studio.selectedTrack = S.refIdx;
+}
+
 void MainComponent::refreshModel()
 {
     if (! edit) return;
@@ -275,6 +327,7 @@ void MainComponent::startPrep()
         {
             if (sp == nullptr || sp->prepGeneration != gen) return;
             sp->engineState = st;
+            sp->adoptEngineOrder();
             sp->refreshModel();
             const auto& S = st->session;
             if (! st->prepared) sp->prepping = false;
@@ -694,7 +747,7 @@ void MainComponent::startPhrase (const std::string& m)
     if (m == "hit") ev = modes::hit (S, sel);
     else if (m == "layer") ev = modes::layer (S, sel);
     else if (m == "sweep") ev = modes::sweep (S, sel);
-    else if (m == "groove") ev = modes::groove (S);
+    else if (m == "groove") ev = rudimentsOn ? modes::rudiments (S) : modes::groove (S);
     else if (m == "mono") { ev = modes::hit (S, sel); o.mono = true; }
     else if (m == "midi")
     {
@@ -811,7 +864,7 @@ void MainComponent::updateHeader()
     h.chain = chainAB;
     h.playing = audition && audition->isPlaying();
     h.mode = playModeName;
-    h.loop = loopOn; h.follow = followOn; h.lm = lmOn; h.pads = padsOn;
+    h.loop = loopOn; h.follow = followOn; h.lm = lmOn; h.pads = padsOn; h.rudiments = rudimentsOn;
     h.canUndo = edit && edit->getUndoManager().canUndo();
     h.canRedo = edit && edit->getUndoManager().canRedo();
     h.historyCount = edit ? edit->getUndoManager().getNumActionsInCurrentTransaction() + (int) edit->getUndoManager().getUndoDescriptions().size() : 0;
@@ -836,7 +889,7 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
     if (code == KC::H) { playMode ("hit"); return true; }
     if (code == KC::L) { playMode ("layer"); return true; }
     if (code == KC::V) { playMode ("sweep"); return true; }
-    if (code == KC::G) { playMode ("groove"); return true; }
+    if (code == KC::G) { if (k.isShiftDown()) { rudimentsOn = ! rudimentsOn; playModeName = "groove"; updateHeader(); } else playMode ("groove"); return true; }
     if (code == KC::M) { playMode ("mono"); return true; }
     if (code == KC::O) { loopOn = ! loopOn; updateHeader(); return true; }
     if (code == KC::A) { if (edit && ! prepping) startPrep(); return true; }
@@ -905,7 +958,7 @@ void MainComponent::timerCallback()
         if (studio.selectedHit != lastSelected)
         {
             lastSelected = studio.selectedHit;
-            if (followOn && ! playingNow && engineState && engineState->mix) startPhrase ("hit");
+            if (followOn && engineState && engineState->mix) { playModeName = playModeName == "mono" ? "mono" : "hit"; startPhrase (playModeName); }
         }
         if (playingNow != h.playing || playingNow || (++autosaveTicks % 15) == 0) { if (playingNow) pushConsole(); updateHeader(); }
     }

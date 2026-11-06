@@ -70,6 +70,7 @@ private:
     bool exporting = false;
     std::unique_ptr<Audition> audition;
     std::string playModeName = "hit";
+    bool rudimentsOn = false;
     bool chainAB = false, loopOn = false, followOn = true, lmOn = true, padsOn = false, prepping = false;
     int lastSelected = -2;
     std::vector<modes::MidiNote> midiNotes;
@@ -82,6 +83,7 @@ private:
     void openTake (int index);
     void startPrep();
     void refreshModel();
+    void adoptEngineOrder();
     void exportTake();
     void exportOneShotFile();
     void playMode (const std::string& mode);

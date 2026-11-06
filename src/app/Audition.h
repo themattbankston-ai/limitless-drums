@@ -17,9 +17,10 @@ namespace modes
     std::vector<PlayEvent> hit (const hl::Session&, int sel);
     std::vector<PlayEvent> layer (const hl::Session&, int sel);
     std::vector<PlayEvent> sweep (const hl::Session&, int sel);
-    /** Groove: two bars of hard quarter notes, sixteenths climbing through every velocity and round robin, then
-        the rudiment build (paradiddles, ghost notes, a triplet crescendo, flams and a roll), round robins at random. */
-    std::vector<PlayEvent> groove (const hl::Session&, double bpm = 90, double rudimentBpm = 100);
+    /** Groove: two bars of hard quarter notes, then sixteenths climbing through every velocity and round robin. */
+    std::vector<PlayEvent> groove (const hl::Session&, double bpm = 90, double unused = 100);
+    /** The rudiment build: paradiddles, ghost notes, a triplet crescendo, flams and a roll, round robins at random. */
+    std::vector<PlayEvent> rudiments (const hl::Session&, double bpm = 100);
     struct MidiNote { double at; int note, vel; };
     std::vector<MidiNote> parseMidi (const juce::MemoryBlock&, juce::String& error);
     std::vector<PlayEvent> midi (const hl::Session&, const std::vector<MidiNote>&);

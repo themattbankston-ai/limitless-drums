@@ -70,9 +70,18 @@ std::vector<PlayEvent> groove (const hl::Session& S, double bpm, double rbpm)
         for (int v = 0; v < V; ++v)
             for (int r : (bag = rrShuffle (RR, prev))) { prev = r; if (const int i = hitAt (S, v, r); i >= 0) ev.push_back ({ t, i, v }); t += s16; }
     }
-    // then the rudiment build (Hitline's rudimentEvents), a bar after the groove's last note
+    (void) rbpm;
+    return ev;
+}
+
+std::vector<PlayEvent> rudiments (const hl::Session& S, double rbpm)
+{
+    if (! okCounts (S)) return {};
+    const int V = S.det.V, RR = S.det.RR;
+    std::vector<PlayEvent> ev;
+    // the rudiment build (Hitline's rudimentEvents)
     {
-        const double q = 60 / rbpm, start = (ev.empty() ? 0 : ev.back().at) + 4 * q;
+        const double q = 60 / rbpm, start = 0;
         std::map<int, int> last;
         std::vector<PlayEvent> ru;
         auto jitter = [] (double a) { return (uni() + uni() + uni() - 1.5) * a; };

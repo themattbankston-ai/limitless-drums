@@ -17,7 +17,8 @@ struct TrackInfo
     unsigned colourA = 0xff2ee6ff, colourB = 0xff4c8dff;
     bool solo = false, mute = false;
     float volumeDb = 0.0f, pan = 0.0f;
-    std::vector<float> peaks;         ///< max |sample| per block
+    std::vector<float> peaks;         ///< max |sample| per block, the recording (A)
+    std::vector<float> peaksB;        ///< the same, processed and on its levels (B); empty until ready
     double blocksPerSecond = 750.0;
 };
 
@@ -57,7 +58,7 @@ struct HeaderState
     std::vector<float> hitWave;       ///< the selected hit, peak per point, for the readout
     bool processed = true, chain = false, playing = false, prepping = false;
     std::string mode = "hit";
-    bool loop = false, follow = true, lm = true, pads = false;
+    bool loop = false, follow = true, lm = true, pads = false, rudiments = false;
     float phase = NAN, meterL = 0, meterR = 0;
     std::string monitorMic;           ///< the mic the heart monitor follows
     int velocities = 6;
@@ -100,6 +101,7 @@ public:
     std::function<void (int)> onAB;                    ///< 0 = A, 1 = B, 2 = A then B
     std::function<void (const std::string&)> onMode, onToggle;
     std::function<void (int)> onSelectTrack;           ///< the mic the heart monitor follows
+    std::function<void (int, int)> onMoveTrack;        ///< from, to (track order)
     std::function<void (double)> onSeek;
     std::function<void (int, bool)> onSolo, onMute;
     std::function<void (int, float)> onVolume, onPan;
@@ -135,6 +137,7 @@ public:
     HeaderState hdr;
     std::vector<float> monLevel; std::vector<int> monVel; int monHead = 0;
     int selectedTrack = 0;
+    float abMix = 1;                  ///< lanes: 0 = the recording, 1 = processed
 
     float laneHeight() const;
     float screenContentTop() const;   ///< y (in screen coords) where lanes start

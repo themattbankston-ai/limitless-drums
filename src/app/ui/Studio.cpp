@@ -338,7 +338,7 @@ struct Studio::Header : visage::Frame
             draw::text (c, stepName[i], uiFont (X (17)), Font::kCenter, X (x), X (y + 14), X (w), X (22));
             icon (c, "step" + std::to_string (i) + (dim ? "d" : ""), stepSvg (i), X (x + w / 2 - 36), X (y + 46), X (72), X (56));
             c.setColor (draw::withAlpha (col, dim ? 0.4f : 0.85f));
-            const auto st = H.status[i];
+            const auto st = i == 0 && ! studio.data.hasSession ? std::string ("CLICK TO IMPORT") : H.status[i];
             draw::spaced (c, st, monoBold (X (10.5f)), X (x + w / 2) - textWidth (monoBold (X (10.5f)), st) / 2 - st.size() * X (0.7f), X (y + h - 26), X (14), X (1.4f));
             if (H.done[i]) { glowBox (c, x + w - 17, y + 11, 6, 6, 3, col, 0.8f, 8); c.setColor (col); c.circle (X (x + w - 17), X (y + 11), X (6)); }
         }
@@ -433,14 +433,15 @@ struct Studio::Header : visage::Frame
 
         // transport
         c.setColor (Color (0xff8b9099));
-        c.triangleLeft (X (44), X (226), X (12));
-        c.fill (X (42), X (226), X (2), X (12));
-        c.triangleRight (X (182), X (226), X (12));
-        c.fill (X (194), X (226), X (2), X (12));
+        // previous: bar + triangle pointing left, centred on the cap (52, 232); next mirrored on (184, 232)
+        c.fill (X (45), X (226), X (2.2f), X (12));
+        c.triangle (X (58), X (226), X (58), X (238), X (48), X (232));
+        c.fill (X (190.8f), X (226), X (2.2f), X (12));
+        c.triangle (X (178), X (226), X (178), X (238), X (188), X (232));
         ringLight (118, 232, 78, 0xff3dffd2, H.playing ? 1.0f : 0.7f);
         c.setColor (Color (0xffc9fff2));
-        if (H.playing) { c.roundedRectangle (X (109), X (223), X (7), X (18), X (1.5f)); c.roundedRectangle (X (121), X (223), X (7), X (18), X (1.5f)); }
-        else c.triangleRight (X (110), X (220), X (24));
+        if (H.playing) { c.roundedRectangle (X (110), X (223), X (6.5f), X (18), X (1.5f)); c.roundedRectangle (X (121.5f), X (223), X (6.5f), X (18), X (1.5f)); }
+        else c.triangle (X (112), X (220), X (112), X (244), X (132), X (232));   // optical centre a little right of the geometric one
 
         // readout: velocity and round robin first
         {
@@ -504,7 +505,8 @@ struct Studio::Header : visage::Frame
             }
             icon (c, std::string ("mode") + modeId[i], modeSvg (i), X (x + w / 2 - 16), X (y + 12), X (32), X (22));
             c.setColor (draw::withAlpha (col, on ? 1.0f : 0.65f));
-            draw::text (c, modeName[i], boldFont (X (9.5f)), Font::kCenter, X (x), X (y + 40), X (w), X (12));
+            const std::string nm = i == 3 ? (H.rudiments ? "\xe2\x80\xb9 RUDIMENTS \xe2\x80\xba" : "\xe2\x80\xb9 GROOVE \xe2\x80\xba") : modeName[i];
+            draw::text (c, nm, boldFont (X (i == 3 && H.rudiments ? 8.2f : 9.5f)), Font::kCenter, X (x), X (y + 40), X (w), X (12));
         }
 
         pill (c, 1208, 200, 92, "LOOP", H.loop, 0xff3dffd2);
@@ -562,7 +564,12 @@ struct Studio::Header : visage::Frame
         auto in = [&] (float x, float y, float w, float h) { return px >= x && px < x + w && py >= y && py < y + h; };
         auto near = [&] (float cx, float cy, float r) { return (px - cx) * (px - cx) + (py - cy) * (py - cy) < r * r; };
         for (int i = 0; i < 7; ++i)
-            if (in (272 + 138 * i, 18, 128, 142)) { if (studio.onStepClicked) studio.onStepClicked ((Step) i); return; }
+            if (in (272 + 138 * i, 18, 128, 142))
+            {
+                if (i == 0 && ! studio.data.hasSession) { if (studio.onImport) studio.onImport(); return; }
+                if (studio.onStepClicked) studio.onStepClicked ((Step) i);
+                return;
+            }
         if (in (1244, 18, 214, 142)) { if (studio.onAutoPrep) studio.onAutoPrep(); return; }
         if (near (1506, 62, 32)) { if (studio.onUndo) studio.onUndo(); return; }
         if (near (1578, 62, 32)) { if (studio.onRedo) studio.onRedo(); return; }
@@ -571,6 +578,7 @@ struct Studio::Header : visage::Frame
         if (near (118, 232, 38)) { if (studio.onPlay) studio.onPlay(); return; }
         if (near (184, 232, 22)) { if (studio.onNextHit) studio.onNextHit(); return; }
         for (int i = 0; i < 3; ++i) if (in (528 + 50 * i, 210, 50, 44)) { if (studio.onAB) studio.onAB (i); return; }
+        if (in (694 + 84 * 3, 201 + 38, 76, 24)) { if (studio.onToggle) studio.onToggle ("rudiments"); return; }
         for (int i = 0; i < 6; ++i) if (in (694 + 84 * i, 201, 76, 62)) { if (studio.onMode) studio.onMode (modeId[i]); return; }
         const char* tg[4] = { "loop", "follow", "lm", "pads" };
         const float tx[4] = { 1208, 1306, 1208, 1306 }, ty[4] = { 200, 200, 236, 236 };
@@ -742,8 +750,10 @@ struct Studio::Screen : visage::Frame
         c.setColor (draw::withAlpha (tr.colourA, 0.28f));
         c.fill (0, mid, width(), 1);
 
+        const float mixB = tr.peaksB.size() == tr.peaks.size() ? studio.abMix : 0.0f;
+        auto peakAt = [&] (size_t b) { return mixB <= 0 ? tr.peaks[b] : tr.peaks[b] + (tr.peaksB[b] - tr.peaks[b]) * mixB; };
         float lanePeak = 0.0f;
-        for (float p : tr.peaks) lanePeak = std::max (lanePeak, p);
+        for (size_t b = 0; b < tr.peaks.size(); ++b) lanePeak = std::max (lanePeak, peakAt (b));
         const float vz = lanePeak > 0 ? std::clamp (0.9f / lanePeak, 1.0f, 12.0f) : 1.0f;
         const float amp = lh * 0.44f;
         const double bps = tr.blocksPerSecond, pps = studio.view.pixelsPerSecond;
@@ -761,7 +771,7 @@ struct Studio::Screen : visage::Frame
             b0 = std::max (0, b0);
             b1 = std::clamp (b1, b0 + 1, nb);
             float p = 0.0f;
-            for (int b = b0; b < b1; ++b) p = std::max (p, tr.peaks[(size_t) b]);
+            for (int b = b0; b < b1; ++b) p = std::max (p, peakAt ((size_t) b));
             const float a = std::min (1.0f, p * vz) * amp;
             if (a < 0.6f) continue;
             c.setColor (glow.withAlpha (0.22f * dim));
@@ -968,6 +978,11 @@ struct Studio::Strips : visage::Frame
             button (muteBox (i), "M", tr.mute, neon::red);
         }
         c.setClampBounds (0, 0, width(), height());
+        if (dragging && dropAt >= 0)
+        {
+            const float lh = studio.laneHeight(), y = studio.screenContentTop() - studio.view.scrollY + dropAt * lh;
+            c.setColor (Color (neon::cyan)); c.roundedRectangle (4, y - 1.5f, width() - 8, 3, 1.5f);
+        }
     }
 
     void mouseDown (const visage::MouseEvent& e) override
@@ -979,8 +994,26 @@ struct Studio::Strips : visage::Frame
             if (soloBox (i).contains (e.position)) { if (studio.onSolo) studio.onSolo (i, ! d.tracks[(size_t) i].solo); return; }
             if (muteBox (i).contains (e.position)) { if (studio.onMute) studio.onMute (i, ! d.tracks[(size_t) i].mute); return; }
             if (strip (i).contains (e.position) && e.repeatClickCount() >= 2 && studio.onRename) { studio.onRename (i); return; }
-            if (strip (i).contains (e.position)) { studio.selectedTrack = i; if (studio.onSelectTrack) studio.onSelectTrack (i); studio.redrawAll(); return; }
+            if (strip (i).contains (e.position)) { studio.selectedTrack = i; dragFrom = i; dragY = e.position.y; dragging = false; if (studio.onSelectTrack) studio.onSelectTrack (i); studio.redrawAll(); return; }
         }
+    }
+
+    int dragFrom = -1, dropAt = -1; float dragY = 0; bool dragging = false;
+    void mouseDrag (const visage::MouseEvent& e) override
+    {
+        if (dragFrom < 0) return;
+        if (! dragging && std::abs (e.position.y - dragY) < 6) return;
+        dragging = true;
+        const float lh = studio.laneHeight(), top = studio.screenContentTop() - studio.view.scrollY;
+        dropAt = std::clamp ((int) std::floor ((e.position.y - top) / lh + 0.5f), 0, (int) studio.data.tracks.size());
+        redraw();
+    }
+    void mouseUp (const visage::MouseEvent&) override
+    {
+        if (dragging && dropAt >= 0 && dropAt != dragFrom && dropAt != dragFrom + 1 && studio.onMoveTrack)
+            studio.onMoveTrack (dragFrom, dropAt > dragFrom ? dropAt - 1 : dropAt);
+        dragFrom = dropAt = -1; dragging = false;
+        redraw();
     }
 
     bool mouseWheel (const visage::MouseEvent& e) override
@@ -1446,10 +1479,12 @@ struct Studio::Footer : visage::Frame
         const auto& d = studio.data;
         const float h = height();
         float x = 0;
+        const float limit = width() - 300;   // the zoom, theme and history controls own the right side
         auto chip = [&] (const std::string& txt, unsigned col, bool ledOn, unsigned ledCol)
         {
             const auto f = bodyFont (12);
             const float w = textWidth (f, txt) + (ledOn ? 34 : 22);
+            if (x + w > limit) { x = limit + 1; return; }
             c.setColor (studio.day ? 0xffcfd3d9 : 0xff15171b);
             c.roundedRectangle (x, 4, w, h - 8, 6);
             c.setColor (studio.day ? 0x22000000 : 0x10ffffff);
@@ -1472,7 +1507,7 @@ struct Studio::Footer : visage::Frame
         }
         const std::string status = ! studio.notice.empty() ? studio.notice : studio.device;
         c.setColor (ch.inkDim);
-        c.setClampBounds (x + 4, 0, std::max (0.0f, width() - 280 - x), h);
+        c.setClampBounds (x + 4, 0, std::max (0.0f, limit - x), h);
         draw::text (c, status, bodyFont (12), Font::kLeft, x + 6, 0, width(), h);
         c.setClampBounds (0, 0, width(), h);
 
@@ -1711,6 +1746,8 @@ void Studio::setTransport (double seconds, bool isPlaying)
 void Studio::tick (double t)
 {
     now = t;
+    const float abTarget = hdr.processed ? 1.0f : 0.0f;
+    if (std::abs (abMix - abTarget) > 0.001f) { abMix += (abTarget - abMix) * 0.22f; if (std::abs (abMix - abTarget) < 0.01f) abMix = abTarget; screen->redraw(); }
     header->redraw();
     screen->overlay.redraw();
 
