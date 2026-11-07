@@ -34,8 +34,9 @@ def rack():
     box('cavity', 0, 0, 318, 664, 0.05, -0.2, 0.001, 0.001, mat_principled('cav', (0.006, 0.006, 0.008), 0.7))
     for rx in (2, 318 - 16):
         box('rail', rx, 0, 14, 664, 0.05, -0.15, 0.002, 0.006, P.metal('rail', (0.08, 0.08, 0.09), 0.4, brushed=True, scale=10))
+    R.ANOD = P.metal('anods2', (0.42, 0.43, 0.46), 0.5, brushed=True, scale=28)     # the reference deck: light brushed aluminium
     mref = module('ref', 364, 100)
-    R.ANOD = P.metal('anodr', (0.03, 0.03, 0.045), 0.28, brushed=True, scale=28)   # the reverbs: deep blue-black
+    R.ANOD = P.metal('anodp', (0.07, 0.012, 0.06), 0.28, brushed=True, scale=28)   # the reverbs: deep plum
     mverb = module('verb', 470, 188)
     R.ANOD = P.metal('anodc', (0.055, 0.03, 0.016), 0.28, brushed=True, scale=28)  # the strip: dark copper
     mtone = module('tone', 6, 196)
