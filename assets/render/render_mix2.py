@@ -38,7 +38,9 @@ def rack():
     R.ANOD = P.metal('anodr', (0.03, 0.03, 0.045), 0.28, brushed=True, scale=28)   # the reverbs: deep blue-black
     mverb = module('verb', 470, 188)
     R.ANOD = P.metal('anodc', (0.055, 0.03, 0.016), 0.28, brushed=True, scale=28)  # the strip: dark copper
-    mtone = module('tone', 6, 196); mshape = module('shape', 208, 150)
+    mtone = module('tone', 6, 196)
+    R.ANOD = P.metal('anodo', (0.075, 0.016, 0.018), 0.28, brushed=True, scale=28)  # the transient designer: oxblood
+    mshape = module('shape', 208, 150)
     for (x, y, w, h), m in [((208, 30, 84, 24), mtone), ((26, 60, 266, 72), mtone), ((26, 228, 266, 40), mshape),
                             ((26, 382, 150, 48), mref), ((30, 492, 122, 22), mverb), ((166, 492, 122, 22), mverb)]:
         window(m, x, y, w, h, depth=0.06)
@@ -79,4 +81,4 @@ def strip():
 
 if __name__ == "__main__":
     if os.environ.get("LD_ONLY") != "strip": rack()
-    strip()
+    if os.environ.get("LD_ONLY") != "rack": strip()
