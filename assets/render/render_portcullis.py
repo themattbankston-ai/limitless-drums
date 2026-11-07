@@ -21,17 +21,17 @@ at = R.at
 # layout (panel px); the overlay uses the same numbers
 OPEN = dict(x0=340, x1=640, y_spring=182, y_bot=338, ry=76)      # the opening: straight jambs, elliptical arch on top
 GATE = dict(x0=344, x1=636, y0=96, y1=338, cols=9, rows=6)
-LANTERNS = [(274, 150), (706, 150)]                                # OPEN (green), CLOSED (red)
-THRESH = (138, 212, 50)
-KEYSRC = (836, 92, 150, 30)
-KEYBTN = [(764, 136, 66, 26), (842, 136, 66, 26)]
-KEYKNOB = [(790, 246, 22), (884, 246, 22)]
+LANTERNS = [(262, 150), (722, 150)]                                # OPEN (green), CLOSED (red)
+THRESH = (120, 212, 44)
+KEYSRC = (858, 92, 150, 30)
+KEYBTN = [(790, 132, 66, 26), (872, 132, 66, 26)]
+KEYKNOB = [(820, 252, 22), (912, 252, 22)]
 ROW = [100 + i * 130 for i in range(7)]; KY = 452
 TITLE = (490, 32)
-MEDAL = (138, 212, 96)
+MEDAL = (120, 212, 92)
 # stone plaques the labels are carved into: (centre x, centre y, w, h)
-PLAQUES = ([(x, KY - 48, 112, 22) for x in ROW] + [(138, 96, 112, 24), (836, 62, 132, 22), (790, 200, 86, 20), (884, 200, 86, 20),
-           (274, 216, 72, 22), (706, 216, 90, 22)])
+PLAQUES = ([(x, KY - 48, 112, 22) for x in ROW] + [(120, 100, 112, 24), (858, 50, 132, 22), (820, 204, 86, 20), (912, 204, 86, 20),
+           (262, 212, 72, 22), (722, 212, 90, 22)])
 
 def stone():
     m = bpy.data.materials.new('stone'); m.use_nodes = True; nt = m.node_tree; p = nt.nodes['Principled BSDF']
@@ -179,6 +179,11 @@ def build():
     tx.data.body = 'Portcullis'; tx.data.font = bpy.data.fonts.load(os.path.join(FONTS, 'PirataOne-Regular.ttf'))
     tx.data.size = 0.56; tx.data.align_x = 'CENTER'; tx.data.align_y = 'CENTER'; tx.data.extrude = 0.02; tx.data.bevel_depth = 0.004; tx.data.bevel_resolution = 2
     tx.data.materials.append(IRON)
+    # a white outline: the same word, fattened, sitting just behind the iron letters
+    bpy.ops.object.text_add(location=at(TITLE[0], TITLE[1] + 2, 0.13)); ol = bpy.context.object
+    ol.data.body = tx.data.body; ol.data.font = tx.data.font; ol.data.size = tx.data.size; ol.data.align_x = 'CENTER'; ol.data.align_y = 'CENTER'
+    ol.data.offset = 0.022; ol.data.extrude = 0.02; ol.data.bevel_depth = 0.004
+    ol.data.materials.append(mat_principled('outline', (0.92, 0.9, 0.86), 0.4, coat=0.3))
     # lanterns: green (open), red (closed)
     gON = HOT == 'open'; rON = HOT == 'closed'
     lantern(*LANTERNS[0], emissive('lg_g', (0.25, 1.0, 0.55), 12.0 if gON else 0.0, base=(0.04, 0.12, 0.07), rough=0.15, sss=0.6, coat=1.0))

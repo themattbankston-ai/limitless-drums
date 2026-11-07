@@ -70,6 +70,7 @@ function vise(X,Y,img,st){
    const k=0.55;g.save();g.shadowColor=AMBG;g.shadowBlur=8;g.strokeStyle=AMB;g.lineWidth=2;g.beginPath();g.moveTo(sx(tx+4),sy(ty+th-4,z));g.lineTo(sx(tx+tw*k),sy(ty+th-th*k+2,z));g.quadraticCurveTo(sx(tx+tw*k+10),sy(ty+th-th*k-4,z),sx(tx+tw-4),sy(ty+th*0.24,z));g.stroke();g.restore();
    const dotx=tx+tw*0.78,doty=ty+th*0.33;g.fillStyle='#fff';g.shadowColor=AMB;g.shadowBlur=10;g.beginPath();g.arc(sx(dotx),sy(doty,z),3,0,2*PI);g.fill();g.restore();
    surfText('CURVE',490,KY-48,0,'12px OPS',INK,{ls:1.6,wear:0.35});}
+  checkLayout('vise');
   // stencils on the yellow
   g.restore();
 }

@@ -9,11 +9,12 @@ const c=document.getElementById('c');c.width=SW*2;c.height=SH*2;c.style.width=SW
 const g=c.getContext('2d');g.scale(2,2);
 </script><script src="fp.js"></script><script>
 const A0=PI*0.75,ASP=PI*1.5;
+const PLQ=[...[0,1,2,3,4,5,6].map(i=>[100+i*130,404,112,22]),[120,100,112,24],[858,50,132,22],[820,204,86,20],[912,204,86,20],[262,212,72,22],[722,212,90,22]];
 const GRN='#6dffb0',GRNG='#1aff7a',RED='#ff4a3a';
-const OPEN={x0:340,x1:640,ys:182,yb:338,ry:76},LANT=[[274,150],[706,150]],THRESH=[138,212,50],KEYSRC=[836,92,150,30],KEYBTN=[[764,136,66,26],[842,136,66,26]],KEYKNOB=[[790,246,22],[884,246,22]],ROW=[0,1,2,3,4,5,6].map(i=>100+i*130),KY=452;
+const OPEN={x0:340,x1:640,ys:182,yb:338,ry:76},LANT=[[262,150],[722,150]],THRESH=[120,212,44],KEYSRC=[858,92,150,30],KEYBTN=[[790,132,66,26],[872,132,66,26]],KEYKNOB=[[820,252,22],[912,252,22]],ROW=[0,1,2,3,4,5,6].map(i=>100+i*130),KY=452;
 // carved into stone: dark cut with a lit lower lip
-function carved(t,px,py,size,ls=1.5,z=0){surfText(t,px,py+1.1,z,`700 ${size}px CZ`,'rgba(255,236,210,0.22)',{ls});surfText(t,px,py,z,`700 ${size}px CZ`,'rgba(6,5,4,0.92)',{ls});}
-function lit(t,px,py,size,col,glow,ls=1.5,z=0){surfText(t,px,py,z,`700 ${size}px CZ`,col,{ls,glow,blur:9});}
+function carved(t,px,py,size,ls=1.5,z=0,parent=null){surfText(t,px,py+1.1,z,`700 ${size}px CZ`,'rgba(255,236,210,0.22)',{ls,nolay:true});surfText(t,px,py,z,`700 ${size}px CZ`,'rgba(6,5,4,0.92)',{ls,parent});}
+function lit(t,px,py,size,col,glow,ls=1.5,z=0,parent=null){surfText(t,px,py,z,`700 ${size}px CZ`,col,{ls,glow,blur:9,parent});}
 function openingPath(z,grow=0){const o=OPEN,cx=(o.x0+o.x1)/2,rx=(o.x1-o.x0)/2+grow,ry=o.ry+grow;g.beginPath();g.moveTo(sx(o.x0-grow),sy(o.yb+grow,z));
   for(let i=0;i<=48;i++){const a=PI+PI*i/48;g.lineTo(sx(cx+Math.cos(a)*rx),sy(o.ys+Math.sin(a)*ry,z));}g.lineTo(sx(o.x1+grow),sy(o.yb+grow,z));g.closePath();}
 function ptr(px,py,z,r,a,col=GRN){const cx=sx(px),cy=sy(py,z);g.save();g.lineCap='round';g.shadowColor=GRNG;g.shadowBlur=8;g.strokeStyle=col;g.lineWidth=2.6;g.beginPath();g.moveTo(cx+Math.cos(a)*r*0.2*SX,cy+Math.sin(a)*r*0.2*SY);g.lineTo(cx+Math.cos(a)*r*0.95*SX,cy+Math.sin(a)*r*0.95*SY);g.stroke();g.restore();}
@@ -24,6 +25,12 @@ function portcullis(X,Y,img,st){
   const o=win(X,Y,1000,600,'TOM 1',1,GRN,'PORTCULLIS');BX=o.x;BY=o.y;
   g.save();rr(BX,BY,FW,FH,6);g.clip();
   g.drawImage(img.plate,BX,BY,FW,FH);
+  // the rendered parts, for the layout check (same numbers as render_portcullis.py)
+  PLQ.forEach(([x,y,w,h],i)=>layS('plaque'+i,x,y,w,h));
+  layS('arch',490,(66+352)/2,360,286);LANT.forEach(([x,y],i)=>layS('lantern'+i,x,y-28,68,144));
+  layC('medallion',THRESH[0],THRESH[1],92);layC('thresh knob',THRESH[0],THRESH[1],THRESH[2]*1.4,'medallion');
+  ROW.forEach((x,i)=>layC('knob'+i,x,KY,30));KEYKNOB.forEach(([x,y,r],i)=>layC('keyknob'+i,x,y,r*1.4));
+  layS('keysrc',KEYSRC[0],KEYSRC[1],KEYSRC[2]+12,KEYSRC[3]+12);KEYBTN.forEach(([x,y,w,h],i)=>layS('keybtn'+i,x+w/2,y+h/2,w+8,h+8));
   // the lit lantern (open green / closed red) and its glow on the stone
   const lamp=st.open>0.5?img.lopen:img.lclosed;g.globalCompositeOperation='lighter';g.drawImage(lamp,BX,BY,FW,FH);g.filter='blur(18px)';g.drawImage(lamp,BX,BY,FW,FH);g.filter='none';g.globalCompositeOperation='source-over';
   // ---- the display behind the gate
@@ -41,22 +48,23 @@ function portcullis(X,Y,img,st){
   g.restore();
   g.save();openingPath(0,6);g.clip();g.drawImage(img.gate,BX,BY-lift*SY,FW,FH);g.restore();
   // ---- lanterns' labels
-  st.open>0.5?lit('OPEN',LANT[0][0],216,12,GRN,GRNG):carved('OPEN',LANT[0][0],216,12);
-  st.open<0.5?lit('CLOSED',LANT[1][0],216,12,'#ff6a5a','#ff2a10'):carved('CLOSED',LANT[1][0],216,12);
+  st.open>0.5?lit('OPEN',LANT[0][0],212,12,GRN,GRNG,1.5,0.045,'plaque11'):carved('OPEN',LANT[0][0],212,12,1.5,0.045,'plaque11');
+  st.open<0.5?lit('CLOSED',LANT[1][0],212,12,'#ff6a5a','#ff2a10',1.5,0.045,'plaque12'):carved('CLOSED',LANT[1][0],212,12,1.5,0.045,'plaque12');
   // ---- THRESH
-  {const [px,py,r]=THRESH;ticksAround(px,py,76,81,25,'rgba(4,4,3,0.8)',1.6);
-   ['-60','-50','-40','-30','-20','-10','0'].forEach((t,i)=>{const a=A0+ASP*i/6;carved(t,px+Math.cos(a)*88,py+Math.sin(a)*87,10,0.3,0.03);});
-   g.save();g.lineCap='round';g.shadowColor=GRNG;g.shadowBlur=14;g.strokeStyle=GRN;g.lineWidth=3;g.beginPath();g.ellipse(sx(px),sy(py),72*SX,72*SY,0,A0,A0+ASP*st.thresh);g.stroke();g.restore();
-   ptr(px,py,0.29,r*0.6,A0+ASP*st.thresh);carved('THRESH',px,96,13,3,0.045);gnix(px,py+100,st.threshT,80);}
+  {const [px,py,r]=THRESH;ticksAround(px,py,66,70,25,'rgba(4,4,3,0.8)',1.4);
+   ['-60','-50','-40','-30','-20','-10','0'].forEach((t,i)=>{const a=A0+ASP*i/6;carved(t,px+Math.cos(a)*79,py+Math.sin(a)*79,9.5,0.2,0.03,'medallion');});
+   g.save();g.lineCap='round';g.shadowColor=GRNG;g.shadowBlur=14;g.strokeStyle=GRN;g.lineWidth=3;g.beginPath();g.ellipse(sx(px),sy(py),64*SX,64*SY,0,A0,A0+ASP*st.thresh);g.stroke();g.restore();
+   ptr(px,py,0.29,r*0.6,A0+ASP*st.thresh);carved('THRESH',px,100,13,3,0.045,'plaque7');gnix(px,py+108,st.threshT,80);}
   // ---- row
   [['RANGE',st.range,st.rangeT],['RATIO',0,'gate'],['HYST',0.3,'4 dB'],['ATTACK',0.15,'0.3 ms'],['HOLD',0.35,'40 ms'],['RELEASE',0.45,'120 ms'],['LOOK-AHEAD',0.4,'1.5 ms']].forEach(([l,v,t],i)=>{const px=ROW[i];
-    ticksAround(px,KY,34,38,11,'rgba(4,4,3,0.7)',1.2);ptr(px,KY,0.29,21*0.6,A0+ASP*v);carved(l,px,KY-48,11,1.2,0.045);gnix(px,KY+48,t,74);});
+    ticksAround(px,KY,34,38,11,'rgba(4,4,3,0.7)',1.2);ptr(px,KY,0.29,21*0.6,A0+ASP*v);carved(l,px,KY-48,11,1.2,0.045,'plaque'+i);gnix(px,KY+48,t,74);});
   // ---- key section
-  carved('KEY SOURCE',KEYSRC[0],62,11,2,0.045);
-  surfText(st.key,KEYSRC[0]-8,KEYSRC[1],0.06,'12px MB',GRN,{glow:GRNG,blur:6});surfText('▾',KEYSRC[0]+60,KEYSRC[1],0.06,'10px IM','rgba(109,255,176,0.7)');
-  ['LISTEN','FLIP'].forEach((t,i)=>{const [bx,by,bw,bh]=KEYBTN[i];st.keys[i]?lit(t,bx+bw/2,by+bh/2,11,GRN,GRNG,1.5,0.08):carved(t,bx+bw/2,by+bh/2,11,1.5,0.08);});
-  [['KEY HPF','80 Hz',0.3],['KEY LPF','8 kHz',0.75]].forEach(([l,t,v],i)=>{const [px,py,r]=KEYKNOB[i];ticksAround(px,py,35,39,11,'rgba(4,4,3,0.7)',1.2);ptr(px,py,0.29,r*0.6,A0+ASP*v);carved(l,px,200,10.5,1.2,0.045);gnix(px,py+46,t,70);});
+  carved('KEY SOURCE',KEYSRC[0],50,11,2,0.045,'plaque8');
+  surfText(st.key,KEYSRC[0]-8,KEYSRC[1],0.06,'12px MB',GRN,{glow:GRNG,blur:6,parent:'keysrc'});surfText('▾',KEYSRC[0]+60,KEYSRC[1],0.06,'10px IM','rgba(109,255,176,0.7)',{parent:'keysrc'});
+  ['LISTEN','FLIP'].forEach((t,i)=>{const [bx,by,bw,bh]=KEYBTN[i];st.keys[i]?lit(t,bx+bw/2,by+bh/2,11,GRN,GRNG,1.5,0.08,'keybtn'+i):carved(t,bx+bw/2,by+bh/2,11,1.5,0.08,'keybtn'+i);});
+  [['KEY HPF','80 Hz',0.3],['KEY LPF','8 kHz',0.75]].forEach(([l,t,v],i)=>{const [px,py,r]=KEYKNOB[i];ticksAround(px,py,35,39,11,'rgba(4,4,3,0.7)',1.2);ptr(px,py,0.29,r*0.6,A0+ASP*v);carved(l,px,204,10.5,1.2,0.045,'plaque'+(9+i));gnix(px,py+46,t,70);});
   // corner shading: torch-lit middle, dark corners
+  checkLayout('portcullis');
   const vg=g.createRadialGradient(BX+FW/2,BY+FH*0.45,FW*0.25,BX+FW/2,BY+FH/2,FW*0.65);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.45)');g.fillStyle=vg;g.fillRect(BX,BY,FW,FH);
   g.restore();
 }
