@@ -47,7 +47,7 @@ function ember(X,Y,img,st){
   knobA(510,KYA,'BANDWIDTH',null,st.bw,(st.bw*10).toFixed(1));knobA(610,KYA,'BOOST',null,st.hb,(st.hb*10).toFixed(1));
   knobA(750,KYA,'ATTEN SEL',['5','10','20'],st.as,['5','10','20'][st.as]+' kHz');knobA(860,KYA,'ATTEN',null,st.ha,(st.ha*10).toFixed(1));
   // ---- DRIVE / OUTPUT
-  [[DRIVE,'DRIVE',st.drive,st.driveT],[OUTPUT,'OUTPUT',st.out,st.outT]].forEach(([[px,py,r],l,v,t])=>{lay(l+' arc',px-47,py-47,px+47,py+33);eng(l,px,405.5,11,2);
+  [[DRIVE,'DRIVE',st.drive,st.driveT],[OUTPUT,'OUTPUT',st.out,st.outT]].forEach(([[px,py,r],l,v,t])=>{lay(l+' arc',px-46.5,py-46.5,px+46.5,py+33);eng(l,px,404.5,11,2);
     g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=12;g.strokeStyle=AMB;g.lineWidth=2.6;g.beginPath();g.ellipse(sx(px),sy(py),45*SX,45*SY,0,A0,A0+ASP*v);g.stroke();g.restore();
     ptr(px,py,0.29,r*0.78,A0+ASP*v);nixie(px,py+56,t,70,AMB,AMBG,'#0d0703');});
   // ---- push buttons with jewel lamps
