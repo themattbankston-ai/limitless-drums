@@ -21,11 +21,13 @@ at = R.at
 RADAR = (150, 238, 94)
 HDISP = (330, 70, 430, 220)              # x, y, w, h
 SLIP = (545, 338, 300, 34)               # centre x, centre y, w, h of the tube window
-SLOT = (882, 104, 16, 330)                # x, y, w, h of the throttle slot
+SLOT = (882, 100, 16, 312)                # x, y, w, h of the throttle slot
 LEVER_Y = SLOT[1] + SLOT[3] / 2          # lever rests at 100 % (the middle)
 BASS = (150, 462, 28)
-ANN = (364, 440, 150, 44)                # annunciator x, y, w, h
-WREAD = (654, 462, 150, 46)              # width read-out window
+HIGHK = [(393, 466, 24), (507, 466, 24)]  # High width, and the crossover it starts at
+ANN = (577, 444, 150, 44)
+DZUS = [(22, 22), (W - 22, 22), (22, H - 22), (W - 22, H - 22)]                # annunciator x, y, w, h
+WREAD = (890, 474, 110, 40)              # width read-out window, under the throttle
 TITLE = (150, 54, 190, 36)
 
 def alu():
@@ -72,7 +74,7 @@ def build():
     for x in range(20, W, 26):
         if not (300 < x < 790): SK.rivet(x, 100, 0.028); SK.rivet(x, 116, 0.028)
     for y in range(20, H, 26): SK.rivet(292, y, 0.028); SK.rivet(310, y, 0.028); SK.rivet(782, y, 0.028); SK.rivet(800, y, 0.028)
-    for (x, y) in ((22, 22), (W - 22, 22), (22, H - 22), (W - 22, H - 22), (545, 22), (545, H - 22)): dzus(x, y)
+    for (x, y) in DZUS: dzus(x, y)
     # radar: round bezel, recessed scope glass
     rx, ry, rr = RADAR; X, Y, _ = at(rx, ry)
     hole = cyl(X, Y, rr * U, 0.6, 0.0, 128); cut(plate, hole)
@@ -98,15 +100,16 @@ def build():
     hd = box('lv_handle', tx + tw / 2 - 46, LEVER_Y - 15, 92, 30, 0.22, 0.56, 0.08, 0.02, mat_principled('handle', (0.02, 0.02, 0.022), 0.4, coat=0.5)); lever.append(hd)
     for i in range(5): lever.append(box('lv_rib', tx + tw / 2 - 30 + i * 15 - 2, LEVER_Y - 12, 4, 24, 0.24, 0.6, 0.01, 0.004, mat_principled('rib', (0.05, 0.05, 0.055), 0.5)))
     for o in lever: o.name = 'lever_' + o.name
-    # bass mono: avionics knob (knurled black, concentric)
-    bx_, by_, br = BASS; X, Y, _ = at(bx_, by_)
-    k = cyl(X, Y, br * U, 0.22, 0.12, 120, None, 0.0)
-    for v in k.data.vertices:
-        a = math.atan2(v.co.y, v.co.x); n = int(round((a + math.pi) / (2 * math.pi) * 120)) % 2
-        if n and abs(v.co.z) > -1: v.co.x *= 0.96; v.co.y *= 0.96
-    k.data.materials.append(BLACK); cyl(X, Y, br * U * 0.6, 0.06, 0.25, 96, P.radial_brushed('kc', (0.5, 0.5, 0.52), 0.3), 0.01)
-    cyl(X, Y, br * U * 1.4, 0.03, 0.0, 120, BLACK, 0.008)
-    # annunciator: a square lit push button in a black housing; width read-out window
+    # avionics knobs (knurled black, concentric): Bass mono, and High width + its crossover
+    for (bx_, by_, br) in [BASS] + HIGHK:
+        X, Y, _ = at(bx_, by_)
+        k = cyl(X, Y, br * U, 0.22, 0.12, 120, None, 0.0)
+        for v in k.data.vertices:
+            a = math.atan2(v.co.y, v.co.x); n = int(round((a + math.pi) / (2 * math.pi) * 120)) % 2
+            if n: v.co.x *= 0.96; v.co.y *= 0.96
+        k.data.materials.append(BLACK); cyl(X, Y, br * U * 0.6, 0.06, 0.25, 96, P.radial_brushed('kc%d' % bx_, (0.5, 0.5, 0.52), 0.3), 0.01)
+        cyl(X, Y, br * U * 1.4, 0.03, 0.0, 120, BLACK, 0.008)
+    # annunciator: a square lit push button in a black housing; width read-out window under the throttle
     ax, ay, aw, ah = ANN; box('annh', ax - 6, ay - 6, aw + 12, ah + 12, 0.08, 0.04, 0.03, 0.01, BLACK)
     box('annb', ax, ay, aw, ah, 0.06, 0.09, 0.02, 0.01, mat_principled('annglass', (0.06, 0.07, 0.065), 0.2, sss=0.4, coat=1.0))
     wx, wy, ww, wh = WREAD; window(plate, wx - ww / 2, wy - wh / 2, ww, wh, 0.1, GLASS); bezel_rect(wx - ww / 2, wy - wh / 2, ww, wh, 8, BLACK)
