@@ -517,7 +517,7 @@ void MainComponent::onAlignAction (const std::string& a, int mic, double v)
     {
         const auto mode = a.substr (7);
         alignOp ([mode] (hl::Session& s) { hl::setTiming (s, mode); },
-                 mode == "pro" ? "Vibe: every track as late as it sits on a real record." : mode == "natural" ? "Every track as recorded." : "Every track lined up tight with the lead.");
+                 mode == "pro" ? "Standard phase: every track as late as it sits on a real record." : mode == "natural" ? "Every track as recorded." : "Tight phase: every track lined up tight with the lead.");
         return;
     }
     if (a == "spread") { alignSpread = v != 0; refreshAlign(); return; }
@@ -584,7 +584,7 @@ void MainComponent::onAlignMenu (const std::string& which, float x, float y, flo
         static const std::vector<std::optional<hl::MixRender::Scan>> none;
         hl::ToneEngine E (S, none);
         const double T = E.proTarget (mic);
-        if (std::isfinite (T)) add ("pro", "Vibe (" + juce::String (T / S.sr * 1000, 1) + " ms late)");
+        if (std::isfinite (T)) add ("pro", "Standard phase (" + juce::String (T / S.sr * 1000, 1) + " ms late)");
     }
     m.addSeparator();
     for (const char* g : { "A", "B", "C", "D" })
@@ -601,7 +601,7 @@ void MainComponent::onAlignMenu (const std::string& which, float x, float y, flo
     {
         if (r <= 0 || r > (int) keys.size()) return;
         const auto to = keys[(size_t) r - 1];
-        alignOp ([mic, to] (hl::Session& s) { hl::setAlignTo (s, mic, to); }, "Lines up to " + juce::String (to == "none" ? "nothing: as recorded" : to == "lead" ? "the lead" : to == "pro" ? "the vibe" : "group " + to) + ".");
+        alignOp ([mic, to] (hl::Session& s) { hl::setAlignTo (s, mic, to); }, "Lines up to " + juce::String (to == "none" ? "nothing: as recorded" : to == "lead" ? "the lead" : to == "pro" ? "standard phase" : "group " + to) + ".");
     });
 }
 

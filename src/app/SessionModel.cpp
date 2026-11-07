@@ -254,7 +254,7 @@ ui::StudioModel::AlignView buildAlignView (const EngineState& es, int mic, int h
         m.changed = std::abs (tr.lag) > 0.01 || tr.pol < 0 || ! tr.ap.empty();
         m.status = tr.manualLag || tr.manualPol ? "manual" : m.changed ? "corrected" : "inphase";
         const auto& lead = S.tracks[(size_t) S.refIdx].mic;
-        m.to = tr.alignTo == "lead" ? lead + " (lead)" : tr.alignTo == "pro" ? std::string ("Vibe") : tr.alignTo == "none" ? std::string ("As recorded") : "Group " + tr.alignTo;
+        m.to = tr.alignTo == "lead" ? lead + " (lead)" : tr.alignTo == "pro" ? std::string ("Standard phase") : tr.alignTo == "none" ? std::string ("As recorded") : "Group " + tr.alignTo;
         const auto& res = tr.alignTo.size() == 1 ? tr.grp : tr.autoResult;
         m.eqAvail = res.has_value() && ! res->ap.empty();
         if (res && res->valid)

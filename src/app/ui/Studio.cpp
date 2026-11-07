@@ -1541,7 +1541,7 @@ struct Studio::Rack : visage::Frame
         }
 
         // the buttons
-        const struct { const char* t; float x; bool on; } btn[4] = { { "PER MIC", 26, ! lv.linked }, { "LINKED", 90, lv.linked }, { "EVEN", 166, ! lv.pro }, { "PRO", 230, lv.pro } };
+        const struct { const char* t; float x; bool on; } btn[4] = { { "PER MIC", 26, ! lv.linked }, { "LINKED", 90, lv.linked }, { "EVEN", 166, ! lv.pro }, { "STANDARD", 230, lv.pro } };
         for (auto& b : btn) { const Key kk { b.x, 190, 60, 30, "" }; keyLabel (c, kk, b.t, b.on, green); }
 
         // the knobs: the Level settings
@@ -1678,8 +1678,8 @@ struct Studio::Rack : visage::Frame
         c.setColor (live ? (A.fightingAfter ? hot : cool) : Color (0xff3e434b));
         draw::text (c, live ? std::to_string (A.fightingBefore) + " \xe2\x86\x92 " + std::to_string (A.fightingAfter) : std::string ("\xe2\x80\x94"), monoBold (S (11)),
                     Font::kCenter, X (204), Y (52), S (88), S (15));
-        keyLabel (c, keys[1], "TIGHT", A.timing == "tight", vio, live);
-        keyLabel (c, keys[2], "VIBE", A.timing == "pro", vio, live);
+        keyLabel (c, keys[1], "TIGHT PHASE", A.timing == "tight", vio, live);
+        keyLabel (c, keys[2], "STANDARD PHASE", A.timing == "pro", vio, live);
         keyLabel (c, keys[3], "AS RECORDED", A.timing == "natural", vio, live);
 
         // SCOPE: the two selectors
