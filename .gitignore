@@ -9,3 +9,4 @@ tools/parity/harness.html
 __pycache__/
 assets/render/out/sk/
 assets/render/out/vise/
+assets/render/out/port/
