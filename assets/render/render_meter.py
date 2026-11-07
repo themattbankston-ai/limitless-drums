@@ -10,7 +10,7 @@ os.environ['LD_ONLY'] = 'strip'
 import render_mix2 as M2
 
 W, H = 112, 690
-TUBES = { 'mono': [(80, 20)], 'stereo': [(71, 15), (90, 15)] }   # x (left), width; y 306 .. 646
+TUBES = { 'mono': [(80, 20)], 'stereo': [(71, 15), (90, 15)], 'bus': [(92, 19), (116, 19)] }   # x (left), width; y 306 .. 646
 
 def capsule(name, x, w, y0, y1, mat):
     r = w / 2 * U
@@ -23,12 +23,15 @@ def capsule(name, x, w, y0, y1, mat):
         s = bpy.context.object; bpy.ops.object.shade_smooth(); s.data.materials.append(mat)
 
 def scene():
+    global W
     R.W, R.H = W, H
     s = P.reset(); s.cycles.samples = 96
     M2.cam(s, W, H); M2.mats()
     return s
 
 def base(variant):
+    global W
+    W = 144 if variant == 'bus' else 112
     s = scene(); s.render.film_transparent = False
     box('cavity', 0, 0, W, H, 0.05, -0.2, 0.001, 0.001, mat_principled('cav', (0.006, 0.006, 0.008), 0.7))
     plate = P.metal('anods', (0.07, 0.072, 0.08), 0.36, brushed=True, scale=28)
@@ -36,16 +39,21 @@ def base(variant):
     chrome = P.metal('chrome', (0.8, 0.81, 0.84), 0.12)
     for x in (3, W - 5): box('edge', x, 6, 2, H - 12, 0.02, 0.003, 0.006, 0.003, chrome)   # chrome edges
     glass = mat_principled('sglass', (0.004, 0.004, 0.006), 0.1, coat=1.0)
-    for (x, y, w, h) in [(8, 8, 96, 24), (14, 652, 50, 22)]:
+    for (x, y, w, h) in ([(8, 8, 128, 24), (14, 652, 66, 22)] if variant == 'bus' else [(8, 8, 96, 24), (14, 652, 50, 22)]):
         box('g', x, y, w, h, 0.012, 0.004, 0.02, 0.004, glass)
     slot = mat_principled('slot', (0.003, 0.003, 0.004), 0.6)
-    box('slot', 30, 306, 8, 340, 0.012, 0.004, 0.02, 0.003, slot)
+    box('slot', 44 if variant == 'bus' else 30, 306, 8, 340, 0.012, 0.004, 0.02, 0.003, slot)
     # the channel behind the tube(s): a dark, satin trough
     trough = mat_principled('trough', (0.01, 0.01, 0.012), 0.45)
     for (x, w) in TUBES[variant]: box('t', x - 3, 300, w + 6, 352, 0.02, -0.002, 0.03, 0.004, trough)
-    for i in range(5): button(8, 40 + i * 26, 96, 22)
-    knob(32, 198, 11); knob(80, 198, 11); knob(56, 250, 13)
-    button(12, 276, 42, 20); button(58, 276, 42, 20)
+    if variant == 'bus':
+        for i in range(5): button(8, 40 + i * 26, 128, 22)
+        knob(40, 198, 12); knob(104, 198, 12); knob(72, 250, 14)
+        button(14, 276, 56, 20); button(74, 276, 56, 20)
+    else:
+        for i in range(5): button(8, 40 + i * 26, 96, 22)
+        knob(32, 198, 11); knob(80, 198, 11); knob(56, 250, 13)
+        button(12, 276, 42, 20); button(58, 276, 42, 20)
     M2.lights(s)
     P.render(s, 'strip_' + variant + '.png')
 
@@ -76,6 +84,19 @@ def glass(variant):
     w.node_tree.nodes['Background'].inputs[0].default_value = (0.05, 0.055, 0.065, 1); w.node_tree.nodes['Background'].inputs[1].default_value = 1.0
     P.render(s, 'tube_' + variant + '.png')
 
-for v in ('mono', 'stereo'):
+def divider():
+    # the line between the tracks and the drum bus: a machined rail with a chrome inlay and screws
+    global W
+    W = 24
+    s = scene(); s.render.film_transparent = False
+    box('cavity', 0, 0, W, H, 0.05, -0.2, 0.001, 0.001, mat_principled('cav', (0.006, 0.006, 0.008), 0.7))
+    box('rail', 3, 3, 18, H - 6, 0.12, -0.06, 0.02, 0.01, P.metal('rail2', (0.09, 0.09, 0.1), 0.35, brushed=True, scale=10))
+    box('inlay', 10, 20, 4, H - 40, 0.02, 0.006, 0.01, 0.004, P.metal('chrome', (0.8, 0.81, 0.84), 0.12))
+    for y in (10, H - 10, H / 2): R.screw(12, y)
+    M2.lights(s)
+    P.render(s, 'divider.png')
+
+for v in [x for x in os.environ.get('LD_VARIANTS', 'mono,stereo').split(',') if x]:
     if os.environ.get('LD_GLASS_ONLY') is None: base(v)
-    glass(v)
+    if v != 'bus': glass(v)
+if os.environ.get('LD_DIVIDER'): divider()
