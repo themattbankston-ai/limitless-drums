@@ -110,6 +110,23 @@ struct StudioModel
         int hit = -1; float hitF = NAN, hitTunedF = NAN, hitCents = NAN, hitCentsBefore = NAN; std::string hitNote;
         float targetPos = 0.5f;                    ///< the target knob, 0..1 over its notes
     } tune;
+    /** The Mix step: the channel strip of the selected track (or the bus) and the reference deck. */
+    struct MixView
+    {
+        bool valid = false;
+        int sel = -1;                              ///< -1: the bus, else a track
+        std::string selName = "Bus";
+        bool studioAvail = false, studio = false;  ///< the measured source the pro tone pulls toward
+        std::array<float, 5> tone {}, shape {};    ///< match, bright, crack, smooth, tame / atk, dec, sus, rel, match
+        bool cymbal = false;
+        // the selected hit on the selected channel: third-octave shape before and after, and the envelope (dB)
+        std::vector<float> specBefore, specAfter, refDelta, envBefore, envAfter;
+        bool hasRef = false, refAudio = false; std::string refName; float refAmt = 0;
+        std::vector<float> refWave;                ///< peaks of the reference's first hit
+        struct Ins { std::string name; bool on = false; };
+        std::vector<Ins> inserts;                  ///< the selected channel's insert slots
+        bool fxOn = false;
+    } mix;
 };
 
 enum class Step { session, hits, align, tune, mix, level, exportStep };
@@ -185,6 +202,9 @@ public:
         and the menus (read from, target, range) with where they open. */
     std::function<void (const std::string&, double)> onTune;
     std::function<void (const std::string&, float, float, float, float)> onTuneMenu;
+    /** The Mix module: action, value; and its menus with where they open. */
+    std::function<void (const std::string&, double)> onMix;
+    std::function<void (const std::string&, float, float, float, float)> onMixMenu;
     std::function<void (int)> onPad;                  ///< a velocity pad (0-based): plays a random round robin of it     ///< track, 0 = left channel / 1 = right channel, pan
     std::function<void (int)> onRename, onHistoryJump;
     std::function<void (const std::vector<std::string>&)> onFilesDropped;

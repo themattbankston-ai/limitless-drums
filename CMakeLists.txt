@@ -120,6 +120,7 @@ if(LD_BUILD_APP)
         assets/ui/rack.png
         assets/ui/rack_align.png
         assets/ui/rack_tune.png
+        assets/ui/rack_mixstep.png
         assets/ui/parts/module_top.png
         assets/ui/parts/module_mid.png
         assets/ui/parts/module_bot.png

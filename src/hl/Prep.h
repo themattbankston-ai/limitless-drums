@@ -59,6 +59,12 @@ void runPitch (Session&);
     2 kHz, almost nothing low); "nopitch" (read, but too few hits give a clear pitch, or they don't agree). */
 std::string tuneAdvice (const Session&);
 bool soundsLikeCymbal (const Session&);
+
+/** A reference sound for the Mix step (Hitline's loadReference): its third-octave curve against the sum of your
+    mics on the hardest hits (before tone and shape, so the target doesn't chase itself), smoothed and limited to
+    \u00b18 dB; and its first hit as audio, at the session's rate, for Reference vs mix. Empty curve on failure. */
+struct Reference { std::string name; F64 curve; Chs audio; std::string error; };
+Reference loadReference (const Session&, const MixRender&, const juce::File&);
 void computeTune (Session&);
 /** Hitline's Auto prep. False when the hit count doesn't match the velocity and round-robin settings. */
 bool autoPrep (Session&);

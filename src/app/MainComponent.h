@@ -86,6 +86,13 @@ private:
     void rerender();
     void onAlignAction (const std::string& action, int mic, double v);
     void onAlignMenu (const std::string& which, float x, float y, float w, float h);
+    // the Mix step
+    int mixSel = -1, mixHit = -2;
+    hl::Chs refAudio; std::string refName;
+    std::unique_ptr<juce::FileChooser> refChooser;
+    void refreshMix();
+    void onMixAction (const std::string& action, double v);
+    void onMixMenu (const std::string& which, float x, float y, float w, float h);
     // the Tune step
     int tuneHit = -2;
     void refreshTune();

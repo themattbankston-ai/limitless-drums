@@ -17,6 +17,9 @@ ui::StudioModel::AlignView buildAlignView (const EngineState&, int mic, int hit,
 /** The Tune step's view. */
 ui::StudioModel::TuneView buildTuneView (const EngineState&, int hit);
 
+/** The Mix step's view of the selected channel (-1: the bus) around the selected hit. */
+ui::StudioModel::MixView buildMixView (const EngineState&, int sel, int hit, const hl::Chs* refAudio, const std::string& refName);
+
 /** The audio files behind the edit's tracks, in track order. */
 std::vector<juce::File> editFiles (tracktion::Edit&);
 } // namespace ld

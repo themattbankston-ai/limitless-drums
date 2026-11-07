@@ -167,6 +167,7 @@ std::vector<long> regionEnds (const Session& S)
 }
 } // namespace
 
+bool studioReferenceAvailable() { return LIBREF["panda"].isObject(); }
 void setLibraryReference (const juce::var& libref) { LIBREF = libref; }
 
 long Session::maxLen() const { long m = 0; for (auto& t : tracks) m = std::max (m, t.len); return m; }

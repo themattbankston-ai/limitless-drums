@@ -1,6 +1,9 @@
 #include "Prep.h"
 #include "Detect.h"
 #include "Rules.h"
+#include "Shape.h"
+#include "Wav.h"
+#include "Resolve.h"
 #include <algorithm>
 #include <future>
 #include <map>
@@ -675,5 +678,70 @@ std::string tuneAdvice (const Session& S)
         if (iqr > 150) return "nopitch";
     }
     return "";
+}
+
+// ------------------------------------------------------------------------------- the Mix step's reference
+Reference loadReference (const Session& S, const MixRender& M, const juce::File& f)
+{
+    Reference R; R.name = f.getFileName().toStdString();
+    const auto w = readWav (f);
+    if (! w.error.empty() || w.channels.empty()) { R.error = w.error.empty() ? "no audio" : w.error; return R; }
+    const double sr = w.sampleRate;
+    F32 m (w.channels[0].size(), 0.0f);
+    for (auto& c : w.channels) for (size_t i = 0; i < m.size() && i < c.size(); ++i) m[i] += c[i] / (float) w.channels.size();
+    DetectOptions o; o.minGapMs = 200;
+    auto ons = detectHits (m, sr, o).onsets;
+    if (ons.empty()) ons.push_back (0);
+    const auto& B = bands3();
+    auto median = [] (std::vector<double> v) -> double { if (v.empty()) return NAN; std::sort (v.begin(), v.end()); return v[v.size() / 2]; };
+    std::vector<std::vector<double>> theirs (B.size()), mine (B.size());
+    for (size_t k = 0; k < ons.size() && k < 12; ++k)
+    {
+        const double maxN = (double) ((k + 1 < ons.size() ? ons[k + 1] : (long) m.size()) - ons[k] + 64);
+        const auto b = bandSpec (m, ons[k], sr, maxN);
+        for (size_t j = 0; j < B.size(); ++j) theirs[j].push_back (b[j]);
+    }
+    // the sum of your mics on the hardest hits, after clean-up and before tone and shape
+    std::vector<size_t> top;
+    for (size_t k = 0; k < S.onsets.size() && top.size() < 6; ++k) if (S.velOfHit (k) == S.det.V - 1) top.push_back (k);
+    if (top.empty()) for (size_t k = 0; k < S.onsets.size() && k < 6; ++k) top.push_back (k);
+    const long pre = (long) jsRound (S.det.prerollMs * S.sr / 1000), len = (long) jsRound (0.6 * S.sr);
+    for (size_t i : top)
+    {
+        F32 mm ((size_t) (len + pre), 0.0f);
+        for (size_t t = 0; t < S.tracks.size() && t < M.dn.size(); ++t)
+            for (auto& c : M.dn[t])
+            {
+                const auto y = renderSeg (c, (long) S.onsets[i] - pre, len + pre, S.tracks[t].lag, S.tracks[t].pol ? S.tracks[t].pol : 1, 1.0 / (double) M.dn[t].size(), true);
+                for (size_t q = 0; q < mm.size() && q < y.size(); ++q) mm[q] += y[q];
+            }
+        const auto b = bandSpec (mm, pre, S.sr);
+        for (size_t j = 0; j < B.size(); ++j) mine[j].push_back (b[j]);
+    }
+    F64 U (B.size()), D (B.size());
+    for (size_t j = 0; j < B.size(); ++j)
+    {
+        U[j] = median (mine[j]); const double th = median (theirs[j]);
+        D[j] = B[j] < 60 || B[j] > 15000 || ! (th > -80) || ! std::isfinite (U[j]) ? 0 : th - U[j];
+    }
+    double sw = 0, sd = 0;
+    for (size_t j = 0; j < B.size(); ++j) { const double e = std::pow (10.0, U[j] / 10); if (std::isfinite (e)) { sw += e; sd += e * D[j]; } }
+    const double mean = sw > 0 ? sd / sw : 0;
+    F64 c (B.size());
+    for (size_t j = 0; j < B.size(); ++j) c[j] = B[j] < 60 || B[j] > 15000 ? 0 : D[j] - mean;
+    for (int it = 0; it < 2; ++it) { const auto o2 = c; for (size_t j = 1; j + 1 < B.size(); ++j) c[j] = 0.25 * o2[j - 1] + 0.5 * o2[j] + 0.25 * o2[j + 1]; }
+    for (auto& v : c) v = std::round (std::clamp (v, -8.0, 8.0) * 100) / 100;
+    R.curve = c;
+    // its first hit, 1.6 s, at the session's rate
+    const long a = ons[0], n = std::min ((long) m.size() - a, (long) jsRound (1.6 * sr));
+    const double k = sr / S.sr;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto& src = w.channels[(size_t) std::min (ch, (int) w.channels.size() - 1)];
+        F32 out ((size_t) std::max (0L, (long) std::floor (n / k)));
+        for (size_t i = 0; i < out.size(); ++i) out[i] = src[(size_t) std::min ((long) src.size() - 1, a + (long) jsRound ((double) i * k))];
+        R.audio.push_back (std::move (out));
+    }
+    return R;
 }
 } // namespace ld::hl

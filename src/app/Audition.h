@@ -51,6 +51,8 @@ public:
     void play (std::vector<PlayEvent>, const Options&);
     void stop();
     bool isPlaying() const { return playing.load(); }
+    /** The Mix step's reference vs mix: the reference's hit, then this hit through the mix, at the same loudness. */
+    void playReference (const hl::Chs& ref, int hit);
     /** A pure tone (the Tune step's recorded and target notes), on top of anything playing. */
     void playTone (double hz, double seconds) { toneHz.store (hz); toneLen.store ((int) (seconds * (deviceRate > 0 ? deviceRate : 48000))); toneLeft.store (toneLen.load()); }
     std::string mode() const { return currentMode; }
@@ -81,6 +83,9 @@ public:
     void renderBlock (float* L, float* R, int frames, double rate) { deviceRate = rate; float* o[2] { L, R }; audioDeviceIOCallbackWithContext (nullptr, 0, o, 2, frames, {}); }
     double position() const { return t; }
 private:
+    std::atomic<hl::Chs*> raw { nullptr };
+    std::atomic<long> rawPos { 0 };
+    std::vector<std::unique_ptr<hl::Chs>> rawKeep;
     std::atomic<double> toneHz { 0 };
     std::atomic<int> toneLeft { 0 }, toneLen { 0 };
     double tonePhase = 0;

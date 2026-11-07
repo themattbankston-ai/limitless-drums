@@ -408,4 +408,78 @@ ui::StudioModel::TuneView buildTuneView (const EngineState& es, int hit)
     }
     return v;
 }
+
+ui::StudioModel::MixView buildMixView (const EngineState& es, int sel, int hit, const hl::Chs* refAudio, const std::string& refName)
+{
+    ui::StudioModel::MixView v;
+    const auto& S = es.session;
+    if (S.tracks.empty() || ! es.mix || S.onsets.empty()) return v;
+    const auto& M = *es.mix;
+    const int nT = (int) S.tracks.size();
+    v.valid = true;
+    v.sel = sel >= 0 && sel < nT ? sel : -1;
+    v.selName = v.sel < 0 ? std::string ("Bus") : S.tracks[(size_t) v.sel].mic;
+    v.studioAvail = hl::studioReferenceAvailable(); v.studio = S.tone.proSrc == "panda";
+    v.cymbal = hl::soundsLikeCymbal (S) || ! (S.drum == "kick" || S.drum == "snare" || S.drum == "tom");
+    const hl::ToneMoves& T = v.sel < 0 ? (const hl::ToneMoves&) S.tone : S.tracks[(size_t) v.sel].strip.tone;
+    const hl::ShapeMoves& H = v.sel < 0 ? S.shape : S.tracks[(size_t) v.sel].strip.shape;
+    v.tone = { (float) T.match, (float) T.bright, (float) T.crack, (float) T.smooth, (float) T.tame };
+    v.shape = { (float) H.atk, (float) H.dec, (float) H.sus, (float) H.rel, (float) H.match };
+    v.fxOn = hl::fxOn (S);
+    // the hit, before (the recording, lined up) and after (the chain), on the channel or every channel summed
+    hit = std::clamp (hit < 0 ? (int) S.onsets.size() - 1 : hit, 0, (int) S.onsets.size() - 1);
+    const double sr = S.sr;
+    const long pre = (long) hl::jsRound (S.det.prerollMs * sr / 1000), len = (long) hl::jsRound (0.4 * sr);
+    hl::F32 a ((size_t) (len + pre), 0.0f), b ((size_t) (len + pre), 0.0f);
+    for (int t = 0; t < nT; ++t)
+    {
+        if (v.sel >= 0 && t != v.sel) continue;
+        const auto& tr = S.tracks[(size_t) t];
+        const int pol = tr.pol ? tr.pol : 1;
+        for (size_t c = 0; c < tr.ch.size(); ++c)
+        {
+            const double g = 1.0 / (double) tr.ch.size();
+            const auto x = hl::renderSeg (tr.ch[c], (long) S.onsets[(size_t) hit] - pre, len + pre, tr.lag, pol, g, true);
+            for (size_t q = 0; q < a.size() && q < x.size(); ++q) a[q] += x[q];
+            if ((size_t) t < M.proc.size() && c < M.proc[(size_t) t].size())
+            {
+                const auto y = hl::renderSeg (M.proc[(size_t) t][c], (long) S.onsets[(size_t) hit] - pre, len + pre, tr.lag, pol, g, true);
+                for (size_t q = 0; q < b.size() && q < y.size(); ++q) b[q] += y[q];
+            }
+        }
+    }
+    const auto sa = hl::bandSpec (a, pre, sr), sb = hl::bandSpec (b, pre, sr);
+    for (double x : sa) v.specBefore.push_back ((float) x);
+    for (double x : sb) v.specAfter.push_back ((float) x);
+    v.hasRef = S.tone.hasRef; v.refAmt = (float) S.tone.refAmt; v.refName = refName;
+    if (S.tone.hasRef) for (double x : S.tone.refCurve) v.refDelta.push_back ((float) x);
+    // the envelope: 2 ms RMS, in dB against the recording's peak
+    auto env = [&] (const hl::F32& x)
+    {
+        std::vector<float> e; const long w = (long) hl::jsRound (0.002 * sr);
+        for (long s0 = 0; s0 + w <= (long) x.size(); s0 += w) { double q = 0; for (long i = s0; i < s0 + w; ++i) q += (double) x[(size_t) i] * x[(size_t) i]; e.push_back ((float) (10 * std::log10 (q / w + 1e-20))); }
+        return e;
+    };
+    v.envBefore = env (a); v.envAfter = env (b);
+    float pk = -200; for (float x : v.envBefore) pk = std::max (pk, x);
+    for (auto& x : v.envBefore) x -= pk;
+    for (auto& x : v.envAfter) x -= pk;
+    if (refAudio && ! refAudio->empty())
+    {
+        v.refAudio = true;
+        const auto& r = (*refAudio)[0];
+        const size_t N = 120, step = std::max<size_t> (1, r.size() / N);
+        for (size_t k = 0; k + step <= r.size() && v.refWave.size() < N; k += step) { float m2 = 0; for (size_t q = k; q < k + step; ++q) m2 = std::max (m2, std::abs (r[q])); v.refWave.push_back (m2); }
+    }
+    // the channel's insert slots
+    const juce::var& ins = v.sel < 0 ? S.busIns : S.tracks[(size_t) v.sel].strip.inserts;
+    if (auto* arr = ins.getArray())
+        for (auto& x : *arr)
+        {
+            static const std::map<juce::String, std::string> names { { "gate", "GATE" }, { "eq", "EQ" }, { "pultec", "TUBE EQ" }, { "comp", "COMP" }, { "sat", "SATURATE" }, { "verb", "ROOM" }, { "width", "WIDTH" } };
+            const auto t = x["type"].toString();
+            v.inserts.push_back ({ names.count (t) ? names.at (t) : t.toUpperCase().toStdString(), (bool) x["on"] });
+        }
+    return v;
+}
 } // namespace ld

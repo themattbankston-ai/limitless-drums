@@ -343,6 +343,15 @@ int Audition::drainMonitor (MonitorPoint* out, int max)
 void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float* const* outs, int nOut, int nFrames, const juce::AudioIODeviceCallbackContext&)
 {
     for (int c = 0; c < nOut; ++c) if (outs[c]) juce::FloatVectorOperations::clear (outs[c], nFrames);
+    if (auto* rb = raw.load(); rb != nullptr && ! rb->empty())
+    {
+        // a stereo buffer played straight (reference vs mix)
+        long pos = rawPos.load(); const long n0 = (long) (*rb)[0].size();
+        for (int n = 0; n < nFrames && pos < n0; ++n, ++pos)
+            for (int c = 0; c < nOut; ++c) if (outs[c]) outs[c][n] += (*rb)[(size_t) std::min (c, (int) rb->size() - 1)][(size_t) pos];
+        rawPos.store (pos);
+        if (pos >= n0) raw.store (nullptr);
+    }
     if (int left = toneLeft.load(); left > 0)
     {
         // the tone: a sine, faded in and out over 20 ms
@@ -459,5 +468,39 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
     if (hitNow >= 0) { curHit = hitNow; curVel = velNow; }
     if (t > ph->end + 0.05) finishLater();
     inCallback = false;
+}
+
+void Audition::playReference (const hl::Chs& ref, int hit)
+{
+    stop();
+    raw.store (nullptr);
+    if (! engine || ! engine->mix || ref.empty() || engine->session.onsets.empty()) return;
+    const auto& S = engine->session;
+    hit = std::clamp (hit, 0, (int) S.onsets.size() - 1);
+    hl::StemOptions o; o.processed = true;
+    const auto h = hl::renderHitStems (S, *engine->mix, engine->levels ? *engine->levels : hl::LevelResult {}, (size_t) hit, o);
+    auto [L, R] = hl::mixToStereo (S, h);
+    // the same loudness: RMS over the first 300 ms of each
+    auto rms = [&] (const hl::F32& a, const hl::F32& b)
+    {
+        const size_t n = std::min ({ a.size(), b.size(), (size_t) (0.3 * S.sr) }); double q = 0;
+        for (size_t i = 0; i < n; ++i) q += (double) a[i] * a[i] + (double) b[i] * b[i];
+        return n ? std::sqrt (q / (2.0 * (double) n)) : 1e-9;
+    };
+    const auto& rL = ref[0]; const auto& rR = ref.size() > 1 ? ref[1] : ref[0];
+    const double kr = 0.12 / std::max (1e-9, rms (rL, rR)), km = 0.12 / std::max (1e-9, rms (L, R));
+    const size_t gap = (size_t) (0.35 * S.sr), lr = std::min (rL.size(), (size_t) (1.6 * S.sr)), lm = std::min (L.size(), (size_t) (1.6 * S.sr));
+    auto buf = std::make_unique<hl::Chs> (2, hl::F32 (lr + gap + lm, 0.0f));
+    float pk = 1e-9f;
+    for (size_t i = 0; i < lr; ++i) { (*buf)[0][i] = (float) (rL[i] * kr); (*buf)[1][i] = (float) (rR[i] * kr); }
+    for (size_t i = 0; i < lm; ++i) { (*buf)[0][lr + gap + i] = (float) (L[i] * km); (*buf)[1][lr + gap + i] = (float) (R[i] * km); }
+    for (auto& c : *buf) for (float v : c) pk = std::max (pk, std::abs (v));
+    const float g = std::min (1.0f, 0.89f / pk);
+    for (auto& c : *buf) for (auto& v : c) v *= g;
+    // the playback rate: the device may run at another rate; the buffer plays as it is (session rate)
+    rawPos.store (0);
+    raw.store (buf.get());
+    rawKeep.push_back (std::move (buf));
+    while (rawKeep.size() > 3) rawKeep.erase (rawKeep.begin());
 }
 } // namespace ld

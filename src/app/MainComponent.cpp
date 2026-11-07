@@ -40,10 +40,12 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
 
     studio.onImport = [this] { openNewSession(); };
     studio.onPlay = [this] { togglePlay(); };
-    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); if (st == ui::Step::align) refreshAlign(); if (st == ui::Step::tune) refreshTune(); updateHeader(); };
+    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); if (st == ui::Step::align) refreshAlign(); if (st == ui::Step::tune) refreshTune(); if (st == ui::Step::mix) refreshMix(); updateHeader(); };
     studio.onAlign = [this] (const std::string& a, int mic, double v) { onAlignAction (a, mic, v); };
     studio.onAlignMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onAlignMenu (w, x, y, ww, h); };
     studio.onTune = [this] (const std::string& a, double v) { onTuneAction (a, v); };
+    studio.onMix = [this] (const std::string& a, double v) { onMixAction (a, v); };
+    studio.onMixMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onMixMenu (w, x, y, ww, h); };
     studio.onTuneMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onTuneMenu (w, x, y, ww, h); };
     studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
     studio.onUndo = [this] { undo (false); };
@@ -436,6 +438,8 @@ void MainComponent::refreshModel()
     auto m = buildStudioModel (*edit, currentRoles, title, engineState);
     if (engineState) m.align = buildAlignView (*engineState, alignMic, studio.selectedHit, alignSpread, alignSamples);
     if (engineState) m.tune = buildTuneView (*engineState, studio.selectedHit);
+    if (engineState) m.mix = buildMixView (*engineState, mixSel, studio.selectedHit, refAudio.empty() ? nullptr : &refAudio, refName);
+    mixHit = studio.selectedHit;
     tuneHit = studio.selectedHit;
     alignMic = m.align.mic; alignHit = studio.selectedHit;
     studio.setModel (std::move (m));
@@ -1432,6 +1436,7 @@ void MainComponent::timerCallback()
         if (playingNow && audition->currentHit() >= 0 && audition->currentHit() != studio.selectedHit) { studio.selectedHit = audition->currentHit(); lastSelected = studio.selectedHit; studio.redrawAll(); }
         if (studio.step() == ui::Step::align && ! playingNow && studio.selectedHit != alignHit) refreshAlign();
         if (studio.step() == ui::Step::tune && studio.selectedHit != tuneHit) refreshTune();
+        if (studio.step() == ui::Step::mix && ! playingNow && studio.selectedHit != mixHit) refreshMix();
         if (studio.selectedHit != lastSelected)
         {
             lastSelected = studio.selectedHit;
@@ -1589,5 +1594,136 @@ void MainComponent::onTuneMenu (const std::string& which, float x, float y, floa
         else { s.pitchOpt.fmin = ranges[r - 1].lo; s.pitchOpt.fmax = ranges[r - 1].hi; }
         onTuneAction ("read", 0);
     });
+}
+
+// ------------------------------------------------------------------------------------------- the Mix step
+void MainComponent::refreshMix()
+{
+    if (! engineState) return;
+    studio.data.mix = buildMixView (*engineState, mixSel, studio.selectedHit, refAudio.empty() ? nullptr : &refAudio, refName);
+    mixHit = studio.selectedHit;
+    studio.redrawAll();
+}
+
+void MainComponent::onMixAction (const std::string& a, double v)
+{
+    if (! engineState) return;
+    auto& S = engineState->session;
+    const int sel = mixSel >= 0 && mixSel < (int) S.tracks.size() ? mixSel : -1;
+    auto change = [this] (std::function<void (hl::Session&)> op, const juce::String& what)
+    {
+        if (audition) audition->stop();
+        op (engineState->session);
+        refreshModel(); refreshMix(); updateHeader(); setNotice (what);
+        rerender();
+    };
+    const juce::String where = sel < 0 ? juce::String ("every channel") : juce::String (S.tracks[(size_t) sel].mic);
+    if (a.rfind ("knob:", 0) == 0)
+    {
+        const int i = std::stoi (a.substr (5));
+        static const char* names[11] = { "Pro tone", "Tone", "Crack", "Rings", "Tame", "Attack", "Decay", "Sustain", "Release", "Pro envelope", "Reference amount" };
+        change ([i, v, sel] (hl::Session& s)
+        {
+            hl::ToneMoves& T = sel < 0 ? (hl::ToneMoves&) s.tone : s.tracks[(size_t) sel].strip.tone;
+            hl::ShapeMoves& H = sel < 0 ? s.shape : s.tracks[(size_t) sel].strip.shape;
+            double* f[11] = { &T.match, &T.bright, &T.crack, &T.smooth, &T.tame, &H.atk, &H.dec, &H.sus, &H.rel, &H.match, &s.tone.refAmt };
+            *f[i] = v;
+        }, juce::String (names[i]) + (i == 10 ? juce::String() : juce::String (" on ") + where) + ": " + (i == 1 || i == 2 || (i >= 5 && i < 9) ? (v > 0 ? "+" : "") + juce::String ((int) std::lround (v * 100)) : juce::String ((int) std::lround (v * 100)) + " %") + ".");
+        return;
+    }
+    if (a == "src:lib" || a == "src:studio")
+    {
+        const bool st = a == "src:studio";
+        if (st && ! hl::studioReferenceAvailable()) return;
+        change ([st] (hl::Session& s) { s.tone.proSrc = st ? "panda" : ""; }, st ? "Pro tone pulls toward the measured studio set." : "Pro tone pulls toward the average of the pro libraries.");
+        return;
+    }
+    if (a == "start")
+    {
+        const bool cym = hl::soundsLikeCymbal (S) || ! (S.drum == "kick" || S.drum == "snare" || S.drum == "tom");
+        change ([cym] (hl::Session& s) { s.tone.match = 0.6; s.tone.smooth = cym ? 0.5 : 0.35; s.tone.tame = cym ? 0.4 : 0.25; s.shape.match = 0.5; }, "Standard start: pro tone 60 %, rings and tame, the pro envelope at half.");
+        return;
+    }
+    if (a == "flat")
+    {
+        change ([] (hl::Session& s)
+        {
+            s.tone.match = s.tone.bright = s.tone.crack = s.tone.smooth = s.tone.tame = 0;
+            s.shape.atk = s.shape.dec = s.shape.sus = s.shape.rel = s.shape.match = 0;
+        }, "Everything flat.");
+        return;
+    }
+    if (a == "ab")
+    {
+        if (! audition || ! engineState->mix) return;
+        if (edit) edit->getTransport().stop (false, false);
+        Audition::Options o; o.chain = true;
+        audition->play (modes::hit (S, std::max (0, studio.selectedHit)), o);
+        setNotice ("As recorded, then with the chain.");
+        updateHeader();
+        return;
+    }
+    if (a == "ins")
+    {
+        const int k = (int) v;
+        juce::var& ins = sel < 0 ? S.busIns : S.tracks[(size_t) sel].strip.inserts;
+        auto* arr = ins.getArray();
+        if (! arr || k >= arr->size()) { setNotice ("Adding inserts comes with the insert editors, next."); return; }
+        const bool on = ! (bool) (*arr)[k]["on"];
+        change ([sel, k, on] (hl::Session& s)
+        {
+            juce::var& ii = sel < 0 ? s.busIns : s.tracks[(size_t) sel].strip.inserts;
+            if (auto* o = ii[k].getDynamicObject()) o->setProperty ("on", on);
+        }, (*arr)[k]["type"].toString().toUpperCase() + (on ? " on." : " bypassed."));
+        return;
+    }
+    if (a == "ref:load")
+    {
+        refChooser = std::make_unique<juce::FileChooser> ("Load a reference", juce::File(), "*.wav");
+        refChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (! f.existsAsFile() || ! engineState || ! engineState->mix) return;
+            auto R = hl::loadReference (engineState->session, *engineState->mix, f);
+            if (! R.error.empty() || R.curve.empty()) { setNotice ("Couldn't read that reference: " + juce::String (R.error)); return; }
+            refAudio = R.audio; refName = R.name;
+            auto curve = R.curve;
+            if (audition) audition->stop();
+            auto& s = engineState->session;
+            s.tone.hasRef = true; s.tone.refCurve = curve; if (s.tone.refAmt == 0) s.tone.refAmt = 0.6;
+            refreshModel(); refreshMix(); updateHeader();
+            setNotice ("Reference loaded: " + juce::String (refName) + ". The mix moves toward it at " + juce::String ((int) std::lround (s.tone.refAmt * 100)) + " %.");
+            rerender();
+        });
+        return;
+    }
+    if (a == "ref:remove")
+    {
+        refAudio.clear(); refName.clear();
+        change ([] (hl::Session& s) { s.tone.hasRef = false; s.tone.refCurve.clear(); }, "Reference removed.");
+        return;
+    }
+    if (a == "ref:play")
+    {
+        if (refAudio.empty()) { setNotice ("Load the reference again to hear it."); onMixAction ("ref:load", 0); return; }
+        if (! audition || ! engineState->mix) return;
+        if (edit) edit->getTransport().stop (false, false);
+        audition->playReference (refAudio, std::max (0, studio.selectedHit));
+        setNotice ("The reference, then this hit through the mix, at the same loudness.");
+        updateHeader();
+        return;
+    }
+}
+
+void MainComponent::onMixMenu (const std::string&, float x, float y, float w, float h)
+{
+    if (! engineState) return;
+    const auto& S = engineState->session;
+    const auto opts = juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (x, y, w, h).toNearestInt())).withMinimumWidth ((int) w);
+    juce::PopupMenu m;
+    m.addItem (1, "Bus (every channel)", true, mixSel < 0);
+    m.addSeparator();
+    for (int t = 0; t < (int) S.tracks.size(); ++t) m.addItem (t + 2, juce::String (S.tracks[(size_t) t].mic), true, mixSel == t);
+    m.showMenuAsync (opts, [this] (int r) { if (r <= 0) return; mixSel = r == 1 ? -1 : r - 2; refreshMix(); });
 }
 } // namespace ld

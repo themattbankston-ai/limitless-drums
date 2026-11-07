@@ -134,6 +134,8 @@ struct Session
 
 /** The pro library measurements (assets/libref.json), shared by every session. */
 void setLibraryReference (const juce::var& libref);
+/** Whether the measured studio set is in the library reference (the second source for the pro tone). */
+bool studioReferenceAvailable();
 
 /** Everything the processing chain has rendered for a session. */
 struct MixRender

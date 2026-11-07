@@ -1488,6 +1488,7 @@ struct Studio::Rack : visage::Frame
         c.setColor (0xffffffff);
         if (studio.step() == Step::align) { drawAlign (c); return; }
         if (studio.step() == Step::tune) { drawTune (c); return; }
+        if (studio.step() == Step::mix) { drawMix (c); return; }
         c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_png), BinaryData::rack_pngSize, ox, 0, DW * k, DH * k);
         const auto& d = studio.data;
         const auto& lv = d.level;
@@ -2092,6 +2093,205 @@ struct Studio::Rack : visage::Frame
         tuneKnob = -1; tuneLive = NAN; pressed.clear(); redraw();
     }
 
+    // ------------------------------------------------------------------ the Mix instrument (Mix step)
+    // TONE: the source, the channel, the hit's tone before and after (and where a reference pulls), five knobs.
+    // SHAPE: the hit's envelope before and after, five knobs. REFERENCE: the deck. CONSOLE: inserts, start, flat, A/B.
+    static constexpr Key mkeys[] = {
+        { 26, 30, 64, 24, "src:lib" }, { 94, 30, 64, 24, "src:studio" }, { 162, 30, 130, 24, "menu:chan" },
+        { 26, 496, 130, 24, "ref:play" }, { 162, 496, 62, 24, "ref:load" }, { 230, 496, 62, 24, "ref:remove" },
+        { 26, 572, 84, 26, "ins:0" }, { 117, 572, 84, 26, "ins:1" }, { 208, 572, 84, 26, "ins:2" },
+        { 26, 608, 84, 26, "start" }, { 117, 608, 84, 26, "flat" }, { 208, 608, 84, 26, "ab" } };
+    static constexpr float mkX[5] = { 47, 103, 159, 215, 271 }, mkR = 16;
+    int mixKnob = -1; float mixY0 = 0, mixV0 = 0, mixLive = NAN;
+
+    Point mixKnobAt (int i) const { return i < 5 ? Point (mkX[i], 190) : i < 10 ? Point (mkX[i - 5], 362) : Point (259, 458); }
+    // the knob's value as 0..1 on its ring
+    float mixKnobNorm (int i) const
+    {
+        const auto& V = studio.data.mix;
+        if (i == mixKnob && std::isfinite (mixLive)) return mixLive;
+        if (i < 5) { const float v = V.tone[(size_t) i]; return i == 1 || i == 2 ? (v + 1) / 2 : v; }
+        if (i < 10) { const float v = V.shape[(size_t) (i - 5)]; return i < 9 ? (v + 1) / 2 : v; }
+        return V.refAmt;
+    }
+    static bool mixBipolar (int i) { return i == 1 || i == 2 || (i >= 5 && i < 9); }
+    static float mixValueOf (int i, float norm) { return mixBipolar (i) ? norm * 2 - 1 : norm; }
+
+    void drawMix (Canvas& c)
+    {
+        c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_mixstep_png), BinaryData::rack_mixstep_pngSize, ox, 0, DW * k, DH * k);
+        const auto& V = studio.data.mix;
+        const unsigned amber = 0xffffa040, cyan = neon::cyan, mag = neon::magenta, vio = 0xffb39cff, lime = 0xffc8ff3d;
+        const bool live = V.valid;
+        silk (c, "TONE", 36, 13, 0xffffd2a6, 8.5f, 2.0f);
+        keyLabel (c, mkeys[0], "LIBRARIES", live && ! V.studio, amber, live);
+        keyLabel (c, mkeys[1], "STUDIO", live && V.studio, amber, live && V.studioAvail);
+        {
+            const auto& kk = mkeys[2];
+            c.setColor (live ? 0xffe8ecf2 : 0xff4a4f57);
+            draw::text (c, V.selName, bodyFont (S (10)), Font::kLeft, X (kk.x + 8), Y (kk.y), S (kk.w - 26), S (kk.h));
+            const float ax = X (kk.x + kk.w - 13), ay = Y (kk.y + kk.h / 2 - 1);
+            visage::Path tri; tri.moveTo (ax - S (4), ay - S (2)); tri.lineTo (ax + S (4), ay - S (2)); tri.lineTo (ax, ay + S (3)); tri.close();
+            c.setColor (amber); c.fill (tri);
+        }
+        // the tone screen: third octaves 60 Hz .. 16 kHz, before thin grey, after bold amber, the reference's pull dashed
+        {
+            const float gx = 32, gy = 68, gw = 254, gh = 80;
+            c.setColor (0x14ffffff);
+            for (float f : { 100.0f, 1000.0f, 10000.0f }) { const float x = gx + std::log2 (f / 60) / std::log2 (16000.0f / 60) * gw; c.fill (X (x), Y (gy), 1, S (gh)); }
+            c.setColor (0xff6f767f);
+            draw::text (c, "100", monoFont (S (6.5f)), Font::kLeft, X (gx + std::log2 (100.0f / 60) / std::log2 (16000.0f / 60) * gw + 2), Y (gy + gh - 9), S (30), S (9));
+            draw::text (c, "1k", monoFont (S (6.5f)), Font::kLeft, X (gx + std::log2 (1000.0f / 60) / std::log2 (16000.0f / 60) * gw + 2), Y (gy + gh - 9), S (30), S (9));
+            draw::text (c, "10k", monoFont (S (6.5f)), Font::kLeft, X (gx + std::log2 (10000.0f / 60) / std::log2 (16000.0f / 60) * gw + 2), Y (gy + gh - 9), S (30), S (9));
+            if (live && V.specBefore.size() == 30)
+            {
+                // band j's centre is 1000 * 2^((j - 16) / 3) Hz
+                auto xOf = [&] (int j) { const float f = 1000.0f * std::pow (2.0f, (j - 16) / 3.0f); return gx + std::log2 (f / 60) / std::log2 (16000.0f / 60) * gw; };
+                float hi = -1e9f, lo = 1e9f;
+                for (int j = 2; j < 30; ++j) { hi = std::max ({ hi, V.specBefore[(size_t) j], V.specAfter[(size_t) j] }); }
+                lo = hi - 42;
+                auto yOf = [&] (float db) { return gy + 4 + (1 - std::clamp ((db - lo) / (hi - lo), 0.0f, 1.0f)) * (gh - 14); };
+                auto line = [&] (const std::vector<float>& v, const std::vector<float>* add, unsigned col, float w, bool glow)
+                {
+                    visage::Path p; bool first = true;
+                    for (int j = 2; j < 30; ++j)
+                    {
+                        const float f = 1000.0f * std::pow (2.0f, (j - 16) / 3.0f);
+                        if (f < 55 || f > 17000) continue;
+                        const float db = v[(size_t) j] + (add ? (*add)[(size_t) j] * V.refAmt : 0.0f);
+                        if (first) { p.moveTo (X (xOf (j)), Y (yOf (db))); first = false; } else p.lineTo (X (xOf (j)), Y (yOf (db)));
+                    }
+                    if (glow) { c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (col).withAlpha (0.25f)); c.stroke (p, 0, 0, width(), height(), S (w * 3)); c.setBlendMode (visage::BlendMode::Alpha); }
+                    c.setColor (col); c.stroke (p, 0, 0, width(), height(), S (w));
+                };
+                if (V.hasRef && V.refDelta.size() == 30) line (V.specBefore, &V.refDelta, 0xb3c9b8ff, 1.0f, false);
+                line (V.specAfter, nullptr, amber, 1.8f, true);
+                line (V.specBefore, nullptr, 0xaae8ecf2, 1.0f, false);   // on top, so it shows where they part
+                c.setColor (0xff8b9099);
+                draw::text (c, V.hasRef ? "WHITE: RECORDED  \xc2\xb7  AMBER: NOW  \xc2\xb7  VIOLET: REF" : "WHITE: RECORDED  \xc2\xb7  AMBER: NOW", boldFont (S (6.5f)), Font::kRight, X (gx), Y (gy), S (gw - 4), S (9));
+            }
+            else { c.setColor (0xff5f6670); draw::text (c, "Run Auto Prep to mix", bodyFont (S (10)), Font::kCenter, X (26), Y (62), S (266), S (92)); }
+        }
+        // knobs
+        const char* tl[5] = { "PRO TONE", "TONE", V.cymbal ? "STICK" : "CRACK", V.cymbal ? "HARSH" : "RINGS", "TAME" };
+        const char* hl2[5] = { "ATTACK", "DECAY", "SUSTAIN", "RELEASE", "PRO ENV" };
+        const unsigned kc[5] = { amber, cyan, mag, vio, lime };
+        for (int i = 0; i < 10; ++i)
+        {
+            const auto p = mixKnobAt (i);
+            const float n = mixKnobNorm (i);
+            arcKnob (c, p.x, p.y, n, Color (kc[i % 5]).withAlpha (live ? 1.0f : 0.3f).toARGB(), mkR);
+            c.setColor (0xffd8c6b4); draw::text (c, i < 5 ? tl[i] : hl2[i - 5], boldFont (S (6.8f)), Font::kCenter, X (p.x - 28), Y (p.y + 20), S (56), S (10));
+            const float v = mixValueOf (i, n);
+            c.setColor (kc[i % 5]);
+            draw::text (c, mixBipolar (i) ? draw::fmt ("%+.0f", (double) std::round (v * 100)) : draw::fmt ("%.0f%%", (double) std::round (v * 100)), monoBold (S (7.8f)), Font::kCenter, X (p.x - 28), Y (p.y + 30), S (56), S (10));
+        }
+        // SHAPE screen: the envelope, before thin and after bold, 0 to -60 dB over 400 ms
+        silk (c, "SHAPE", 36, 267, 0xffffd2a6, 8.5f, 2.0f);
+        {
+            const float gx = 32, gy = 286, gw = 254, gh = 38;
+            if (live && ! V.envBefore.empty())
+            {
+                auto path = [&] (const std::vector<float>& e)
+                {
+                    visage::Path p;
+                    for (size_t q = 0; q < e.size(); ++q)
+                    {
+                        const float x = gx + (float) q / (float) (e.size() - 1) * gw, y = gy + std::clamp (-e[q] / 60.0f, 0.0f, 1.0f) * gh;
+                        if (q == 0) p.moveTo (X (x), Y (y)); else p.lineTo (X (x), Y (y));
+                    }
+                    return p;
+                };
+                const auto pa = path (V.envAfter);
+                c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (amber).withAlpha (0.25f)); c.stroke (pa, 0, 0, width(), height(), S (4)); c.setBlendMode (visage::BlendMode::Alpha);
+                c.setColor (amber); c.stroke (pa, 0, 0, width(), height(), S (1.6f));
+                c.setColor (0xaae8ecf2); c.stroke (path (V.envBefore), 0, 0, width(), height(), S (1));
+            }
+        }
+        // REFERENCE
+        silk (c, "REFERENCE", 36, 422, 0xffb9bec6, 7.5f, 1.8f);
+        {
+            const float wx = 26, wy = 436, ww = 200, wh = 52;
+            if (V.hasRef)
+            {
+                if (! V.refWave.empty())
+                {
+                    const float mid = wy + 22; float pk = 1e-6f; for (float x : V.refWave) pk = std::max (pk, x);
+                    for (size_t q = 0; q < V.refWave.size(); ++q)
+                    {
+                        const float x = wx + 6 + (float) q * (ww - 12) / (float) V.refWave.size(), h = V.refWave[q] / pk * 17;
+                        c.setColor (Color (vio).withAlpha (0.85f)); c.fill (X (x), Y (mid - h), S (1.2f), S (2 * h + 0.5f));
+                    }
+                }
+                c.setColor (0xffe8ecf2);
+                draw::text (c, V.refName.empty() ? std::string ("Reference") : V.refName, bodyFont (S (8.5f)), Font::kLeft, X (wx + 6), Y (wy + wh - 13), S (ww - 70), S (11));
+                c.setColor (0xff8b9099);
+                draw::text (c, V.refAudio ? "MATCHED LOUDNESS" : "LOAD AGAIN TO HEAR", boldFont (S (6)), Font::kRight, X (wx), Y (wy + wh - 12), S (ww - 6), S (10));
+            }
+            else
+            {
+                c.setColor (0xff6f767f);
+                draw::text (c, "Load any drum sound you like", bodyFont (S (9)), Font::kCenter, X (wx), Y (wy + 12), S (ww), S (12));
+                draw::text (c, "to hear and steer toward", bodyFont (S (9)), Font::kCenter, X (wx), Y (wy + 26), S (ww), S (12));
+            }
+            const auto p = mixKnobAt (10);
+            c.setColor (0xffb9bec6); draw::text (c, "AMOUNT", boldFont (S (6.5f)), Font::kCenter, X (p.x - 26), Y (p.y + 19), S (52), S (9));
+            c.setColor (vio); draw::text (c, draw::fmt ("%.0f%%", (double) std::round (mixKnobNorm (10) * 100)), monoBold (S (7.5f)), Font::kCenter, X (p.x - 26), Y (p.y + 28), S (52), S (9));
+        }
+        keyLabel (c, mkeys[3], "\xe2\x96\xb6 REFERENCE VS MIX", false, vio, V.hasRef);
+        keyLabel (c, mkeys[4], V.hasRef ? "CHANGE" : "LOAD", false, vio, live);
+        keyLabel (c, mkeys[5], "REMOVE", false, vio, V.hasRef);
+        // CONSOLE
+        silk (c, "INSERTS", 36, 560, 0xffb9bec6, 7.5f, 1.8f);
+        for (int s2 = 0; s2 < 3; ++s2)
+        {
+            const bool has = s2 < (int) V.inserts.size();
+            keyLabel (c, mkeys[6 + s2], has ? V.inserts[(size_t) s2].name : std::string ("\xe2\x80\x94"), has && V.inserts[(size_t) s2].on, amber, has);
+        }
+        keyLabel (c, mkeys[9], "STANDARD START", false, amber, live);
+        keyLabel (c, mkeys[10], "ALL FLAT", false, amber, live && V.fxOn);
+        keyLabel (c, mkeys[11], "BEFORE / AFTER", false, amber, live);
+    }
+
+    void mixDown (float x, float y, const visage::MouseEvent& e)
+    {
+        const auto& V = studio.data.mix;
+        if (! V.valid || ! studio.onMix) return;
+        for (int i = 0; i < 11; ++i)
+        {
+            const auto p = mixKnobAt (i);
+            if (std::hypot (x - p.x, y - p.y) > (i == 10 ? 15 : mkR) * 1.35f) continue;
+            if (i == 10 && ! V.hasRef) return;
+            if (e.repeat_click_count >= 2) { studio.onMix ("knob:" + std::to_string (i), i == 10 ? 0.6 : 0.0); return; }
+            mixKnob = i; mixY0 = y; mixV0 = mixKnobNorm (i); mixLive = mixV0; return;
+        }
+        for (auto& kk : mkeys)
+        {
+            if (x < kk.x || x >= kk.x + kk.w || y < kk.y || y >= kk.y + kk.h) continue;
+            const std::string id = kk.id;
+            pressed = id; redraw();
+            if (id.rfind ("menu:", 0) == 0) { if (studio.onMixMenu) studio.onMixMenu (id.substr (5), X (kk.x), Y (kk.y), S (kk.w), S (kk.h)); return; }
+            if (id.rfind ("ins:", 0) == 0) { studio.onMix ("ins", std::stoi (id.substr (4))); return; }
+            studio.onMix (id, 0);
+            return;
+        }
+    }
+
+    void mixDrag (float, float y)
+    {
+        if (mixKnob < 0) return;
+        mixLive = std::clamp (mixV0 + (mixY0 - y) / 160.0f, 0.0f, 1.0f);
+        if (mixBipolar (mixKnob) && std::abs (mixLive - 0.5f) < 0.015f) mixLive = 0.5f;   // a detent at the centre
+        redraw();
+    }
+
+    void mixUp()
+    {
+        if (mixKnob >= 0 && std::isfinite (mixLive) && studio.onMix && std::abs (mixLive - mixV0) > 1e-4f)
+            studio.onMix ("knob:" + std::to_string (mixKnob), std::round (mixValueOf (mixKnob, mixLive) * 100) / 100);
+        mixKnob = -1; mixLive = NAN; pressed.clear(); redraw();
+    }
+
     void alignDown (float x, float y)
     {
         const auto& A = studio.data.align;
@@ -2117,6 +2317,7 @@ struct Studio::Rack : visage::Frame
     {
         const float x = panelX (e.position.x), y = panelY (e.position.y);
         if (studio.step() == Step::tune) { tuneDrag (x, y); return; }
+        if (studio.step() == Step::mix) { mixDrag (x, y); return; }
         if (studio.step() != Step::align) return;
         const auto& A = studio.data.align;
         if (jogging)
@@ -2141,6 +2342,7 @@ struct Studio::Rack : visage::Frame
     void mouseUp (const visage::MouseEvent&) override
     {
         if (studio.step() == Step::tune) { tuneUp(); return; }
+        if (studio.step() == Step::mix) { mixUp(); return; }
         if (studio.step() != Step::align) return;
         const auto& A = studio.data.align;
         if ((jogging || dragging) && std::abs (liveDelta) >= 0.125f && studio.onAlign)
@@ -2156,6 +2358,7 @@ struct Studio::Rack : visage::Frame
         const float dx = panelX (e.position.x), dy = panelY (e.position.y);
         if (studio.step() == Step::align) { alignDown (dx, dy); return; }
         if (studio.step() == Step::tune) { tuneDown (dx, dy, e); return; }
+        if (studio.step() == Step::mix) { mixDown (dx, dy, e); return; }
         for (int v = 0; v < 6; ++v)
         {
             const float px = padX[v % 3], py = padY[v / 3];
