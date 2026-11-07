@@ -17,15 +17,16 @@ R.W, R.H = W, H
 at = R.at
 
 # layout (panel px), shared with the overlay
-RADAR = (178, 236, 104)
+# panel sections (between the skin seams): left 0-300 (centre 150), middle 303-790 (centre 546), right 793-980 (centre 890)
+RADAR = (150, 238, 94)
 HDISP = (330, 70, 430, 220)              # x, y, w, h
 SLIP = (545, 338, 300, 34)               # centre x, centre y, w, h of the tube window
-SLOT = (888, 96, 16, 330)                # x, y, w, h of the throttle slot
+SLOT = (882, 104, 16, 330)                # x, y, w, h of the throttle slot
 LEVER_Y = SLOT[1] + SLOT[3] / 2          # lever rests at 100 % (the middle)
-BASS = (178, 462, 28)
-ANN = (390, 440, 150, 44)                # annunciator x, y, w, h
-WREAD = (680, 462, 150, 46)              # width read-out window
-TITLE = (178, 52, 190, 36)
+BASS = (150, 462, 28)
+ANN = (364, 440, 150, 44)                # annunciator x, y, w, h
+WREAD = (654, 462, 150, 46)              # width read-out window
+TITLE = (150, 54, 190, 36)
 
 def alu():
     m = bpy.data.materials.new('alu'); m.use_nodes = True; nt = m.node_tree; p = nt.nodes['Principled BSDF']

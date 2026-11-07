@@ -9,7 +9,7 @@ const c=document.getElementById('c');c.width=SW*2;c.height=SH*2;c.style.width=SW
 const g=c.getContext('2d');g.scale(2,2);
 </script><script src="fp.js"></script><script>
 const A0=PI*0.75,ASP=PI*1.5,CY='#4ff0ff',CYG='#00c8ff',GRN='#8dffb0';
-const RADAR=[178,236,104],HDISP=[330,70,430,220],SLIP=[545,338,300,34],SLOT=[888,96,16,330],BASS=[178,462,28],ANN=[390,440,150,44],WREAD=[680,462,150,46],TITLE=[178,52,190,36];
+const RADAR=[150,238,94],HDISP=[330,70,430,220],SLIP=[545,338,300,34],SLOT=[882,104,16,330],BASS=[150,462,28],ANN=[364,440,150,44],WREAD=[654,462,150,46],TITLE=[150,54,190,36];
 const INK='rgba(10,11,13,0.88)';
 const lbl=(t,px,py,size,col=INK,ls=1.6,parent=null,z=0)=>surfText(t,px,py,z,`${size}px BB`,col,{ls,parent});
 function horizon(X,Y,img,st){
@@ -66,6 +66,9 @@ function horizon(X,Y,img,st){
    surfText('KEEP LOUDNESS',x+w/2,y+h/2,0.12,'17px BB',on?'#eaffef':'rgba(200,210,205,0.35)',{ls:2,glow:on?GRN:null,blur:10,parent:'ann'});}
   // ---- width read-out
   {const [x,y,w,h]=WREAD;surfText(`${Math.round(st.width*100)} %`,x,y,-0.1,'26px MB',CY,{glow:CYG,blur:12,parent:'wread'});lbl('WIDTH',x,y-h/2-22,13,INK,2.4);}
+  // centring check: each group's centre must sit on its section's centre (within 1 px)
+  [['title',TITLE[0],150],['radar',RADAR[0],150],['bass',BASS[0],150],['graph',HDISP[0]+HDISP[2]/2,546],['slip',SLIP[0],546],['ann+readout',(ANN[0]+WREAD[0]+WREAD[2]/2)/2,546],['throttle',SLOT[0]+SLOT[2]/2,890]]
+    .forEach(([n,c,want])=>{if(Math.abs(c-want)>1.5)console.log(`LAYOUT centring: ${n} at ${c}, section centre ${want}`);});
   checkLayout('horizon');g.restore();
 }
 (async()=>{
