@@ -177,7 +177,8 @@ def sawblade(px, py, r):
     vs = [bmx.verts.new((px_, py_, 0)) for px_, py_ in pts]
     f = bmx.faces.new(vs); bmx.to_mesh(me); bmx.free()
     o = bpy.data.objects.new('saw', me); bpy.context.scene.collection.objects.link(o); bpy.context.view_layer.objects.active = o; o.select_set(True)
-    sol = o.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.03; bpy.ops.object.modifier_apply(modifier='s')
+    sol = o.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.035; bpy.ops.object.modifier_apply(modifier='s')
+    bv = o.modifiers.new('bv', 'BEVEL'); bv.width = 0.012; bv.segments = 3; bv.limit_method = 'ANGLE'; bpy.ops.object.modifier_apply(modifier='bv')
     o.location = (x, y, 0.04)
     # expansion slots and the gullet holes
     for i in range(6):
@@ -229,7 +230,7 @@ def build():
     BONE_INSET = bone('bonei', (0.74, 0.64, 0.46))
     TOOTH = bone('tooth', (0.82, 0.74, 0.58), rough=0.32)
     EYE = emissive('eye', (1.0, 0.12, 0.02), 22.0 if HOT == 'eyes' else 0.0, base=(0.05, 0.005, 0.002), rough=0.15, coat=1.0)
-    SAW = P.metal('saw', (0.36, 0.36, 0.37), 0.33, brushed=True, scale=18)
+    SAW = P.radial_brushed('saw', (0.42, 0.42, 0.44), 0.24)
     BRASS = P.metal('brass', (0.42, 0.24, 0.08), 0.36, brushed=True, scale=12)
     DOME = mat_principled('dome', (1, 1, 1), 0.02, transmission=1.0); DOME.node_tree.nodes['Principled BSDF'].inputs['IOR'].default_value = 1.15
     VUFACE = vuface()
