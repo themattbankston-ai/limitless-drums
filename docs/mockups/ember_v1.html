@@ -4,14 +4,14 @@
 @font-face{font-family:OS;src:url("fonts/Oswald[wght].ttf");font-weight:200 700}
 html,body{margin:0;background:#070708}
 </style></head><body><canvas id=c></canvas><script>
-const SW=2120,SH=760;
+const SW=1160,SH=1400;
 const c=document.getElementById('c');c.width=SW*2;c.height=SH*2;c.style.width=SW+'px';c.style.height=SH+'px';
 const g=c.getContext('2d');g.scale(2,2);
 </script><script src="fp.js"></script><script>
 const A0=PI*0.75,ASP=PI*1.5;
 const AMB='#ffb35a',AMBG='#ff7a10',CREAM='#efe2c4',PHOS='#7dffa0';
-const VU=[165,98,230,122],TUBES=[490,96,330,128],CANS=[[768,96,44],[882,96,44]],PLATE=[490,196,190,34];
-const KA=[90,190,290,410,510,610,750,860],KYA=310,KRA=26,DRIVE=[110,462,30],OUTPUT=[870,462,30],BTN=[[240,476],[320,476],[400,476],[690,476],[770,476]],JDY=-34,CRT=[545,466,46];
+FW=1060;const VU=[205,98,230,122],TUBES=[530,96,330,128],CANS=[[808,96,44],[922,96,44]],PLATE=[530,196,190,34];
+const KA=[100,220,340,480,600,720,860,980],KYA=310,KRA=26,DRIVE=[120,462,30],OUTPUT=[940,462,30],BTN=[[270,476],[350,476],[430,476],[670,476],[750,476]],JDY=-34,CRT=[530,466,46];
 // engraved and paint-filled: a dark cut above, cream fill
 function eng(t,px,py,size,ls=1.2,parent=null,col=CREAM){surfText(t,px,py-0.8,0,`600 ${size}px OS`,'rgba(0,0,0,0.55)',{ls,nolay:true});surfText(t,px,py,0,`600 ${size}px OS`,col,{ls,parent});}
 function litT(t,px,py,size,ls=1.2,parent=null){surfText(t,px,py,0,`600 ${size}px OS`,AMB,{ls,glow:AMBG,blur:8,parent});}
@@ -23,7 +23,7 @@ function knobA(px,py,label,steps,sel,valT,parent){ // stepped (steps = labels) o
   eng(label,px,py+53,11,1.6);nixie(px,py+75,valT,64,AMB,AMBG,'#0d0703');}
 
 function ember(X,Y,img,st){
-  const o=win(X,Y,1000,600,'SNARE TOP',2,AMB,'EMBER');BX=o.x;BY=o.y;
+  const o=win(X,Y,FW+20,600,'SNARE TOP',2,AMB,'EMBER');BX=o.x;BY=o.y;
   g.save();rr(BX,BY,FW,FH,6);g.clip();
   g.drawImage(img.cold,BX,BY,FW,FH);
   const heat=Math.min(1,0.25+st.drive*0.75);g.globalCompositeOperation='lighter';g.globalAlpha=heat;g.drawImage(img.hot,BX,BY,FW,FH);g.filter='blur(16px)';g.globalAlpha=heat*0.9;g.drawImage(img.hot,BX,BY,FW,FH);g.filter='none';g.globalAlpha=1;g.globalCompositeOperation='source-over';
@@ -38,14 +38,14 @@ function ember(X,Y,img,st){
   // ---- nameplate is rendered; can decals
   CANS.forEach(([x,y,r],i)=>{surfText(i?'OUTPUT':'INPUT',x,y-r*0.58,0.29,'600 8px OS','rgba(239,226,196,0.75)',{ls:1.4,parent:'can'+i});surfText('TRANSFORMER',x,y+r*0.58,0.29,'600 7px OS','rgba(239,226,196,0.6)',{ls:1.2,parent:'can'+i});});
   // ---- section headers with engraved rules
-  [['LOW FREQUENCY',90,290],['HIGH FREQUENCY',410,610],['ATTENUATION',750,860]].forEach(([t,a,b])=>{const cx=(a+b)/2,y=238;eng(t,cx,y,11,2.4);
+  [['LOW FREQUENCY',100,340],['HIGH FREQUENCY',480,720],['ATTENUATION',860,980]].forEach(([t,a,b])=>{const cx=(a+b)/2,y=238;eng(t,cx,y,11,2.4);
     g.save();g.font='600 11px OS';g.letterSpacing='2.4px';const w=g.measureText(t).width/2+10;g.restore();g.strokeStyle='rgba(239,226,196,0.4)';g.lineWidth=1;[[a-40,cx-w],[cx+w,b+40]].forEach(([x0,x1])=>{if(x1>x0){g.beginPath();g.moveTo(sx(x0),sy(y));g.lineTo(sx(x1),sy(y));g.stroke();}});});
   // ---- row A
-  knobA(90,KYA,'CPS',['20','30','60','100'],st.cps,st.cps!=null?['20 Hz','30 Hz','60 Hz','100 Hz'][st.cps]:'');
-  knobA(190,KYA,'BOOST',null,st.lb,(st.lb*10).toFixed(1));knobA(290,KYA,'ATTEN',null,st.la,(st.la*10).toFixed(1));
-  knobA(410,KYA,'KCS',['3','4','5','8','10','12','16'],st.kcs,['3','4','5','8','10','12','16'][st.kcs]+' kHz');
-  knobA(510,KYA,'BANDWIDTH',null,st.bw,(st.bw*10).toFixed(1));knobA(610,KYA,'BOOST',null,st.hb,(st.hb*10).toFixed(1));
-  knobA(750,KYA,'ATTEN SEL',['5','10','20'],st.as,['5','10','20'][st.as]+' kHz');knobA(860,KYA,'ATTEN',null,st.ha,(st.ha*10).toFixed(1));
+  knobA(100,KYA,'CPS',['20','30','60','100'],st.cps,st.cps!=null?['20 Hz','30 Hz','60 Hz','100 Hz'][st.cps]:'');
+  knobA(220,KYA,'BOOST',null,st.lb,(st.lb*10).toFixed(1));knobA(340,KYA,'ATTEN',null,st.la,(st.la*10).toFixed(1));
+  knobA(480,KYA,'KCS',['3','4','5','8','10','12','16'],st.kcs,['3','4','5','8','10','12','16'][st.kcs]+' kHz');
+  knobA(600,KYA,'BANDWIDTH',null,st.bw,(st.bw*10).toFixed(1));knobA(720,KYA,'BOOST',null,st.hb,(st.hb*10).toFixed(1));
+  knobA(860,KYA,'ATTEN SEL',['5','10','20'],st.as,['5','10','20'][st.as]+' kHz');knobA(980,KYA,'ATTEN',null,st.ha,(st.ha*10).toFixed(1));
   // ---- DRIVE / OUTPUT
   [[DRIVE,'DRIVE',st.drive,st.driveT],[OUTPUT,'OUTPUT',st.out,st.outT]].forEach(([[px,py,r],l,v,t])=>{lay(l+' arc',px-46.5,py-46.5,px+46.5,py+33);eng(l,px,404.5,11,2);
     g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=12;g.strokeStyle=AMB;g.lineWidth=2.6;g.beginPath();g.ellipse(sx(px),sy(py),45*SX,45*SY,0,A0,A0+ASP*v);g.stroke();g.restore();
@@ -54,10 +54,14 @@ function ember(X,Y,img,st){
   ['EQP','MID EQ','TUBE','NATURAL','LINEAR'].forEach((t,i)=>{const [x,y]=BTN[i],on=st.btn[i];
     if(on){const jx=sx(x),jy=sy(y+JDY,0.06);g.save();g.globalCompositeOperation='lighter';const jg=g.createRadialGradient(jx,jy,1,jx,jy,24);jg.addColorStop(0,'rgba(255,230,160,0.95)');jg.addColorStop(0.25,'rgba(255,150,40,0.7)');jg.addColorStop(1,'rgba(255,120,20,0)');g.fillStyle=jg;g.fillRect(jx-24,jy-24,48,48);g.restore();}
     (on?litT:eng)(t,x,y+34,10.5,1.2);});
-  {const lx=(BTN[3][0]+BTN[4][0])/2;eng('PHASE',lx,BTN[3][1]-62,11,2.4);eng('SECTIONS',320,BTN[0][1]-62,11,2.4);}
+  {const lx=(BTN[3][0]+BTN[4][0])/2;eng('PHASE',lx,BTN[3][1]-62,11,2.4);eng('SECTIONS',350,BTN[0][1]-62,11,2.4);}
   // ---- CRT: green phosphor curve
   {const [cx,cy,cr]=CRT,z=-0.04;g.save();g.beginPath();g.ellipse(sx(cx),sy(cy,z),cr*SX,cr*SY,0,0,2*PI);g.clip();
    g.strokeStyle='rgba(125,255,160,0.12)';g.lineWidth=1;for(let i=-2;i<=2;i++){g.beginPath();g.moveTo(sx(cx-cr),sy(cy+i*cr/3,z));g.lineTo(sx(cx+cr),sy(cy+i*cr/3,z));g.stroke();g.beginPath();g.moveTo(sx(cx+i*cr/3),sy(cy-cr,z));g.lineTo(sx(cx+i*cr/3),sy(cy+cr,z));g.stroke();}
+   // live spectrum of what's going in, faint behind the curve (phosphor afterglow)
+   {let q=21;const rn=()=>{q=(q*16807)%2147483647;return q/2147483647;};const spec=f=>{const l=Math.log10(f);return 0.85-0.55*Math.pow(Math.abs(l-2.1),1.5)+0.25*Math.exp(-Math.pow(Math.log2(f/3500),2)*1.5)+(rn()-0.5)*0.12;};
+    g.beginPath();g.moveTo(sx(cx-cr),sy(cy+cr,z));for(let i=0;i<=2*cr;i+=1){const f=20*Math.pow(1000,i/(2*cr));g.lineTo(sx(cx-cr+i),sy(cy+cr-Math.max(0,spec(f))*cr*1.3,z));}g.lineTo(sx(cx+cr),sy(cy+cr,z));g.closePath();
+    const sg=g.createLinearGradient(0,sy(cy-cr,z),0,sy(cy+cr,z));sg.addColorStop(0,'rgba(125,255,160,0.28)');sg.addColorStop(1,'rgba(125,255,160,0.04)');g.fillStyle=sg;g.fill();}
    const f2d=f=>4.5*st.lb/(1+Math.exp(Math.log2(f/60)*4))-2.6*st.la*Math.exp(-Math.pow(Math.log2(f/180),2)*1.5)+5*st.hb*Math.exp(-Math.pow(Math.log2(f/8000),2)*(0.6+st.bw))-2*st.ha/(1+Math.exp(-Math.log2(f/14000)*5));
    g.save();g.shadowColor=PHOS;g.shadowBlur=12;g.strokeStyle=PHOS;g.lineWidth=2;g.beginPath();for(let i=0;i<=2*cr;i++){const f=20*Math.pow(1000,i/(2*cr));const y=cy-f2d(f)*5;i?g.lineTo(sx(cx-cr+i),sy(y,z)):g.moveTo(sx(cx-cr+i),sy(y,z));}g.stroke();g.restore();
    const vg=g.createRadialGradient(sx(cx-cr*0.3),sy(cy-cr*0.4,z),2,sx(cx),sy(cy,z),cr);vg.addColorStop(0,'rgba(255,255,255,0.12)');vg.addColorStop(0.5,'rgba(255,255,255,0)');vg.addColorStop(1,'rgba(0,0,0,0.5)');g.fillStyle=vg;g.fillRect(sx(cx-cr),sy(cy-cr),2*cr,2*cr);g.restore();}
@@ -70,9 +74,9 @@ function ember(X,Y,img,st){
   const img={cold:await L('ember/ember.png'),hot:await L('ember/ember_tubes_add.png')};
   const bg=g.createRadialGradient(SW/2,SH*0.4,100,SW/2,SH/2,SW*0.7);bg.addColorStop(0,'#1c1b1f');bg.addColorStop(1,'#060607');g.fillStyle=bg;g.fillRect(0,0,SW,SH);
   uiText('TUBE EQ  →  EMBER',SW/2,34,'15px IB','rgba(240,240,245,0.92)',3);
-  uiText('Left: Drive low, the valves idling  ·  Right: Drive up, the valves burning. The green screen draws the curve you’ve set.',SW/2,58,'12px IM','rgba(220,220,230,0.5)');
-  ember(40,100,img,{drive:0.2,driveT:'2.0',out:0.5,outT:'0.0 dB',vu:0.45,cps:2,lb:0.55,la:0.3,kcs:3,bw:0.6,hb:0.4,as:1,ha:0.2,btn:[true,false,true,true,false]});
-  ember(1080,100,img,{drive:0.9,driveT:'9.0',out:0.4,outT:'-2.0 dB',vu:0.82,cps:1,lb:0.8,la:0.5,kcs:5,bw:0.4,hb:0.7,as:2,ha:0.4,btn:[true,true,true,false,true]});
+  uiText('Top: Drive low, the valves idling  ·  Bottom: Drive up, the valves burning.',SW/2,58,'12px IM','rgba(220,220,230,0.5)');
+  ember(40,90,img,{drive:0.2,driveT:'2.0',out:0.5,outT:'0.0 dB',vu:0.45,cps:2,lb:0.55,la:0.3,kcs:3,bw:0.6,hb:0.4,as:1,ha:0.2,btn:[true,false,true,true,false]});
+  ember(40,740,img,{drive:0.9,driveT:'9.0',out:0.4,outT:'-2.0 dB',vu:0.82,cps:1,lb:0.8,la:0.5,kcs:5,bw:0.4,hb:0.7,as:2,ha:0.4,btn:[true,true,true,false,true]});
   document.title='done';
 })();
 </script></body></html>

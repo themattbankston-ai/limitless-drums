@@ -5,7 +5,7 @@ function hex(h,a){const n=parseInt(h.slice(1),16);return `rgba(${n>>16},${(n>>8)
 let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
 
 // ---- the faceplate camera: tilted 11 deg, orthographic. panel px (+ height z in Blender units) -> screen px.
-const FW=980,FH=544,SX=1/1.01,SY=0.98163/1.01,ZK=100*Math.sin(11*PI/180)/1.01;
+let FW=980,FH=544;const SX=1/1.01,SY=0.98163/1.01,ZK=100*Math.sin(11*PI/180)/1.01;
 let BX=0,BY=0;
 const sx=v=>BX+FW/2+(v-FW/2)*SX, sy=(v,z=0)=>BY+FH/2+(v-FH/2)*SY-z*ZK;
 

@@ -13,20 +13,20 @@ import render_rack as R
 from render_rack import P, U, box, cut, mat_principled
 HOT = os.environ.get('LD_HOT', '')
 FONTS = os.environ.get('LD_FONTS', '/tmp/claude-0/mk/fonts')
-W, H = 980, 544
+W, H = 1060, 544     # wider than the others so the EQ knobs' scales have room
 R.W, R.H = W, H
 at = R.at
 
 # layout (panel px), shared with the overlay
-VU = (165, 98, 230, 122)                         # centre, w, h of the meter window
-TUBES = (490, 96, 330, 128)                      # centre, w, h of the valve window
-CANS = [(768, 96, 44), (882, 96, 44)]
-PLATE = (490, 196, 190, 34)                      # brass nameplate
-KNOBS_A = [90, 190, 290, 410, 510, 610, 750, 860]; KYA = 310; KRA = 26
-DRIVE = (110, 462, 30); OUTPUT = (870, 462, 30)
-BTN = [(240, 476), (320, 476), (400, 476), (690, 476), (770, 476)]   # EQP, MID EQ, TUBE, NATURAL, LINEAR
+VU = (205, 98, 230, 122)                         # centre, w, h of the meter window
+TUBES = (530, 96, 330, 128)                      # centre, w, h of the valve window
+CANS = [(808, 96, 44), (922, 96, 44)]
+PLATE = (530, 196, 190, 34)                      # brass nameplate
+KNOBS_A = [100, 220, 340, 480, 600, 720, 860, 980]; KYA = 310; KRA = 26
+DRIVE = (120, 462, 30); OUTPUT = (940, 462, 30)
+BTN = [(270, 476), (350, 476), (430, 476), (670, 476), (750, 476)]   # EQP, MID EQ, TUBE, NATURAL, LINEAR
 JEWEL_DY = -34
-CRT = (545, 466, 46)
+CRT = (530, 466, 46)
 
 def enamel():
     m = bpy.data.materials.new('enamel'); m.use_nodes = True; nt = m.node_tree; p = nt.nodes['Principled BSDF']
