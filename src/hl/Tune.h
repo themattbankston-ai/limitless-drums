@@ -42,6 +42,10 @@ TuneInfo computeTune (const SessionPitch&, const TuneSettings&, int velocities, 
 
 /** Varispeed render (Hitline's renderTuned): out[n] = g*pol*x(onset + lag + (n - pre)*step), Kaiser-windowed
     sinc, reading only [lo, hi), with an edge fade so a pitched-up slot never pulls in the next hit. */
+/** Keeping the stick attack at its real pitch (Limitless): the first keepN output samples after the onset (and
+    the pre-roll) play at step0, the untuned rate; the rate then glides to the tuned step over rampN. The read
+    position never jumps, so nothing smears, and every mic gets the same mapping, so their timing holds. */
+struct AttackKeep { long keepN = 0, rampN = 0; double step0 = 1; };
 F32 renderTuned (const F32& x, double onset, long pre, long outLen, double lag, int pol, double g, double step,
-                 long lo, long hi, long fadeN, int taps = 32);
+                 long lo, long hi, long fadeN, int taps = 32, AttackKeep keep = {});
 } // namespace ld::hl

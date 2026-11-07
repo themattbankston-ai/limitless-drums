@@ -826,15 +826,22 @@ LevelResult measureLevels (const Session& S, const MixRender& M)
 
 //==============================================================================
 static double ratioOf (const Session& S, size_t i) { return S.tinfo && i < S.tinfo->ratios.size() ? S.tinfo->ratios[i] : 1.0; }
+/** Keep the stick attack at its real pitch on shifts of a semitone or more: 3 ms as recorded, then a 2 ms glide. */
+static AttackKeep attackKeep (const Session& S, double ratio, double step0, double outRate)
+{
+    if (! S.keepAttack || std::abs (12 * std::log2 (ratio)) < 1) return {};
+    return { (long) jsRound (0.003 * outRate), (long) jsRound (0.002 * outRate), step0 };
+}
 
 Chs renderHitMic (const Session& S, const MixRender& M, int t, size_t i, const Region& r, double srOut, double gain)
 {
     const double ratio = ratioOf (S, i), step = ratio * S.sr / srOut, on = (double) S.onsets[i], lag = lagOf (S, t);
     const int pol = polR (S, t);
-    const long preOut = (long) jsRound ((on - r.start) / step), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
+    const auto keep = attackKeep (S, ratio, S.sr / srOut, srOut);
+    const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? keep.step0 : step)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
     const long lo = r.start + (long) std::floor (lag), hi = r.end + (long) std::ceil (lag);
     Chs out;
-    for (auto& x : M.proc[(size_t) t]) out.push_back (renderTuned (x, on, preOut, outLen, lag, pol, gain, step, lo, hi, 0));
+    for (auto& x : M.proc[(size_t) t]) out.push_back (renderTuned (x, on, preOut, outLen, lag, pol, gain, step, lo, hi, 0, S.tuneTaps, keep));
     return out;
 }
 
@@ -842,9 +849,10 @@ Chs renderRoomHit (const Session& S, const MixRender& M, size_t i, const Region&
 {
     if (M.room.empty() || ! roomLive (S)) return {};
     const double ratio = ratioOf (S, i), step = ratio * S.sr / srOut, on = (double) S.onsets[i];
-    const long preOut = (long) jsRound ((on - r.start) / step), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
+    const auto keep = attackKeep (S, ratio, S.sr / srOut, srOut);
+    const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? keep.step0 : step)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
     Chs out;
-    for (auto& x : M.room) out.push_back (renderTuned (x, on, preOut, outLen, 0, 1, gain, step, r.start, r.end, 0));
+    for (auto& x : M.room) out.push_back (renderTuned (x, on, preOut, outLen, 0, 1, gain, step, r.start, r.end, 0, S.tuneTaps, keep));
     return out;
 }
 
@@ -868,14 +876,15 @@ Chs renderFull (const Session& S, const MixRender& M, const LevelResult& L, int 
         const double ratio = ratioOf (S, k), step = ratio / k2o;
         const double on = (double) S.onsets[k];
         const long o0 = (long) jsRound ((double) bnd[k] * k2o), o1 = k == N - 1 ? total : (long) jsRound ((double) bnd[k + 1] * k2o), slot = o1 - o0;
-        const long preOut = (long) jsRound ((on - (double) bnd[k]) / step);
+        const auto keep = attackKeep (S, ratio, 1 / k2o, sr * k2o);
+        const long preOut = (long) jsRound ((on - (double) bnd[k]) / (keep.keepN ? keep.step0 : step));
         const bool tuned = std::abs (ratio - 1) > 1e-9;
         const long fadeSrc = tuned ? (long) jsRound (0.006 * sr) : 0;
         for (size_t c = 0; c < src.size(); ++c)
         {
             const long lo = bnd[k] + (long) std::floor (lag) - (k == 0 ? 1000000000L : 0L);
             const long hi = bnd[k + 1] + (long) std::ceil (lag) + (k == N - 1 ? 1000000000L : 0L);
-            auto y = renderTuned (src[c], on, preOut, slot, lag, pol, gl[k], step, lo, hi, k == N - 1 ? 0 : fadeSrc);
+            auto y = renderTuned (src[c], on, preOut, slot, lag, pol, gl[k], step, lo, hi, k == N - 1 ? 0 : fadeSrc, S.tuneTaps, keep);
             if (k > 0)
             {
                 const long rN = std::min (preOut, (long) jsRound (0.002 * srOut));
@@ -1104,11 +1113,12 @@ HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult
         if (! o.only.empty() && std::find (o.only.begin(), o.only.end(), t) == o.only.end()) { h.stems.emplace_back(); continue; }
         const double step = ratio, on = (double) S.onsets[i], lag = o.processed ? lagOf (S, t) : 0.0;
         const int pol = o.processed ? polR (S, t) : 1;
-        const long preOut = (long) jsRound ((on - r.start) / step), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
+        const auto keep = attackKeep (S, ratio, 1, S.sr);
+        const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? 1.0 : step)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
         const long lo = r.start + (long) std::floor (lag), hi = r.end + (long) std::ceil (lag);
         const auto& src = o.processed ? M.proc[(size_t) t] : S.tracks[(size_t) t].ch;
         Chs s;
-        for (auto& x : src) s.push_back (fit (renderTuned (x, on, preOut, outLen, lag, pol, gainAt (t), step, lo, hi, 0, o.taps), len));
+        for (auto& x : src) s.push_back (fit (renderTuned (x, on, preOut, outLen, lag, pol, gainAt (t), step, lo, hi, 0, o.taps, keep), len));
         h.stems.push_back (std::move (s));
     }
     Chs all; for (auto& s : h.stems) for (auto& c : s) all.push_back (c);
@@ -1131,8 +1141,9 @@ HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult
     if (o.processed && o.only.empty() && ! M.room.empty() && roomLive (S))
     {
         const double on = (double) S.onsets[i];
-        const long preOut = (long) jsRound ((on - r.start) / ratio), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
-        for (auto& x : M.room) h.room.push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, o.taps), n));
+        const auto keep = attackKeep (S, ratio, 1, S.sr);
+        const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? 1.0 : ratio)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
+        for (auto& x : M.room) h.room.push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, o.taps, keep), n));
     }
     h.i = i; h.ratio = ratio; h.start = r.start; h.len = n;
     return h;

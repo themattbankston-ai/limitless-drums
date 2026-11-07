@@ -113,6 +113,9 @@ struct Session
     PitchOptions pitchOpt;            ///< fmin, fmax, skip and window, per drum
     std::string tuneMic = "ref";
     bool tuneAnalyzed = false, tuneAutoWin = true;
+    bool tuneAnyway = false;          ///< tune a cymbal, or a drum with no steady pitch, though it isn't recommended
+    bool keepAttack = false;          ///< Limitless: on shifts of a semitone or more the stick attack keeps its real pitch
+    int tuneTaps = 32;                ///< the varispeed filter on export (Hitline 32; Limitless 64)
     SessionPitch pitch;
     std::optional<TuneInfo> tuneInfo;
     std::vector<long> kitOn;          ///< whole-kit takes: the strong hits alignment is measured on

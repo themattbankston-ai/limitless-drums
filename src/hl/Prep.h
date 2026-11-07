@@ -55,6 +55,10 @@ void resetMic (Session&, int t);                            ///< back to measure
 struct Heat { std::vector<std::pair<double, double>> curve; double best = NAN, bestC = NAN, cur = 0, curC = NAN; long win = 0, pre = 0; bool far = false; int ref = -1; };
 Heat overlayHeat (const Session&, int t, int sel, bool spread);
 void runPitch (Session&);
+/** Whether tuning is recommended: "" yes; "cymbal" (by the drum chosen or by its sound: nearly all of it above
+    2 kHz, almost nothing low); "nopitch" (read, but too few hits give a clear pitch, or they don't agree). */
+std::string tuneAdvice (const Session&);
+bool soundsLikeCymbal (const Session&);
 void computeTune (Session&);
 /** Hitline's Auto prep. False when the hit count doesn't match the velocity and round-robin settings. */
 bool autoPrep (Session&);

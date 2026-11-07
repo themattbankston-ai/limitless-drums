@@ -685,6 +685,8 @@ void MainComponent::loadTake()
     std::thread ([files, folder, gen, opts = takeOptions, sp = juce::Component::SafePointer<MainComponent> (this)]
     {
         auto st = ld::openTake (files, folder, opts);
+        // Limitless's own tuning: the stick attack keeps its pitch on big shifts, and exports use the finer filter
+        st->session.keepAttack = true; st->session.tuneTaps = 64;
         juce::MessageManager::callAsync ([sp, st, gen]
         {
             if (sp == nullptr || sp->prepGeneration != gen) return;
@@ -1288,7 +1290,12 @@ void MainComponent::updateHeader()
         int moved = 0;
         for (auto& t : S.tracks) if (t.autoResult && ! t.autoResult->kept && (t.lag != 0 || t.pol < 0 || ! t.ap.empty())) ++moved;
         h.status[2] = S.phaseAnalyzed ? std::to_string (moved) + " LINED UP" : "NOT YET"; h.done[2] = S.phaseAnalyzed;
-        h.status[3] = S.tuneInfo ? hl::noteName (S.tuneInfo->nearest) + (S.tune.on ? " \xc2\xb7 ON" : " \xc2\xb7 OFF") : "NO PITCH"; h.done[3] = S.tuneInfo.has_value();
+        {
+            const auto adv = hl::tuneAdvice (S);
+            if (adv == "cymbal" && ! S.tune.on) { h.status[3] = "OFF \xc2\xb7 CYMBAL"; h.done[3] = true; }
+            else if (adv == "nopitch" && ! S.tune.on) { h.status[3] = "NO STEADY PITCH"; h.done[3] = true; }
+            else { h.status[3] = S.tuneInfo ? hl::noteName (S.tuneInfo->nearest) + (S.tune.on ? " \xc2\xb7 ON" : " \xc2\xb7 OFF") : "NO PITCH"; h.done[3] = S.tuneInfo.has_value(); }
+        }
         h.status[4] = ! es->mix ? (prepping ? "RENDERING" : "NOT YET") : hl::fxOn (S) || hl::busLive (S) || hl::roomLive (S) ? "ON" : "FLAT";
         const bool lv = es->levels && es->levels->valid;
         h.status[5] = lv ? "ON STANDARD" : (es->mix ? "NEEDS HITS" : prepping ? "MEASURING" : "NOT YET"); h.done[5] = lv;
@@ -1500,6 +1507,14 @@ void MainComponent::onTuneAction (const std::string& a, double v)
                 sp->rerender();
             });
         }).detach();
+        return;
+    }
+    if (a == "anyway")
+    {
+        // not recommended: read the pitch if it hasn't been, then tune
+        S.tuneAnyway = true;
+        if (! S.tuneInfo || ! S.tuneInfo->valid) { onTuneAction ("read", 0); setNotice ("Reading the pitch. Tuning this isn't recommended: press Tune It when it's read."); return; }
+        change ([] (hl::Session& s) { s.tune.on = true; }, "Tuned anyway. Not recommended: there's no steady note here to tune to.");
         return;
     }
     if (! S.tuneInfo || ! S.tuneInfo->valid) return;

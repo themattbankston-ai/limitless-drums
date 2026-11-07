@@ -448,7 +448,7 @@ bool autoPrep (Session& S)
     if (S.mode == "kit" && S.onsets.empty()) runDetect (S);
     if (! countsOk (S) && S.mode != "kit") return false;
     runAnalyze (S);
-    if (pitched (S.drum) && S.mode != "kit") runPitch (S);
+    if (pitched (S.drum) && S.mode != "kit" && ! soundsLikeCymbal (S)) runPitch (S);
     return true;
 }
 
@@ -632,5 +632,48 @@ Heat overlayHeat (const Session& S, int t, int sel, bool spread)
     for (auto& [l, c] : H.curve) if (! std::isfinite (H.bestC) || c > H.bestC) { H.best = l; H.bestC = c; }
     H.curC = corrAt (H.cur);
     return H;
+}
+
+// ------------------------------------------------------------------------------- is tuning recommended
+bool soundsLikeCymbal (const Session& S)
+{
+    if (S.tracks.empty() || S.onsets.empty()) return false;
+    const auto& x = S.tracks[(size_t) S.refIdx].mono;
+    const double sr = S.sr;
+    const double kl = std::exp (-2 * M_PI * 150 / sr), kh = std::exp (-2 * M_PI * 2000 / sr);
+    double lo = 0, hi = 0, all = 0;
+    const size_t step = std::max<size_t> (1, S.onsets.size() / 24);
+    for (size_t k = 0; k < S.onsets.size(); k += step)
+    {
+        const long a = std::max (0L, (long) S.onsets[k]), b = std::min ((long) x.size(), a + (long) (0.3 * sr));
+        double l1 = 0, l2 = 0, h1 = 0, h2 = 0;
+        for (long i = a; i < b; ++i)
+        {
+            const double v = x[(size_t) i];
+            l1 = (1 - kl) * v + kl * l1; l2 = (1 - kl) * l1 + kl * l2;
+            h1 = (1 - kh) * v + kh * h1; h2 = (1 - kh) * h1 + kh * h2;
+            lo += l2 * l2; hi += (v - h2) * (v - h2); all += v * v;
+        }
+    }
+    // snares put 5-15 % of their energy above 2 kHz, toms about 1 %; hats, rides and crashes 70-95 %
+    return all > 0 && hi / all > 0.45 && lo / all < 0.08;
+}
+
+std::string tuneAdvice (const Session& S)
+{
+    if (! pitched (S.drum) || soundsLikeCymbal (S)) return "cymbal";
+    if (! S.tuneAnalyzed || S.pitch.hits.empty()) return "";
+    int n = 0; std::vector<double> c;
+    const double ref = std::isfinite (S.pitch.est) ? S.pitch.est : NAN;
+    for (auto& h : S.pitch.hits) if (h && h->f > 0) { ++n; if (std::isfinite (ref)) c.push_back (1200 * std::log2 (h->f / ref)); }
+    if (n < 0.6 * (double) S.pitch.hits.size()) return "nopitch";
+    if (c.size() >= 4)
+    {
+        // harder hits ring higher, so the spread is judged inside each velocity when the counts are known
+        std::sort (c.begin(), c.end());
+        const double iqr = c[c.size() * 3 / 4] - c[c.size() / 4];
+        if (iqr > 150) return "nopitch";
+    }
+    return "";
 }
 } // namespace ld::hl

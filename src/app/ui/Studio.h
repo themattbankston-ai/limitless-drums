@@ -93,6 +93,8 @@ struct StudioModel
     struct TuneView
     {
         bool tunable = false, read = false, on = false, rr = false;   ///< rr: even out round robins
+        std::string advice;                       ///< "", "cymbal" or "nopitch": tuning isn't recommended
+        bool anyway = false;                      ///< tuned though it isn't recommended
         std::string from = "Top", target = "Nearest";                 ///< read from; the target as the menu says it
         float cents = 0, a4 = 440, fmin = 120, fmax = 400, skipMs = 15;
         // the drum

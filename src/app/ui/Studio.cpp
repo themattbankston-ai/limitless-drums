@@ -1161,7 +1161,7 @@ struct Studio::Strips : visage::Frame
             const float mx = m.x + 192 + k * 8, my = sl.y, mh = sl.h;
             c.setColor (0xff020203); c.roundedRectangle (mx, my, 6, mh, 2);
             c.setColor (0x0dffffff); c.fill (mx, my + mh, 6, 1);
-            const float lv = std::min (1.0f, k < (int) chanMeters[(size_t) i].size() ? chanMeters[(size_t) i][(size_t) k] : 0.0f);
+            const float lv = std::min (1.0f, i < (int) chanMeters.size() && k < (int) chanMeters[(size_t) i].size() ? chanMeters[(size_t) i][(size_t) k] : 0.0f);
             if (lv > 0.002f)
             {
                 const float bh = (mh - 2) * lv;
@@ -1895,8 +1895,9 @@ struct Studio::Rack : visage::Frame
         // plays), and stand still when it's in tune; the note in the middle
         {
             const float cx = X (88), cy = Y (129), r = S (56);
+            const bool advised = ! T.advice.empty() && ! (T.anyway && T.on);
             const float cents = live && std::isfinite (T.hitCents) ? T.hitCents : 0;
-            const unsigned col = ! live ? 0xff2d3a1f : std::abs (cents) < 3 ? lime : std::abs (cents) < 12 ? amber : hot;
+            const unsigned col = advised ? 0xff3a3f45 : ! live ? 0xff2d3a1f : std::abs (cents) < 3 ? lime : std::abs (cents) < 12 ? amber : hot;
             const double t = std::chrono::duration<double> (std::chrono::steady_clock::now() - strobeT0).count();
             // each ring a band of lit segments, like a strobe disc behind glass; inner rings turn faster
             for (int ring = 0; ring < 3; ++ring)
@@ -1913,11 +1914,11 @@ struct Studio::Rack : visage::Frame
                     c.setColor (Color (col).withAlpha (live ? 0.95f : 0.28f)); c.arc (cx - rr, cy - rr, 2 * rr, th, a, step * 0.25f, false);
                 }
             }
-            c.setColor (live ? 0xfff2f4f8 : 0xff3e434b);
-            draw::text (c, live && ! T.hitNote.empty() ? T.hitNote : std::string ("\xe2\x80\x94"), monoBold (S (17)), Font::kCenter, cx - S (30), cy - S (12), S (60), S (20));
+            c.setColor (live && ! advised ? 0xfff2f4f8 : 0xff6f767f);
+            draw::text (c, advised ? std::string ("OFF") : live && ! T.hitNote.empty() ? T.hitNote : std::string ("\xe2\x80\x94"), monoBold (S (17)), Font::kCenter, cx - S (30), cy - S (12), S (60), S (20));
             c.setColor (col);
             draw::text (c, live ? draw::fmt ("%+.0f\xc2\xa2", (double) cents) : std::string(), monoBold (S (8.5f)), Font::kCenter, cx - S (30), cy + S (8), S (60), S (11));
-            if (live) redraw();   // the strobe keeps turning
+            if (live && ! advised) redraw();   // the strobe keeps turning
         }
         // the readout
         {
@@ -1936,7 +1937,19 @@ struct Studio::Rack : visage::Frame
                 row (4, "RR SPREAD", std::isfinite (T.spreadBefore) ? draw::fmt ("%.0f", (double) T.spreadBefore) + "\xe2\x86\x92" + draw::fmt ("%.0f\xc2\xa2", (double) T.spreadAfter) : std::string ("\xe2\x80\x94"));
                 row (5, "WORST", T.worstLayer >= 0 ? "V" + std::to_string (T.worstLayer + 1) + draw::fmt (" %+.0f\xc2\xa2", (double) T.worstCents) : std::string ("\xe2\x80\x94"));
             }
-            else { c.setColor (0xff6f767f); draw::text (c, "Read the pitch", bodyFont (S (10)), Font::kCenter, X (rx), Y (ry), S (132), S (118)); }
+            else if (T.advice.empty() || T.on) { c.setColor (0xff6f767f); draw::text (c, "Read the pitch", bodyFont (S (10)), Font::kCenter, X (rx), Y (ry), S (132), S (118)); }
+            if (! T.advice.empty() && ! T.on)
+            {
+                // the advice, over the readout
+                c.setColor (0xff0a0c09); c.fill (X (rx + 3), Y (ry + 3), S (126), S (112));
+                c.setColor (amber);
+                draw::text (c, T.advice == "cymbal" ? "CYMBALS DON'T" : "NO STEADY PITCH", boldFont (S (8.5f)), Font::kCenter, X (rx), Y (ry + 22), S (132), S (14));
+                draw::text (c, T.advice == "cymbal" ? "GET TUNED" : "HERE", boldFont (S (8.5f)), Font::kCenter, X (rx), Y (ry + 36), S (132), S (14));
+                c.setColor (0xffb9bec6);
+                draw::text (c, "Tuning is off.", bodyFont (S (9)), Font::kCenter, X (rx), Y (ry + 60), S (132), S (13));
+                draw::text (c, "Leave it off: it", bodyFont (S (9)), Font::kCenter, X (rx), Y (ry + 74), S (132), S (13));
+                draw::text (c, "isn't recommended.", bodyFont (S (9)), Font::kCenter, X (rx), Y (ry + 88), S (132), S (13));
+            }
         }
         // the cents meter: \xc2\xb150 cents, the selected hit as recorded (grey) and as it plays now
         {
@@ -1960,8 +1973,14 @@ struct Studio::Rack : visage::Frame
             }
         }
         // keys
-        keyLabel (c, tkeys[1], T.on ? "TUNED" : "TUNE IT", T.on, lime, live);
+        if (! T.advice.empty() && ! T.on) keyLabel (c, tkeys[1], "TUNE ANYWAY", false, amber, true);
+        else keyLabel (c, tkeys[1], T.on ? "TUNED" : "TUNE IT", T.on, T.anyway && ! T.advice.empty() ? amber : lime, live);
         keyLabel (c, tkeys[2], live ? "READ AGAIN" : "READ PITCH", false, lime, true);
+        if (! T.advice.empty() && T.on)
+        {
+            c.setColor (amber);
+            draw::text (c, "NOT RECOMMENDED", boldFont (S (6.5f)), Font::kCenter, X (26), Y (230), S (130), S (9));
+        }
         keyLabel (c, tkeys[3], "ONE RATIO", live && ! T.rr, lime, live && T.on);
         keyLabel (c, tkeys[4], "EVEN OUT RRs", live && T.rr, lime, live && T.on);
         keyLabel (c, tkeys[5], "NEAREST", T.target.rfind ("Nearest", 0) == 0, lime, live && T.on);
@@ -2044,6 +2063,7 @@ struct Studio::Rack : visage::Frame
         pressed = id; redraw();
         if (id.rfind ("menu:", 0) == 0) { if (studio.onTuneMenu) studio.onTuneMenu (id.substr (5), X (kk->x), Y (kk->y), S (kk->w), S (kk->h)); return; }
         if (id == "read") { studio.onTune ("read", 0); return; }
+        if (id == "on" && ! T.advice.empty() && ! T.on) { studio.onTune ("anyway", 1); return; }
         if (! T.read) return;
         if (id == "on") { studio.onTune ("on", T.on ? 0 : 1); return; }
         if (id == "mode:drum" || id == "mode:rr") { if (T.on) studio.onTune ("mode", id == "mode:rr"); return; }

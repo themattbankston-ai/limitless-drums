@@ -194,7 +194,7 @@ namespace
 }
 
 F32 renderTuned (const F32& x, double onset, long pre, long outLen, double lag, int pol, double g, double step,
-                 long lo, long hi, long fadeN, int taps)
+                 long lo, long hi, long fadeN, int taps, AttackKeep keep)
 {
     lo = std::max (0L, lo);
     hi = std::min ((long) x.size(), hi);
@@ -205,15 +205,25 @@ F32 renderTuned (const F32& x, double onset, long pre, long outLen, double lag, 
         applyEdgeFade (out, [&] (double n) { return onset + lag + n - pre; }, (double) hi, fadeN);
         return out;
     }
-    const double cut = std::min (1.0, 1 / step) * 0.96;
+    const bool keeping = keep.keepN > 0 && std::abs (step - keep.step0) > 1e-9;
+    const double cut = std::min (1.0, 1 / std::max (step, keeping ? keep.step0 : step)) * 0.96;
     const auto tab = getTable (cut, taps);
     const int W = tab->W, W2 = 2 * W;
     const float* T = tab->T.data();
     F32 out ((size_t) outLen, 0.0f);
     const double k = pol * g, base = onset + lag;
+    const double K = (double) keep.keepN, Rm = (double) std::max (1L, keep.rampN), r0 = keep.step0, r1 = step;
+    auto posOf = [&] (double n)
+    {
+        const double u = n - pre;
+        if (! keeping) return base + u * step;
+        if (u <= K) return base + u * r0;
+        if (u <= K + Rm) { const double v = u - K; return base + K * r0 + v * r0 + (r1 - r0) * v * v / (2 * Rm); }
+        return base + K * r0 + Rm * (r0 + r1) / 2 + (u - K - Rm) * r1;
+    };
     for (long n = 0; n < outLen; ++n)
     {
-        const double pos = base + (n - pre) * step;
+        const double pos = posOf ((double) n);
         if (pos < lo - W || pos >= hi) continue;
         const long i0 = (long) std::floor (pos);
         const double fr = pos - i0, pf = fr * RS_PH;
@@ -225,7 +235,7 @@ F32 renderTuned (const F32& x, double onset, long pre, long outLen, double lag, 
         else for (int j = 0; j < W2; ++j) { const long idx = a + j; if (idx < lo || idx >= hi) continue; s += x[(size_t) idx] * (T[r0 + j] * w0 + T[r1 + j] * w1); }
         out[(size_t) n] = (float) (k * s);
     }
-    applyEdgeFade (out, [&] (double n) { return base + (n - pre) * step; }, (double) hi, fadeN);
+    applyEdgeFade (out, posOf, (double) hi, fadeN);
     return out;
 }
 } // namespace ld::hl

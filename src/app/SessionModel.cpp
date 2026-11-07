@@ -345,7 +345,8 @@ ui::StudioModel::TuneView buildTuneView (const EngineState& es, int hit)
     ui::StudioModel::TuneView v;
     const auto& S = es.session;
     if (S.tracks.empty()) return v;
-    v.tunable = S.drum == "kick" || S.drum == "snare" || S.drum == "tom";
+    v.tunable = true;   // anything can be tuned; the advice says when it shouldn't be
+    v.advice = hl::tuneAdvice (S); v.anyway = S.tuneAnyway;
     v.on = S.tune.on; v.rr = S.tune.mode == "rr"; v.cents = (float) S.tune.cents; v.a4 = (float) S.tune.a4;
     v.fmin = (float) S.pitchOpt.fmin; v.fmax = (float) S.pitchOpt.fmax; v.skipMs = (float) S.pitchOpt.skipMs;
     const int nT = (int) S.tracks.size();
