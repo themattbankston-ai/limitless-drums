@@ -1,0 +1,113 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:IB;src:url(InterDisplay-Bold.otf)} @font-face{font-family:IS;src:url(InterDisplay-SemiBold.otf)}
+@font-face{font-family:IM;src:url(Inter-Medium.otf)} @font-face{font-family:MB;src:url(DejaVuSansMono-Bold.ttf)}
+@font-face{font-family:OPS;src:url(fonts/BlackOpsOne-Regular.ttf)} @font-face{font-family:MM;src:url(fonts/MetalMania-Regular.ttf)}
+@font-face{font-family:OS;src:url("fonts/Oswald[wght].ttf")}
+html,body{margin:0;background:#070708}
+</style></head><body><canvas id=c></canvas><script>
+const SW=2120,SH=760;
+const c=document.getElementById('c');c.width=SW*2;c.height=SH*2;c.style.width=SW+'px';c.style.height=SH+'px';
+const g=c.getContext('2d');g.scale(2,2);const PI=Math.PI;
+const L=s=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=s});
+function rr(x,y,w,h,r){g.beginPath();g.roundRect(x,y,w,h,r);}
+function hex(h,a){const n=parseInt(h.slice(1),16);return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`;}
+function txt(t,x,y,f,col,al='center',ls=0){g.font=f;g.fillStyle=col;g.textAlign=al;g.textBaseline='middle';g.letterSpacing=ls+'px';g.fillText(t,x+(al==='center'?ls/2:0),y+0.5);g.letterSpacing='0px';}
+function glowTxt(t,x,y,f,col,blur=8,al='center',ls=0){g.save();g.shadowColor=col;g.shadowBlur=blur;txt(t,x,y,f,col,al,ls);g.shadowBlur=blur*2.2;txt(t,x,y,f,hex(col.startsWith('#')?col:'#ffffff',0.5),al,ls);g.restore();txt(t,x,y,f,'rgba(255,240,220,0.4)',al,ls);}
+let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
+// worn stencil paint: paint the text, then chip it with specks
+function paint(t,x,y,f,col,al='center',ls=1.5,wear=0.5){
+  const oc=document.createElement('canvas');oc.width=600;oc.height=80;const o=oc.getContext('2d');o.font=f;o.textAlign='center';o.textBaseline='middle';o.letterSpacing=ls+'px';o.fillStyle=col;o.fillText(t,300+ls/2,40.5);
+  o.globalCompositeOperation='destination-out';for(let i=0;i<260*wear;i++){o.fillStyle=`rgba(0,0,0,${0.4+rnd()*0.6})`;o.beginPath();o.arc(rnd()*600,rnd()*80,0.3+rnd()*1.1,0,2*PI);o.fill();}
+  for(let i=0;i<6*wear;i++){o.fillStyle='rgba(0,0,0,0.85)';o.fillRect(rnd()*600,rnd()*80,2+rnd()*8,0.6+rnd()*0.8);}
+  const w=o.measureText(t).width;const dx=al==='center'?x-300:al==='left'?x-300+w/2:x-300-w/2;
+  g.save();g.shadowColor='rgba(0,0,0,0.7)';g.shadowOffsetY=1;g.shadowBlur=1;g.drawImage(oc,dx,y-40);g.restore();
+}
+// faceplate projection (camera tilted 11 deg): panel px -> screen px; z in Blender units raises toward the top
+const FW=980,FH=544;
+const PX=v=>FW/2+(v-FW/2)/1.01, PY=(v,z=0)=>FH/2+(v-FH/2)*0.98163/1.01-z*100*Math.sin(11*PI/180)/1.01;
+const A0=PI*0.75,ASP=PI*1.5;
+
+function screen(x,y,w,h,r,tint='#07090c'){g.save();rr(x-2,y-2,w+4,h+4,r+2);const f=g.createLinearGradient(x,y-2,x,y+h+2);f.addColorStop(0,'rgba(0,0,0,0.8)');f.addColorStop(1,'rgba(255,255,255,0.12)');g.fillStyle=f;g.fill();rr(x,y,w,h,r);g.fillStyle=tint;g.fill();g.clip();const s=g.createLinearGradient(x,y,x,y+h*0.6);s.addColorStop(0,'rgba(0,0,0,0.6)');s.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=s;g.fillRect(x,y,w,h);g.restore();}
+function nixie(cx,cy,t,w=70){screen(cx-w/2,cy-9,w,18,3,'#0b0503');glowTxt(t,cx,cy,'11px MB','#ff7a2a',7);}
+
+function win(x,y,w,h,track,slot,col){
+  g.save();g.shadowColor='rgba(0,0,0,0.9)';g.shadowBlur=44;g.shadowOffsetY=18;rr(x,y,w,h,10);g.fillStyle='#131315';g.fill();g.restore();
+  g.save();rr(x,y,w,h,10);g.clip();const t=g.createLinearGradient(x,y,x,y+38);t.addColorStop(0,'#2b2b30');t.addColorStop(1,'#1a1a1e');g.fillStyle=t;g.fillRect(x,y,w,38);g.fillStyle='rgba(0,0,0,0.6)';g.fillRect(x,y+37,w,1);g.restore();
+  const px=x+22,py=y+19;g.save();g.strokeStyle=col;g.lineWidth=2;g.lineCap='round';g.shadowColor=col;g.shadowBlur=8;g.beginPath();g.arc(px,py,6.5,-PI/2+0.55,-PI/2-0.55+2*PI);g.stroke();g.beginPath();g.moveTo(px,py-8);g.lineTo(px,py-1);g.stroke();g.restore();
+  screen(x+42,y+9,150,20,4,'#0a0503');glowTxt(track,x+117,y+19,'10.5px MB',col,6);
+  txt('INSERT '+slot,x+212,y+19,'10px IS','rgba(220,220,230,0.45)','left',1.2);
+  txt('SKULL CUTTER',x+w/2,y+19,'13px IB','rgba(240,240,245,0.92)','center',2.5);
+  const rx=x+w-14;txt('✕',rx-15,y+19,'12px IS','rgba(230,230,235,0.6)');
+  rr(rx-92,y+8,58,22,4);g.fillStyle='#232328';g.fill();txt('A · B',rx-63,y+19,'10px IS','rgba(220,220,228,0.6)');
+  screen(rx-262,y+9,160,20,4,'#0b0c0f');txt('Default',rx-252,y+19,'10.5px IM','rgba(230,230,236,0.8)','left');txt('▾',rx-114,y+19,'9px IM','rgba(230,230,236,0.5)');
+  txt('↶  ↷',rx-292,y+19,'13px IM','rgba(230,230,236,0.45)');
+  return {x:x+10,y:y+46};
+}
+
+function skullCutter(X,Y,img,st){
+  const o=win(X,Y,1000,600,'SNARE BTM',3,'#ff6a2a');const bx=o.x,by=o.y;
+  g.save();rr(bx,by,FW,FH,6);g.clip();
+  g.drawImage(img.cold,bx,by,FW,FH);
+  // heat: the burning eyes follow Drive, the cracks and PUNISH dome follow Punish
+  g.globalCompositeOperation='lighter';
+  const eyes=Math.min(1,Math.max(0,(st.drive-0.15)/0.75));
+  g.globalAlpha=eyes;g.drawImage(img.eyes,bx,by,FW,FH);
+  g.filter='blur(14px)';g.globalAlpha=eyes*0.9;g.drawImage(img.eyes,bx,by,FW,FH);g.filter='none';
+  if(st.punish){g.globalAlpha=1;g.drawImage(img.cracks,bx,by,FW,FH);g.filter='blur(10px)';g.globalAlpha=0.9;g.drawImage(img.cracks,bx,by,FW,FH);g.filter='none';}
+  g.globalAlpha=1;g.globalCompositeOperation='source-over';
+  const X_=v=>bx+PX(v),Y_=(v,z)=>by+PY(v,z);
+  // model tags: stamped letters, the chosen one lit
+  ['VALVE','CRUSH','MULTI','TAPE'].forEach((m,i)=>{const cx=X_(32+i*92+54),cy=Y_(39,0.05);const on=i===st.model;
+    if(on){g.save();g.strokeStyle='#ff6a2a';g.shadowColor='#ff4a10';g.shadowBlur=12;g.lineWidth=1.4;rr(X_(32+i*92)+1,Y_(24,0.05)+1,PX(84)-PX(0)-2,29,5);g.stroke();g.restore();glowTxt(m,cx,cy,'12px OPS','#ff8a3a',8,'center',1.5);}
+    else{txt(m,cx,cy+0.8,'12px OPS','rgba(255,255,255,0.16)','center',1.5);txt(m,cx,cy,'12px OPS','rgba(10,9,8,0.82)','center',1.5);}});
+  // VU needle under the dome
+  const vcx=X_(170),vcy=Y_(222+0.6*113),vR=0.42*2*113*0.99;g.save();g.beginPath();g.arc(X_(170),Y_(222),112,0,2*PI);g.clip();
+  const va=(-140+100*st.vu)*PI/180;g.save();g.shadowColor='rgba(0,0,0,0.45)';g.shadowBlur=3;g.shadowOffsetX=3;g.shadowOffsetY=2;g.strokeStyle='#120c08';g.lineWidth=1.6;g.beginPath();g.moveTo(vcx+Math.cos(va)*18,vcy+Math.sin(va)*18);g.lineTo(vcx+Math.cos(va)*(vR+12),vcy+Math.sin(va)*(vR+12));g.stroke();g.restore();
+  g.strokeStyle='#b0261c';g.lineWidth=1.6;g.beginPath();g.moveTo(vcx+Math.cos(va)*(vR-14),vcy+Math.sin(va)*(vR-14));g.lineTo(vcx+Math.cos(va)*(vR+12),vcy+Math.sin(va)*(vR+12));g.stroke();
+  const hb=g.createRadialGradient(vcx-3,vcy-3,1,vcx,vcy,13);hb.addColorStop(0,'#5a4a3a');hb.addColorStop(1,'#120c08');g.fillStyle=hb;g.beginPath();g.arc(vcx,vcy,12,0,2*PI);g.fill();
+  // lamp warmth + glass sheen on top
+  const lw=g.createRadialGradient(vcx,vcy+10,10,vcx,vcy,150);lw.addColorStop(0,`rgba(255,150,60,${0.12+0.25*eyes})`);lw.addColorStop(1,'rgba(255,150,60,0)');g.fillStyle=lw;g.fillRect(X_(50),Y_(100),240,250);
+  const sh=g.createLinearGradient(X_(80),Y_(120),X_(200),Y_(260));sh.addColorStop(0,'rgba(255,255,255,0.16)');sh.addColorStop(0.4,'rgba(255,255,255,0.03)');sh.addColorStop(0.41,'rgba(255,255,255,0)');g.fillStyle=sh;g.fillRect(X_(50),Y_(100),240,250);
+  g.restore();
+  // DRIVE: painted scale around the big bone knob, engraved pointer, red-hot end of the scale
+  const dx=X_(812),dy=Y_(222);const dcx=dx,dcy=Y_(222,0.31);
+  for(let i=0;i<=40;i++){const a=A0+ASP*i/40,big=i%4===0,hot=i>=30;const r0=98,r1=big?110:104;g.strokeStyle=hot?(st.punish||st.drive>0.75?'#ff5a2a':'#c03a22'):'rgba(232,214,180,0.75)';g.lineWidth=big?2.2:1.2;if(hot&&st.drive>0.75){g.save();g.shadowColor='#ff3a10';g.shadowBlur=8;}g.beginPath();g.moveTo(dx+Math.cos(a)*r0,dy+Math.sin(a)*r0);g.lineTo(dx+Math.cos(a)*r1,dy+Math.sin(a)*r1);g.stroke();if(hot&&st.drive>0.75)g.restore();}
+  for(let i=0;i<=10;i++){const a=A0+ASP*i/10;const hot=i>=8;paint(''+i,dx+Math.cos(a)*124,dy+Math.sin(a)*124,'15px OPS',hot?'#d8452a':'#e9dcc0','center',0,0.35);}
+  // value arc lit in the collar
+  g.save();g.lineCap='round';g.shadowColor='#ff4a10';g.shadowBlur=16;g.strokeStyle=`rgba(255,90,30,${0.55+0.4*st.drive})`;g.lineWidth=3;g.beginPath();g.arc(dx,dy,92,A0,A0+ASP*st.drive);g.stroke();g.restore();
+  const pa=A0+ASP*st.drive,cr=0.8*64*0.99;g.save();g.lineCap='round';g.strokeStyle='rgba(28,18,10,0.9)';g.lineWidth=4.2;g.beginPath();g.moveTo(dcx+Math.cos(pa)*cr*0.3,dcy+Math.sin(pa)*cr*0.3);g.lineTo(dcx+Math.cos(pa)*cr*0.9,dcy+Math.sin(pa)*cr*0.9);g.stroke();
+  g.strokeStyle='rgba(255,255,255,0.25)';g.lineWidth=1;g.beginPath();g.moveTo(dcx+Math.cos(pa)*cr*0.3+1,dcy+Math.sin(pa)*cr*0.3+1.6);g.lineTo(dcx+Math.cos(pa)*cr*0.9+1,dcy+Math.sin(pa)*cr*0.9+1.6);g.stroke();
+  g.shadowColor='#ff3a10';g.shadowBlur=10;g.fillStyle='#e0301a';g.beginPath();g.arc(dcx+Math.cos(pa)*cr*0.92,dcy+Math.sin(pa)*cr*0.92,3.2,0,2*PI);g.fill();g.restore();
+  paint('DRIVE',dx,Y_(76)+16,'20px OPS','#e9dcc0','center',4,0.4);
+  nixie(dx,Y_(368),st.driveT,76);
+  // small knobs
+  const ks=[[82,'TONE',st.tone,st.toneT],[194,'LOW CUT',0,'off'],[306,'HIGH CUT',0.18,'14 kHz'],[676,'MIX',1,'100 %'],[788,'OUTPUT',st.out,st.outT]];
+  ks.forEach(([px,l,v,t])=>{const cx=X_(px),cy=Y_(456,0.31),r=0.8*25;const a=A0+ASP*v;
+    for(let i=0;i<=10;i++){const aa=A0+ASP*i/10;g.strokeStyle='rgba(232,214,180,0.5)';g.lineWidth=1.2;g.beginPath();g.moveTo(X_(px)+Math.cos(aa)*38,Y_(456)+Math.sin(aa)*38);g.lineTo(X_(px)+Math.cos(aa)*42,Y_(456)+Math.sin(aa)*42);g.stroke();}
+    g.save();g.lineCap='round';g.strokeStyle='rgba(28,18,10,0.9)';g.lineWidth=3;g.beginPath();g.moveTo(cx+Math.cos(a)*r*0.25,cy+Math.sin(a)*r*0.25);g.lineTo(cx+Math.cos(a)*r*0.92,cy+Math.sin(a)*r*0.92);g.stroke();g.restore();
+    paint(l,X_(px),Y_(406),'12.5px OPS','#e9dcc0','center',1.8,0.35);nixie(X_(px),Y_(506),t,68);});
+  // STYLE: dark knob with a bone inset, letters around it
+  {const cx=X_(904),cy=Y_(456,0.31),r=0.8*25*0.99;const sel=st.style;const L=['A','E','N','T','P'];
+   L.forEach((s,i)=>{const a=-PI/2+(i-2)*0.62;const x=X_(904)+Math.cos(a)*44,y=Y_(456)+Math.sin(a)*44;if(i===sel)glowTxt(s,x,y,'14px OPS','#ff7a2a',8);else paint(s,x,y,'14px OPS','#e9dcc0','center',0,0.3);});
+   const a=-PI/2+(sel-2)*0.62;g.save();g.lineCap='round';g.strokeStyle='rgba(28,18,10,0.9)';g.lineWidth=3;g.beginPath();g.moveTo(cx+Math.cos(a)*r*0.2,cy+Math.sin(a)*r*0.2);g.lineTo(cx+Math.cos(a)*r*0.92,cy+Math.sin(a)*r*0.92);g.stroke();g.restore();
+   paint('STYLE',X_(904),Y_(506)+2,'12.5px OPS','#e9dcc0','center',1.8,0.35);}
+  // PUNISH
+  if(st.punish)glowTxt('PUNISH',X_(490),Y_(506),'14px OPS','#ff3a1a',12,'center',3);else paint('PUNISH',X_(490),Y_(506),'14px OPS','#b8321e','center',3,0.35);
+  // THUMP / STEEP / AUTO keys
+  ['THUMP','STEEP','AUTO'].forEach((t,i)=>{const on=st.keys[i];const cx=X_(68+i*74+28),cy=Y_(363,0.06);
+    if(on){g.save();g.shadowColor='#ff5a1a';g.shadowBlur=10;g.fillStyle='#ff6a2a';g.beginPath();g.arc(cx-19,cy,2.4,0,2*PI);g.fill();g.restore();glowTxt(t,cx+5,cy,'10.5px OPS','#ff8a3a',7,'center',1);}
+    else{g.fillStyle='#2a1a12';g.beginPath();g.arc(cx-19,cy,2.4,0,2*PI);g.fill();txt(t,cx+5,cy,'10.5px OPS','rgba(233,220,192,0.55)','center',1);}});
+  g.restore();
+}
+
+(async()=>{
+  for(const f of ['12px IB','12px IS','12px IM','12px MB','12px OPS','12px MM','12px OS'])await document.fonts.load(f);
+  const img={cold:await L('sk/skull.png'),eyes:await L('sk/skull_eyes_add.png'),cracks:await L('sk/skull_cracks_add.png')};
+  const bg=g.createRadialGradient(SW/2,SH*0.4,100,SW/2,SH/2,SW*0.7);bg.addColorStop(0,'#1c1b1f');bg.addColorStop(1,'#060607');g.fillStyle=bg;g.fillRect(0,0,SW,SH);
+  txt('SATURATE  →  SKULL CUTTER',SW/2,34,'15px IB','rgba(240,240,245,0.92)','center',3);
+  txt('Left: Drive 3, Punish off  ·  Right: Drive 8.5, Punish on. The eyes heat up with Drive; Punish makes the paint cracks glow.',SW/2,58,'12px IM','rgba(220,220,230,0.5)');
+  skullCutter(40,100,img,{drive:0.3,driveT:'3.0',vu:0.42,tone:0.5,toneT:'0',out:0.5,outT:'0.0 dB',model:0,style:0,punish:false,keys:[false,false,true]});
+  skullCutter(1080,100,img,{drive:0.85,driveT:'8.5',vu:0.86,tone:0.62,toneT:'+2',out:0.36,outT:'-5.0 dB',model:1,style:4,punish:true,keys:[true,false,true]});
+  document.title='done';
+})();
+</script></body></html>
