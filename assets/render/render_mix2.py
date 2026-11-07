@@ -77,5 +77,6 @@ def strip():
     P.render(s, 'strip.png')
 
 
-if os.environ.get("LD_ONLY") != "strip": rack()
-strip()
+if __name__ == "__main__":
+    if os.environ.get("LD_ONLY") != "strip": rack()
+    strip()
