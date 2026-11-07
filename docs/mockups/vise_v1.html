@@ -10,7 +10,7 @@ const g=c.getContext('2d');g.scale(2,2);
 </script><script src="fp.js"></script><script>
 const A0=PI*0.75,ASP=PI*1.5;
 const AMB='#ffb21a',AMBG='#ff8a00',INK='#16130e';
-const GAUGE=[160,214,104],SCR=[360,160,300,196],HEAD=[384,132,252,22],INPUT=[845,300,50],MODEL=[845,112,30],KY=452,BEACON=[368,40,20];
+const GAUGE=[160,228,108],SCR=[340,160,300,196],HEAD=[364,132,252,22],INPUT=[845,296,44],MODEL=[845,112,30],KY=452,BEACON=[348,40,20];
 
 function needle(cx,cy,a,len,tail,col='#151515'){g.save();g.shadowColor='rgba(0,0,0,0.45)';g.shadowBlur=4;g.shadowOffsetX=3;g.shadowOffsetY=3;g.fillStyle=col;g.beginPath();
   const n=[Math.cos(a),Math.sin(a)],p=[-n[1],n[0]];g.moveTo(cx-n[0]*tail+p[0]*4,cy-n[1]*tail+p[1]*4);g.lineTo(cx+n[0]*len,cy+n[1]*len);g.lineTo(cx-n[0]*tail-p[0]*4,cy-n[1]*tail-p[1]*4);g.closePath();g.fill();g.restore();

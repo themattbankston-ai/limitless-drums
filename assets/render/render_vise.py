@@ -20,11 +20,11 @@ PXs = lambda v: W / 2 + (v - W / 2) / 1.01
 PYs = lambda v: H / 2 + (v - H / 2) * 0.98163 / 1.01
 
 # layout (panel px); the overlay code uses the same numbers
-GAUGE = (160, 214, 104)
-PRESS = dict(x0=330, x1=690, beam_y=(66, 112), cyl=(458, 522, 40, 128), screen=(360, 160, 300, 196))
-RAM = dict(head=(384, 132, 252, 22), rod=(478, 24, 24, 112))
-INPUT = (845, 300, 50)
-BEACON = (368, 40, 20)
+GAUGE = (160, 228, 108)
+PRESS = dict(x0=310, x1=670, beam_y=(66, 112), cyl=(458, 522, 40, 128), screen=(340, 160, 300, 196))   # centred on the panel (490)
+RAM = dict(head=(364, 132, 252, 22), rod=(478, 24, 24, 112))
+INPUT = (845, 296, 44)
+BEACON = (348, 40, 20)
 MODEL = (845, 112, 30)
 TITLE = (160, 50)   # centred over the gauge
 WARN = (40, 346, 260, 48)
@@ -169,10 +169,6 @@ def build():
         tr.rotation_euler = (math.pi / 2, 0, a); tr.scale = (1, 0.9, 1); tr.data.materials.append(STEEL)
     if HOT == 'beacon':
         l = bpy.data.lights.new('bl', 'POINT'); l.energy = 30; l.color = (1.0, 0.5, 0.05); lo = bpy.data.objects.new('bl', l); s.collection.objects.link(lo); lo.location = (x, y, 0.6)
-    # warning plate
-    wx, wy, ww, wh = WARN
-    box('warnp', wx, wy, ww, wh, 0.012, 0.005, 0.02, 0.003, image_mat('warn', os.path.join(HERE, 'tex', 'vise_warning.png'), 0.55))
-    for (a_, b_) in ((wx + 8, wy + 8), (wx + ww - 8, wy + 8), (wx + 8, wy + wh - 8), (wx + ww - 8, wy + wh - 8)): SK.rivet(a_, b_, 0.03)
     # transfer curve screen
     bpy.ops.mesh.primitive_plane_add(size=1); tsc = bpy.context.object
     win = P.rounded_box('win2', 118 * U, 66 * U, 0.5, 0.04, 0.008); win.location = at(490, KY, 0.0); cut(plate, win)
