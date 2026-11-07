@@ -40,9 +40,11 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
 
     studio.onImport = [this] { openNewSession(); };
     studio.onPlay = [this] { togglePlay(); };
-    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); if (st == ui::Step::align) refreshAlign(); updateHeader(); };
+    studio.onStepClicked = [this] (ui::Step st) { studio.setStep (st); if (st == ui::Step::align) refreshAlign(); if (st == ui::Step::tune) refreshTune(); updateHeader(); };
     studio.onAlign = [this] (const std::string& a, int mic, double v) { onAlignAction (a, mic, v); };
     studio.onAlignMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onAlignMenu (w, x, y, ww, h); };
+    studio.onTune = [this] (const std::string& a, double v) { onTuneAction (a, v); };
+    studio.onTuneMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onTuneMenu (w, x, y, ww, h); };
     studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
     studio.onUndo = [this] { undo (false); };
     studio.onRedo = [this] { undo (true); };
@@ -433,6 +435,8 @@ void MainComponent::refreshModel()
     const auto view = studio.view;
     auto m = buildStudioModel (*edit, currentRoles, title, engineState);
     if (engineState) m.align = buildAlignView (*engineState, alignMic, studio.selectedHit, alignSpread, alignSamples);
+    if (engineState) m.tune = buildTuneView (*engineState, studio.selectedHit);
+    tuneHit = studio.selectedHit;
     alignMic = m.align.mic; alignHit = studio.selectedHit;
     studio.setModel (std::move (m));
     studio.view = view;
@@ -1420,6 +1424,7 @@ void MainComponent::timerCallback()
         const bool playingNow = audition->isPlaying();
         if (playingNow && audition->currentHit() >= 0 && audition->currentHit() != studio.selectedHit) { studio.selectedHit = audition->currentHit(); lastSelected = studio.selectedHit; studio.redrawAll(); }
         if (studio.step() == ui::Step::align && ! playingNow && studio.selectedHit != alignHit) refreshAlign();
+        if (studio.step() == ui::Step::tune && studio.selectedHit != tuneHit) refreshTune();
         if (studio.selectedHit != lastSelected)
         {
             lastSelected = studio.selectedHit;
@@ -1436,4 +1441,138 @@ void MainComponent::resized()
     if (host) host->setBounds (getLocalBounds());
 }
 
+} // namespace ld
+
+namespace ld
+{
+// ------------------------------------------------------------------------------------------- the Tune step
+static int tuneBase (const hl::Session& S)
+{
+    if (S.tuneInfo && S.tuneInfo->valid) return S.tuneInfo->nearest;
+    return (int) std::lround (hl::hzToMidi (std::sqrt (S.pitchOpt.fmin * S.pitchOpt.fmax), S.tune.a4));
+}
+
+void MainComponent::refreshTune()
+{
+    if (! engineState) return;
+    auto v = buildTuneView (*engineState, studio.selectedHit);
+    // the target knob: Nearest, then seven notes either side of where the drum sits
+    const auto& S = engineState->session;
+    if (S.tune.target == "nearest") v.targetPos = 0;
+    else v.targetPos = std::clamp ((float) (juce::String (S.tune.target).getIntValue() - (tuneBase (S) - 7) + 1) / 15.0f, 0.0f, 1.0f);
+    studio.data.tune = std::move (v);
+    tuneHit = studio.selectedHit;
+    studio.redrawAll();
+}
+
+void MainComponent::onTuneAction (const std::string& a, double v)
+{
+    if (! engineState) return;
+    auto& S = engineState->session;
+    auto change = [this] (std::function<void (hl::Session&)> op, const juce::String& what)
+    {
+        if (audition) audition->stop();
+        op (engineState->session);
+        hl::computeTune (engineState->session);
+        refreshModel(); refreshTune(); updateHeader(); setNotice (what);
+        rerender();
+    };
+    if (a == "read")
+    {
+        if (prepping || S.onsets.empty()) { setNotice ("Find the hits first."); return; }
+        if (audition) audition->stop();
+        setNotice (juce::CharPointer_UTF8 ("Reading the pitch of every hit\xe2\x80\xa6"));
+        const int gen = ++renderGeneration;
+        auto copy = std::make_shared<hl::Session> (S);
+        std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            hl::runPitch (*copy);
+            juce::MessageManager::callAsync ([sp, st, gen, copy]
+            {
+                if (sp == nullptr || sp->renderGeneration != gen || sp->engineState != st) return;
+                if (sp->audition) sp->audition->stop();
+                st->session = std::move (*copy);
+                sp->refreshModel(); sp->refreshTune(); sp->updateHeader();
+                const auto& s2 = st->session;
+                sp->setNotice (s2.tuneInfo && s2.tuneInfo->valid
+                    ? juce::String ("Sits at ") + juce::String (s2.tuneInfo->medF, 1) + " Hz, " + hl::noteName (s2.tuneInfo->nearest) + "."
+                    : juce::String ("No clear pitch. Try another track to read from, or another range."));
+                sp->rerender();
+            });
+        }).detach();
+        return;
+    }
+    if (! S.tuneInfo || ! S.tuneInfo->valid) return;
+    const auto note = [&] { return S.tuneInfo ? hl::noteName (S.tuneInfo->targetMidi) : std::string(); };
+    if (a == "on") { const bool on = v != 0; change ([on] (hl::Session& s) { s.tune.on = on; }, on ? "Tuned. Varispeed: the attack stays intact." : "Tuning off: as recorded."); return; }
+    if (a == "mode") { const bool rr = v != 0; change ([rr] (hl::Session& s) { s.tune.mode = rr ? "rr" : "drum"; }, rr ? "Round robins evened out too, each toward its own layer." : "One ratio for the whole drum: soft and hard hits keep their natural pitch."); return; }
+    if (a == "fine") { const double c = v; change ([c] (hl::Session& s) { s.tune.cents = c; }, juce::String ("Fine tune ") + (c > 0 ? "+" : "") + juce::String ((int) c) + juce::String (juce::CharPointer_UTF8 ("\xc2\xa2."))); return; }
+    if (a == "a4") { const double f = v; change ([f] (hl::Session& s) { s.tune.a4 = f; }, "A4 = " + juce::String ((int) f) + " Hz."); return; }
+    if (a == "nearest") { change ([] (hl::Session& s) { s.tune.target = "nearest"; }, "Target: the nearest note."); return; }
+    if (a == "target")
+    {
+        const int idx = (int) std::lround (v * 15);
+        const int base = tuneBase (S);
+        const std::string tgt = idx <= 0 ? std::string ("nearest") : std::to_string (base - 7 + idx - 1);
+        change ([tgt] (hl::Session& s) { s.tune.target = tgt; }, tgt == "nearest" ? juce::String ("Target: the nearest note.") : juce::String ("Target: ") + hl::noteName (std::stod (tgt)) + ".");
+        return;
+    }
+    if (a == "play")
+    {
+        if (! audition || ! engineState->mix) return;
+        if (edit) edit->getTransport().stop (false, false);
+        Audition::Options o;
+        if (v == 2) o.chain = true; else o.side = (int) v;
+        audition->play (modes::hit (S, std::max (0, studio.selectedHit)), o);
+        setNotice (v == 0 ? "The hit as recorded." : v == 1 ? "The hit tuned." : "As recorded, then tuned.");
+        updateHeader();
+        return;
+    }
+    if (a == "tone")
+    {
+        if (! audition) return;
+        const auto& ti = *S.tuneInfo;
+        const double hz = v != 0 ? ti.targetF : ti.medF;
+        audition->playTone (hz, 1.6);
+        setNotice ((v != 0 ? juce::String ("Target note ") + note() : juce::String ("Recorded note ") + hl::noteName (std::round (hl::hzToMidi (hz, S.tune.a4)))) + ", " + juce::String (hz, 1) + " Hz.");
+        return;
+    }
+}
+
+void MainComponent::onTuneMenu (const std::string& which, float x, float y, float w, float h)
+{
+    if (! engineState) return;
+    const auto& S = engineState->session;
+    const auto opts = juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (x, y, w, h).toNearestInt())).withMinimumWidth ((int) w);
+    juce::PopupMenu m;
+    if (which == "from")
+    {
+        m.addItem (1, juce::String (S.tracks[(size_t) S.refIdx].mic) + " (lead)", true, S.tuneMic == "ref");
+        for (int t = 0; t < (int) S.tracks.size(); ++t)
+            if (t != S.refIdx) m.addItem (t + 2, juce::String (S.tracks[(size_t) t].mic), true, S.tuneMic == std::to_string (t));
+        m.showMenuAsync (opts, [this] (int r)
+        {
+            if (r <= 0 || ! engineState) return;
+            engineState->session.tuneMic = r == 1 ? std::string ("ref") : std::to_string (r - 2);
+            onTuneAction ("read", 0);
+        });
+        return;
+    }
+    // the reading range
+    struct R { const char* name; double lo, hi; };
+    static const R ranges[] = { { "Kick", 40, 160 }, { "Floor tom", 60, 200 }, { "Rack tom", 80, 320 }, { "Snare", 120, 480 }, { "Piccolo snare", 200, 800 } };
+    int id = 1;
+    for (auto& r : ranges) m.addItem (id++, juce::String (r.name) + "  " + juce::String ((int) r.lo) + juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x93")) + juce::String ((int) r.hi) + " Hz", true,
+                                      std::abs (S.pitchOpt.fmin - r.lo) < 0.5 && std::abs (S.pitchOpt.fmax - r.hi) < 0.5);
+    m.addSeparator();
+    for (int ms : { 5, 10, 15, 25, 40 }) m.addItem (100 + ms, "Skip " + juce::String (ms) + " ms of attack", true, std::abs (S.pitchOpt.skipMs - ms) < 0.5);
+    m.showMenuAsync (opts, [this] (int r)
+    {
+        if (r <= 0 || ! engineState) return;
+        auto& s = engineState->session;
+        if (r >= 100) { s.pitchOpt.skipMs = r - 100; s.tuneAutoWin = false; }
+        else { s.pitchOpt.fmin = ranges[r - 1].lo; s.pitchOpt.fmax = ranges[r - 1].hi; }
+        onTuneAction ("read", 0);
+    });
+}
 } // namespace ld

@@ -1,3 +1,4 @@
+#include <chrono>
 #include "Studio.h"
 #include "Draw.h"
 
@@ -1460,10 +1461,10 @@ struct Studio::Rack : visage::Frame
         ox = std::round ((width() - DW * k) / 2);
     }
 
-    void arcKnob (Canvas& c, float cx, float cy, float v, unsigned col)
+    void arcKnob (Canvas& c, float cx, float cy, float v, unsigned col, float r = 21)
     {
         // the lit value on the frosted ring, and the pointer on the silver cap
-        const float R = S (21 * 1.24f), a0 = -0.75f * 3.14159265f, a1 = a0 + 1.5f * 3.14159265f * std::clamp (v, 0.0f, 1.0f);
+        const float R = S (r * 1.24f), a0 = -0.75f * 3.14159265f, a1 = a0 + 1.5f * 3.14159265f * std::clamp (v, 0.0f, 1.0f);
         const float mid = (a0 + a1) / 2 - 1.5707963f, half = (a1 - a0) / 2;
         c.setBlendMode (visage::BlendMode::Add);
         c.setColor (Color (col).withAlpha (0.28f)); c.arc (X (cx) - R - S (5), Y (cy) - R - S (5), 2 * R + S (10), S (10), mid, half, true);
@@ -1471,7 +1472,7 @@ struct Studio::Rack : visage::Frame
         c.setColor (Color (0xb3ffffff)); c.arc (X (cx) - R - S (0.5f), Y (cy) - R - S (0.5f), 2 * R + S (1), S (1), mid, half, true);
         c.setBlendMode (visage::BlendMode::Alpha);
         c.setColor (0xff1b1d21);
-        c.segment (X (cx) + std::sin (a1) * S (5), Y (cy - 3) - std::cos (a1) * S (5), X (cx) + std::sin (a1) * S (14), Y (cy - 3) - std::cos (a1) * S (14), S (2.2f), true);
+        c.segment (X (cx) + std::sin (a1) * S (5), Y (cy - 3) - std::cos (a1) * S (5), X (cx) + std::sin (a1) * S (r * 0.67f), Y (cy - 3) - std::cos (a1) * S (r * 0.67f), S (2.2f), true);
     }
 
     void silk (Canvas& c, const std::string& t, float x, float y, unsigned col, float size = 9, float sp = 1.8f)
@@ -1486,6 +1487,7 @@ struct Studio::Rack : visage::Frame
         c.fill (0, 0, width(), height());
         c.setColor (0xffffffff);
         if (studio.step() == Step::align) { drawAlign (c); return; }
+        if (studio.step() == Step::tune) { drawTune (c); return; }
         c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_png), BinaryData::rack_pngSize, ox, 0, DW * k, DH * k);
         const auto& d = studio.data;
         const auto& lv = d.level;
@@ -1839,6 +1841,237 @@ struct Studio::Rack : visage::Frame
         keyLabel (c, keys[18], "BACK TO MEASURED", M && M->status == "manual", vio, M && M->status == "manual");
     }
 
+    // ------------------------------------------------------------------ the Tune instrument (Tune step)
+    // TUNE: read-from, the strobe, the readout, the cents meter, Tune it / Read again, one ratio / even out RRs,
+    // the target, fine and A4 knobs and Nearest. PITCH MAP: every hit. LISTEN: original, tuned, A/B, the notes.
+    static constexpr Key tkeys[] = {
+        { 162, 34, 130, 26, "menu:from" },
+        { 26, 240, 130, 28, "on" }, { 162, 240, 130, 28, "read" }, { 26, 276, 130, 26, "mode:drum" }, { 162, 276, 130, 26, "mode:rr" },
+        { 230, 318, 62, 26, "nearest" },
+        { 26, 572, 84, 26, "play:0" }, { 117, 572, 84, 26, "play:1" }, { 208, 572, 84, 26, "play:ab" }, { 26, 606, 130, 26, "tone:rec" }, { 162, 606, 130, 26, "tone:tgt" },
+        { 26, 520, 266, 16, "menu:range" } };
+    static constexpr float tkX[3] = { 59, 126, 193 }, tkY = 330, tkR = 18;
+    int tuneKnob = -1; float tuneY0 = 0, tuneV0 = 0, tuneLive = NAN;
+    std::chrono::steady_clock::time_point strobeT0 = std::chrono::steady_clock::now();
+
+    const Key* tkeyAt (float x, float y) const
+    {
+        for (auto& kk : tkeys) if (x >= kk.x && x < kk.x + kk.w && y >= kk.y && y < kk.y + kk.h) return &kk;
+        return nullptr;
+    }
+
+    float tuneKnobValue (int i) const
+    {
+        const auto& T = studio.data.tune;
+        if (i == tuneKnob && std::isfinite (tuneLive)) return tuneLive;
+        return i == 0 ? T.targetPos : i == 1 ? (T.cents + 50) / 100 : (T.a4 - 415) / 51;
+    }
+
+    void drawTune (Canvas& c)
+    {
+        c.image (reinterpret_cast<const unsigned char*> (BinaryData::rack_tune_png), BinaryData::rack_tune_pngSize, ox, 0, DW * k, DH * k);
+        const auto& T = studio.data.tune;
+        const unsigned lime = 0xffc8ff3d, amber = neon::amber, hot = 0xffff5a3d;
+        const bool live = T.read;
+        silk (c, "TUNE", 40, 18, 0xffdfff9a, 9.5f, 2.2f);
+        c.setColor (live ? Color (lime).withAlpha (0.45f) : Color (0)); c.circle (X (30) - S (6), Y (23) - S (6), S (12));
+        c.setColor (live ? lime : 0xff2a2d33); c.circle (X (30) - S (2.2f), Y (23) - S (2.2f), S (4.4f));
+        // read from
+        {
+            const auto& kk = tkeys[0];
+            c.setColor (0xff8b9099); draw::text (c, "READ FROM", boldFont (S (7)), Font::kRight, X (80), Y (40), S (76), S (14));
+            c.setColor (0xffe8ecf2); draw::text (c, T.from, bodyFont (S (10)), Font::kLeft, X (kk.x + 8), Y (kk.y), S (kk.w - 26), S (kk.h));
+            const float ax = X (kk.x + kk.w - 13), ay = Y (kk.y + kk.h / 2 - 1);
+            visage::Path tri; tri.moveTo (ax - S (4), ay - S (2)); tri.lineTo (ax + S (4), ay - S (2)); tri.lineTo (ax, ay + S (3)); tri.close();
+            c.setColor (lime); c.fill (tri);
+        }
+        if (! T.tunable)
+        {
+            c.setColor (0xff8b9099);
+            draw::text (c, "This drum doesn't get tuned", bodyFont (S (11)), Font::kCenter, X (26), Y (198), S (266), S (30));
+            return;
+        }
+        // the strobe: three rings of bars that drift with how far the selected hit is from its note (as it now
+        // plays), and stand still when it's in tune; the note in the middle
+        {
+            const float cx = X (88), cy = Y (129), r = S (56);
+            const float cents = live && std::isfinite (T.hitCents) ? T.hitCents : 0;
+            const unsigned col = ! live ? 0xff2d3a1f : std::abs (cents) < 3 ? lime : std::abs (cents) < 12 ? amber : hot;
+            const double t = std::chrono::duration<double> (std::chrono::steady_clock::now() - strobeT0).count();
+            // each ring a band of lit segments, like a strobe disc behind glass; inner rings turn faster
+            for (int ring = 0; ring < 3; ++ring)
+            {
+                const int n = 12 + ring * 6;
+                const float rr = r * (0.9f - ring * 0.2f), th = r * 0.13f, step = 6.2831853f / (float) n;
+                const float spin = (float) (t * cents * 0.03 * (ring + 1)) * (ring % 2 ? -1.0f : 1.0f);
+                for (int b = 0; b < n; ++b)
+                {
+                    const float a = spin + b * step;
+                    c.setBlendMode (visage::BlendMode::Add);
+                    c.setColor (Color (col).withAlpha (live ? 0.18f : 0.06f)); c.arc (cx - rr - th, cy - rr - th, 2 * (rr + th), th * 2, a, step * 0.3f, true);
+                    c.setBlendMode (visage::BlendMode::Alpha);
+                    c.setColor (Color (col).withAlpha (live ? 0.95f : 0.28f)); c.arc (cx - rr, cy - rr, 2 * rr, th, a, step * 0.25f, false);
+                }
+            }
+            c.setColor (live ? 0xfff2f4f8 : 0xff3e434b);
+            draw::text (c, live && ! T.hitNote.empty() ? T.hitNote : std::string ("\xe2\x80\x94"), monoBold (S (17)), Font::kCenter, cx - S (30), cy - S (12), S (60), S (20));
+            c.setColor (col);
+            draw::text (c, live ? draw::fmt ("%+.0f\xc2\xa2", (double) cents) : std::string(), monoBold (S (8.5f)), Font::kCenter, cx - S (30), cy + S (8), S (60), S (11));
+            if (live) redraw();   // the strobe keeps turning
+        }
+        // the readout
+        {
+            const float rx = 160, ry = 70;
+            auto row = [&] (int i, const char* l, const std::string& val, unsigned col = 0xffe8ecf2)
+            {
+                c.setColor (0xff6f767f); draw::text (c, l, boldFont (S (6.8f)), Font::kLeft, X (rx + 8), Y (ry + 8 + i * 18), S (64), S (14));
+                c.setColor (col); draw::text (c, val, monoBold (S (8.5f)), Font::kRight, X (rx + 52), Y (ry + 8 + i * 18), S (72), S (14));
+            };
+            if (live)
+            {
+                row (0, "SITS AT", T.sitsAt + draw::fmt (" %+.0f\xc2\xa2", (double) T.medCents));
+                row (1, "TARGET", T.on ? T.tunedTo : std::string ("off"), T.on ? lime : 0xff6f767f);
+                row (2, "PITCH", draw::fmt ("%.1f Hz", (double) T.medF));
+                row (3, "SHIFT", T.on ? draw::fmt ("%+.2f st", (double) T.shiftSemis) : std::string ("\xe2\x80\x94"));
+                row (4, "RR SPREAD", std::isfinite (T.spreadBefore) ? draw::fmt ("%.0f", (double) T.spreadBefore) + "\xe2\x86\x92" + draw::fmt ("%.0f\xc2\xa2", (double) T.spreadAfter) : std::string ("\xe2\x80\x94"));
+                row (5, "WORST", T.worstLayer >= 0 ? "V" + std::to_string (T.worstLayer + 1) + draw::fmt (" %+.0f\xc2\xa2", (double) T.worstCents) : std::string ("\xe2\x80\x94"));
+            }
+            else { c.setColor (0xff6f767f); draw::text (c, "Read the pitch", bodyFont (S (10)), Font::kCenter, X (rx), Y (ry), S (132), S (118)); }
+        }
+        // the cents meter: \xc2\xb150 cents, the selected hit as recorded (grey) and as it plays now
+        {
+            const float mx = 34, mw = 250, my = 198, mh = 30;
+            for (int k2 = -50; k2 <= 50; k2 += 10)
+            {
+                const float x = mx + (k2 + 50) / 100.0f * mw;
+                c.setColor (k2 == 0 ? Color (lime).withAlpha (0.8f) : Color (0x40ffffff));
+                c.fill (X (x), Y (my + (k2 == 0 ? 5 : 9)), S (1), S (k2 == 0 ? 20 : 12));
+            }
+            if (live && std::isfinite (T.hitCents))
+            {
+                auto mark = [&] (float cv, unsigned col, float w)
+                {
+                    const float x = mx + (std::clamp (cv, -50.0f, 50.0f) + 50) / 100.0f * mw;
+                    c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (col).withAlpha (0.3f)); c.fill (X (x) - S (w * 2), Y (my + 4), S (w * 4), S (22)); c.setBlendMode (visage::BlendMode::Alpha);
+                    c.setColor (col); c.fill (X (x) - S (w / 2), Y (my + 4), S (w), S (22));
+                };
+                if (std::isfinite (T.hitCentsBefore)) mark (T.hitCentsBefore, 0x80ffffff, 1.2f);
+                mark (T.hitCents, std::abs (T.hitCents) < 3 ? lime : std::abs (T.hitCents) < 12 ? amber : hot, 2);
+            }
+        }
+        // keys
+        keyLabel (c, tkeys[1], T.on ? "TUNED" : "TUNE IT", T.on, lime, live);
+        keyLabel (c, tkeys[2], live ? "READ AGAIN" : "READ PITCH", false, lime, true);
+        keyLabel (c, tkeys[3], "ONE RATIO", live && ! T.rr, lime, live && T.on);
+        keyLabel (c, tkeys[4], "EVEN OUT RRs", live && T.rr, lime, live && T.on);
+        keyLabel (c, tkeys[5], "NEAREST", T.target.rfind ("Nearest", 0) == 0, lime, live && T.on);
+        // knobs: target note, fine cents, A4
+        {
+            const unsigned kc[3] = { lime, 0xffb39cff, amber };
+            const char* lab[3] = { "TARGET", "FINE", "A4" };
+            for (int i = 0; i < 3; ++i)
+            {
+                arcKnob (c, tkX[i], tkY, tuneKnobValue (i), Color (kc[i]).withAlpha (live && T.on ? 1.0f : 0.35f).toARGB(), tkR);
+                c.setColor (0xffb9bec6); draw::text (c, lab[i], boldFont (S (7)), Font::kCenter, X (tkX[i] - 30), Y (354), S (60), S (10));
+                std::string val;
+                if (i == 0) val = T.target.rfind ("Nearest", 0) == 0 && live ? T.sitsAt : T.target;
+                else if (i == 1) { const float cv = std::isfinite (tuneLive) && tuneKnob == 1 ? tuneLive * 100 - 50 : T.cents; val = draw::fmt ("%+.0f\xc2\xa2", (double) std::round (cv)); }
+                else { const float av = std::isfinite (tuneLive) && tuneKnob == 2 ? 415 + tuneLive * 51 : T.a4; val = draw::fmt ("%.0f", (double) std::round (av)); }
+                c.setColor (kc[i]); draw::text (c, val, monoBold (S (8.5f)), Font::kCenter, X (tkX[i] - 30), Y (365), S (60), S (11));
+            }
+        }
+
+        // PITCH MAP
+        silk (c, "PITCH MAP", 40, 404, 0xffb9bec6, 8.5f, 2.0f);
+        c.setColor (0xff8b9099); draw::text (c, "EVERY HIT \xc2\xb7 GREY = AS RECORDED", boldFont (S (7)), Font::kRight, X (120), Y (402), S (168), S (12));
+        {
+            const float px0 = 34, pw = 250, py0 = 420, ph = 96;
+            c.setColor (0x0dffffff); c.fill (X (px0), Y (py0 + ph / 2), S (pw), 1);
+            const size_t N = T.before.size();
+            if (live && N)
+            {
+                float span = 30;
+                for (size_t i = 0; i < N; ++i) { if (std::isfinite (T.before[i])) span = std::max (span, std::abs (T.before[i])); if (std::isfinite (T.after[i])) span = std::max (span, std::abs (T.after[i])); }
+                span *= 1.15f;
+                auto xOf = [&] (size_t i) { return px0 + ((float) i + 0.5f) * pw / (float) N; };
+                auto yOf = [&] (float v) { return py0 + ph / 2 - v / span * ph / 2; };
+                for (size_t i = 1; i < N; ++i)
+                    if (T.layer[i] != T.layer[i - 1]) { c.setColor (0x14ffffff); c.fill (X ((xOf (i) + xOf (i - 1)) / 2), Y (py0), 1, S (ph)); }
+                for (size_t i = 0; i < N; ++i)
+                {
+                    if (! std::isfinite (T.after[i])) continue;
+                    const float x = xOf (i), yb = yOf (T.before[i]), ya = yOf (T.after[i]);
+                    const unsigned col = T.layers ? draw::layerColour (T.layer[i], T.layers) : lime;
+                    if (std::isfinite (T.before[i]) && std::abs (ya - yb) > 1.5f) { c.setColor (0x33ffffff); c.fill (X (x) - 0.5f, Y (std::min (ya, yb)), 1, S (std::abs (ya - yb))); }
+                    if (std::isfinite (T.before[i])) { c.setColor (0x66b9bec6); c.circle (X (x) - S (1.6f), Y (yb) - S (1.6f), S (3.2f)); }
+                    const float rr = (int) i == T.hit ? 2.8f : 2.0f;
+                    c.setColor (col); c.circle (X (x) - S (rr), Y (ya) - S (rr), S (2 * rr));
+                    if ((int) i == T.hit) { c.setColor (0xffffffff); c.roundedRectangleBorder (X (x) - S (5), Y (ya) - S (5), S (10), S (10), S (5), S (1.2f)); }
+                }
+                c.setColor (0xff5f6670);
+                draw::text (c, draw::fmt ("+%.0f\xc2\xa2", (double) span), monoFont (S (7)), Font::kLeft, X (px0), Y (py0 - 1), S (40), S (9));
+                draw::text (c, draw::fmt ("-%.0f\xc2\xa2", (double) span), monoFont (S (7)), Font::kLeft, X (px0), Y (py0 + ph - 9), S (40), S (9));
+            }
+            else { c.setColor (0xff5f6670); draw::text (c, "Read the pitch to see every hit here", bodyFont (S (10)), Font::kCenter, X (26), Y (py0), S (266), S (ph)); }
+            // the reading range, a menu
+            c.setColor (0xff8b9099);
+            draw::text (c, draw::fmt ("%.0f", (double) T.fmin) + "\xe2\x80\x93" + draw::fmt ("%.0f Hz", (double) T.fmax) + "  \xc2\xb7  skip " + draw::fmt ("%.0f ms \xe2\x96\xbe", (double) T.skipMs),
+                        monoFont (S (7.5f)), Font::kRight, X (26), Y (521), S (258), S (12));
+        }
+
+        // LISTEN
+        silk (c, "LISTEN", 40, 560, 0xffb9bec6, 8.5f, 2.0f);
+        keyLabel (c, tkeys[6], "\xe2\x96\xb6 ORIGINAL", false, lime, live);
+        keyLabel (c, tkeys[7], "\xe2\x96\xb6 TUNED", false, lime, live && T.on);
+        keyLabel (c, tkeys[8], "A / B", false, lime, live && T.on);
+        keyLabel (c, tkeys[9], "RECORDED NOTE", false, lime, live);
+        keyLabel (c, tkeys[10], "TARGET NOTE", false, lime, live && T.on);
+    }
+
+    void tuneDown (float x, float y, const visage::MouseEvent& e)
+    {
+        const auto& T = studio.data.tune;
+        for (int i = 0; i < 3; ++i)
+            if (std::hypot (x - tkX[i], y - tkY) <= tkR * 1.35f)
+            {
+                if (! T.read || ! T.on) return;
+                if (e.repeat_click_count >= 2 && i > 0) { if (studio.onTune) studio.onTune (i == 1 ? "fine" : "a4", i == 1 ? 0.0 : 440.0); return; }
+                tuneKnob = i; tuneY0 = y; tuneV0 = tuneKnobValue (i); tuneLive = tuneV0; return;
+            }
+        const Key* kk = tkeyAt (x, y);
+        if (! kk || ! studio.onTune) return;
+        const std::string id = kk->id;
+        pressed = id; redraw();
+        if (id.rfind ("menu:", 0) == 0) { if (studio.onTuneMenu) studio.onTuneMenu (id.substr (5), X (kk->x), Y (kk->y), S (kk->w), S (kk->h)); return; }
+        if (id == "read") { studio.onTune ("read", 0); return; }
+        if (! T.read) return;
+        if (id == "on") { studio.onTune ("on", T.on ? 0 : 1); return; }
+        if (id == "mode:drum" || id == "mode:rr") { if (T.on) studio.onTune ("mode", id == "mode:rr"); return; }
+        if (id == "nearest") { if (T.on) studio.onTune ("nearest", 0); return; }
+        if (id.rfind ("play:", 0) == 0) { studio.onTune ("play", id == "play:0" ? 0 : id == "play:1" ? 1 : 2); return; }
+        if (id.rfind ("tone:", 0) == 0) { studio.onTune ("tone", id == "tone:tgt"); return; }
+    }
+
+    void tuneDrag (float, float y)
+    {
+        if (tuneKnob < 0) return;
+        tuneLive = std::clamp (tuneV0 + (tuneY0 - y) / 160.0f, 0.0f, 1.0f);
+        if (tuneKnob == 1) tuneLive = (std::round (tuneLive * 100 - 50) + 50) / 100;
+        if (tuneKnob == 2) tuneLive = (std::round (415 + tuneLive * 51) - 415) / 51;
+        redraw();
+    }
+
+    void tuneUp()
+    {
+        if (tuneKnob >= 0 && std::isfinite (tuneLive) && studio.onTune && std::abs (tuneLive - tuneV0) > 1e-4f)
+        {
+            if (tuneKnob == 0) studio.onTune ("target", tuneLive);
+            else if (tuneKnob == 1) studio.onTune ("fine", std::round (tuneLive * 100 - 50));
+            else studio.onTune ("a4", std::round (415 + tuneLive * 51));
+        }
+        tuneKnob = -1; tuneLive = NAN; pressed.clear(); redraw();
+    }
+
     void alignDown (float x, float y)
     {
         const auto& A = studio.data.align;
@@ -1862,8 +2095,9 @@ struct Studio::Rack : visage::Frame
 
     void mouseDrag (const visage::MouseEvent& e) override
     {
-        if (studio.step() != Step::align) return;
         const float x = panelX (e.position.x), y = panelY (e.position.y);
+        if (studio.step() == Step::tune) { tuneDrag (x, y); return; }
+        if (studio.step() != Step::align) return;
         const auto& A = studio.data.align;
         if (jogging)
         {
@@ -1886,6 +2120,7 @@ struct Studio::Rack : visage::Frame
 
     void mouseUp (const visage::MouseEvent&) override
     {
+        if (studio.step() == Step::tune) { tuneUp(); return; }
         if (studio.step() != Step::align) return;
         const auto& A = studio.data.align;
         if ((jogging || dragging) && std::abs (liveDelta) >= 0.125f && studio.onAlign)
@@ -1900,6 +2135,7 @@ struct Studio::Rack : visage::Frame
         studio.requestKeyboardFocus();
         const float dx = panelX (e.position.x), dy = panelY (e.position.y);
         if (studio.step() == Step::align) { alignDown (dx, dy); return; }
+        if (studio.step() == Step::tune) { tuneDown (dx, dy, e); return; }
         for (int v = 0; v < 6; ++v)
         {
             const float px = padX[v % 3], py = padY[v / 3];

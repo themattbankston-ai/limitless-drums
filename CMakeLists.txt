@@ -119,6 +119,7 @@ if(LD_BUILD_APP)
         assets/logo/mark-night.svg
         assets/ui/rack.png
         assets/ui/rack_align.png
+        assets/ui/rack_tune.png
         assets/ui/parts/module_top.png
         assets/ui/parts/module_mid.png
         assets/ui/parts/module_bot.png

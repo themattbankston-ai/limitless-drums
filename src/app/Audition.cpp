@@ -343,6 +343,20 @@ int Audition::drainMonitor (MonitorPoint* out, int max)
 void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float* const* outs, int nOut, int nFrames, const juce::AudioIODeviceCallbackContext&)
 {
     for (int c = 0; c < nOut; ++c) if (outs[c]) juce::FloatVectorOperations::clear (outs[c], nFrames);
+    if (int left = toneLeft.load(); left > 0)
+    {
+        // the tone: a sine, faded in and out over 20 ms
+        const double sr = deviceRate > 0 ? deviceRate : 48000, w = 2 * juce::MathConstants<double>::pi * toneHz.load() / sr;
+        const int len = std::max (1, toneLen.load()), fade = (int) (0.02 * sr);
+        for (int n = 0; n < nFrames && left > 0; ++n, --left)
+        {
+            const int pos = len - left;
+            const float env = (float) std::min ({ 1.0, pos / (double) fade, left / (double) fade });
+            const float v = 0.18f * env * (float) std::sin (tonePhase); tonePhase += w;
+            for (int c = 0; c < nOut; ++c) if (outs[c]) outs[c][n] += v;
+        }
+        toneLeft.store (left);
+    }
     inCallback = true;
     Phrase* ph = live.load();
     if (ph == nullptr || nOut == 0) { pkL = pkL * 0.85f; pkR = pkR * 0.85f; inCallback = false; return; }

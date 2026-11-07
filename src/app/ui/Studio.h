@@ -89,6 +89,25 @@ struct StudioModel
         float best = NAN, bestHeat = NAN, curHeat = NAN, lag = 0;
         int hit = -1;                             ///< the hit the rows and scope show
     } align;
+    /** The Tune step: where the drum sits, where it's going, every hit's pitch. */
+    struct TuneView
+    {
+        bool tunable = false, read = false, on = false, rr = false;   ///< rr: even out round robins
+        std::string from = "Top", target = "Nearest";                 ///< read from; the target as the menu says it
+        float cents = 0, a4 = 440, fmin = 120, fmax = 400, skipMs = 15;
+        // the drum
+        float medF = NAN, medCents = NAN;          ///< cents from the nearest note
+        std::string sitsAt, tunedTo;               ///< "A#3", "B3 +12"
+        float ratio = 1, shiftSemis = 0;
+        float spreadBefore = NAN, spreadAfter = NAN;   ///< widest spread inside one velocity, cents
+        int worstLayer = -1; float worstCents = NAN;
+        std::vector<float> layerHz;                ///< per velocity
+        // every hit: cents from the drum's pitch, as recorded and tuned; its layer
+        std::vector<float> before, after; std::vector<int> layer; int layers = 0;
+        // the selected hit
+        int hit = -1; float hitF = NAN, hitTunedF = NAN, hitCents = NAN, hitCentsBefore = NAN; std::string hitNote;
+        float targetPos = 0.5f;                    ///< the target knob, 0..1 over its notes
+    } tune;
 };
 
 enum class Step { session, hits, align, tune, mix, level, exportStep };
@@ -160,6 +179,10 @@ public:
         "reset", "pair", "gain", "spread", "units"), the mic, a value; for the two menus also where the selector is. */
     std::function<void (const std::string&, int, double)> onAlign;
     std::function<void (const std::string&, float, float, float, float)> onAlignMenu;
+    /** The Tune module: action ("on", "read", "mode", "fine", "a4", "target", "nearest", "play", "tone"), a value;
+        and the menus (read from, target, range) with where they open. */
+    std::function<void (const std::string&, double)> onTune;
+    std::function<void (const std::string&, float, float, float, float)> onTuneMenu;
     std::function<void (int)> onPad;                  ///< a velocity pad (0-based): plays a random round robin of it     ///< track, 0 = left channel / 1 = right channel, pan
     std::function<void (int)> onRename, onHistoryJump;
     std::function<void (const std::vector<std::string>&)> onFilesDropped;

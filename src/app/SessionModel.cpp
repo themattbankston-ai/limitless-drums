@@ -339,4 +339,72 @@ ui::StudioModel::AlignView buildAlignView (const EngineState& es, int mic, int h
     v.best = (float) H.best; v.bestHeat = (float) H.bestC; v.curHeat = (float) H.curC; v.lag = (float) M.lag;
     return v;
 }
+
+ui::StudioModel::TuneView buildTuneView (const EngineState& es, int hit)
+{
+    ui::StudioModel::TuneView v;
+    const auto& S = es.session;
+    if (S.tracks.empty()) return v;
+    v.tunable = S.drum == "kick" || S.drum == "snare" || S.drum == "tom";
+    v.on = S.tune.on; v.rr = S.tune.mode == "rr"; v.cents = (float) S.tune.cents; v.a4 = (float) S.tune.a4;
+    v.fmin = (float) S.pitchOpt.fmin; v.fmax = (float) S.pitchOpt.fmax; v.skipMs = (float) S.pitchOpt.skipMs;
+    const int nT = (int) S.tracks.size();
+    const int ft = S.tuneMic == "ref" ? S.refIdx : std::clamp (juce::String (S.tuneMic).getIntValue(), 0, nT - 1);
+    v.from = S.tracks[(size_t) ft].mic + (ft == S.refIdx ? " (lead)" : "");
+    v.read = S.tuneInfo.has_value() && S.tuneInfo->valid;
+    if (S.tune.target == "nearest") v.target = "Nearest";
+    else v.target = hl::noteName (juce::String (S.tune.target).getDoubleValue());
+    if (! v.read) return v;
+    const auto& ti = *S.tuneInfo;
+    v.medF = (float) ti.medF;
+    v.medCents = (float) (100 * (ti.medMidi - ti.nearest));
+    v.sitsAt = hl::noteName (ti.nearest);
+    v.tunedTo = hl::noteName (ti.targetMidi) + (S.tune.cents != 0 ? juce::String::formatted (" %+d", (int) std::lround (S.tune.cents)).toStdString() : std::string());
+    if (S.tune.target == "nearest") v.target = "Nearest \xc2\xb7 " + hl::noteName (ti.nearest);
+    std::vector<double> rs; for (double r : ti.ratios) if (std::isfinite (r)) rs.push_back (r);
+    if (! rs.empty()) { std::sort (rs.begin(), rs.end()); v.ratio = (float) rs[rs.size() / 2]; v.shiftSemis = (float) (12 * std::log2 (v.ratio)); }
+    const bool ok = hl::countsOk (S);
+    v.layers = ok ? S.det.V : 0;
+    for (size_t i = 0; i < ti.before.size(); ++i)
+    {
+        v.before.push_back ((float) ti.before[i]); v.after.push_back ((float) ti.after[i]);
+        v.layer.push_back (ok ? S.velOfHit (i) : 0);
+    }
+    for (double f : ti.layerMed) v.layerHz.push_back ((float) f);
+    // the widest spread inside one velocity, before and now; and the layer furthest from the drum
+    if (ok)
+    {
+        float sb = 0, sa = 0;
+        for (int L = 0; L < S.det.V; ++L)
+        {
+            float b0 = 1e9f, b1 = -1e9f, a0 = 1e9f, a1 = -1e9f;
+            for (size_t i = 0; i < v.before.size(); ++i)
+                if (v.layer[i] == L && std::isfinite (v.before[i]) && std::isfinite (v.after[i]))
+                { b0 = std::min (b0, v.before[i]); b1 = std::max (b1, v.before[i]); a0 = std::min (a0, v.after[i]); a1 = std::max (a1, v.after[i]); }
+            if (b1 >= b0) { sb = std::max (sb, b1 - b0); sa = std::max (sa, a1 - a0); }
+            if ((size_t) L < ti.layerMed.size() && std::isfinite (ti.layerMed[(size_t) L]))
+            {
+                const float c = (float) (1200 * std::log2 (ti.layerMed[(size_t) L] / ti.medF));
+                if (! std::isfinite (v.worstCents) || std::abs (c) > std::abs (v.worstCents)) { v.worstCents = c; v.worstLayer = L; }
+            }
+        }
+        v.spreadBefore = sb; v.spreadAfter = sa;
+    }
+    // the selected hit
+    if (! ti.f.empty())
+    {
+        hit = std::clamp (hit < 0 ? (int) ti.f.size() / 2 : hit, 0, (int) ti.f.size() - 1);
+        v.hit = hit;
+        if (std::isfinite (ti.f[(size_t) hit]) && ti.f[(size_t) hit] > 0)
+        {
+            v.hitF = (float) ti.f[(size_t) hit];
+            const double r = (size_t) hit < ti.ratios.size() && std::isfinite (ti.ratios[(size_t) hit]) ? ti.ratios[(size_t) hit] : 1;
+            v.hitTunedF = (float) (ti.f[(size_t) hit] * r);
+            const double m = hl::hzToMidi (v.hitTunedF, S.tune.a4);
+            v.hitNote = hl::noteName (std::round (m)); v.hitCents = (float) (100 * (m - std::round (m)));
+            const double mb = hl::hzToMidi (v.hitF, S.tune.a4); v.hitCentsBefore = (float) (100 * (mb - std::round (mb)));
+        }
+    }
+    return v;
+}
 } // namespace ld

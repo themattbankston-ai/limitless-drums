@@ -14,6 +14,9 @@ ui::StudioModel buildStudioModel (tracktion::Edit&, const std::vector<MicRole>& 
 /** The Align step's view: every mic's alignment, and the scope on one mic around one hit. */
 ui::StudioModel::AlignView buildAlignView (const EngineState&, int mic, int hit, bool spread, bool samples);
 
+/** The Tune step's view. */
+ui::StudioModel::TuneView buildTuneView (const EngineState&, int hit);
+
 /** The audio files behind the edit's tracks, in track order. */
 std::vector<juce::File> editFiles (tracktion::Edit&);
 } // namespace ld

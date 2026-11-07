@@ -86,6 +86,11 @@ private:
     void rerender();
     void onAlignAction (const std::string& action, int mic, double v);
     void onAlignMenu (const std::string& which, float x, float y, float w, float h);
+    // the Tune step
+    int tuneHit = -2;
+    void refreshTune();
+    void onTuneAction (const std::string& action, double v);
+    void onTuneMenu (const std::string& which, float x, float y, float w, float h);
     std::vector<modes::MidiNote> midiNotes;
     juce::String midiName;
     int autosaveTicks = 0;
