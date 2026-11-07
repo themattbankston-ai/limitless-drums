@@ -73,6 +73,9 @@ struct StudioModel
             float before = NAN, after = NAN;
             std::array<float, 8> bandsBefore {}, bandsAfter {};
             std::string eqText;                   ///< "all-pass at 190 + 410 Hz"
+            // its row: the track over what it lines up to around the selected hit (as it sits now, and as recorded)
+            std::vector<float> ref, cur, rec;
+            float spanMs = 8;
         };
         std::vector<Mic> mics;                    ///< in track order
         int mic = -1;                             ///< the mic on the scope
@@ -84,6 +87,7 @@ struct StudioModel
         std::vector<float> heat;                  ///< the heat curve around the current delay
         float heatFrom = 0, heatStep = 0.25f;     ///< samples
         float best = NAN, bestHeat = NAN, curHeat = NAN, lag = 0;
+        int hit = -1;                             ///< the hit the rows and scope show
     } align;
 };
 

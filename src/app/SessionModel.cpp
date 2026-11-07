@@ -283,6 +283,34 @@ ui::StudioModel::AlignView buildAlignView (const EngineState& es, int mic, int h
     }
     if (ns) { v.sumBefore = (float) (sb / ns); v.sumAfter = (float) (sa / ns); }
 
+    // every row: the track over what it lines up to, around the selected hit
+    const int hsel = std::clamp (hit < 0 ? (int) S.onsets.size() / 2 : hit, 0, (int) S.onsets.size() - 1);
+    v.hit = hsel;
+    {
+        auto at = [] (const hl::F32& x, double p) { const long i = (long) std::floor (p); const double f = p - i; auto g = [&] (long q) { return q >= 0 && q < (long) x.size() ? (double) x[(size_t) q] : 0.0; }; return (float) (g (i) * (1 - f) + g (i + 1) * f); };
+        const double on = (double) S.onsets[(size_t) hsel], pre = 0.0015 * sr;
+        for (int t = 0; t < nT; ++t)
+        {
+            auto& m = v.mics[(size_t) t];
+            const auto& M = S.tracks[(size_t) t];
+            const int r = t == S.refIdx ? t : (hl::alignRef (S, t) >= 0 ? hl::alignRef (S, t) : S.refIdx);
+            const auto& R = S.tracks[(size_t) r];
+            const bool far = hl::roleOf (M.mic + " " + M.name) == "far";
+            const double arr = M.autoResult && std::isfinite (M.autoResult->arrival) ? M.autoResult->arrival : 0;
+            const double span = far ? std::max (0.014 * sr, arr + 0.01 * sr) : 0.008 * sr;
+            m.spanMs = (float) ((span + pre) / sr * 1000);
+            const double lagR = r == S.refIdx ? 0 : R.lag; const int pR = R.pol ? R.pol : 1, pM = M.pol ? M.pol : 1;
+            const int N = 240;
+            for (int n = 0; n < N; ++n)
+            {
+                const double p = on - pre + n * (span + pre) / (N - 1);
+                m.ref.push_back (at (R.mono, p + lagR) * pR);
+                m.cur.push_back (t == S.refIdx ? at (M.mono, p) * pM : at (M.mono, p + M.lag) * pM);
+                m.rec.push_back (at (M.mono, p));
+            }
+        }
+    }
+
     // the scope
     mic = std::clamp (mic, 0, nT - 1);
     if (mic == S.refIdx) for (int t = 0; t < nT; ++t) if (t != S.refIdx) { mic = t; break; }

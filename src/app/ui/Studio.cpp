@@ -411,6 +411,7 @@ struct Studio::Screen : visage::Frame
         const auto& d = studio.data;
         const float lh = studio.laneHeight(), t0 = top();
         const int n = (int) d.tracks.size();
+        if (studio.step() == Step::align && d.align.valid) return drawAlignRows (c, lh, t0, n);
 
         // velocity zones
         for (int k = 0; k < (int) d.layers.size(); ++k)
@@ -438,6 +439,130 @@ struct Studio::Screen : visage::Frame
         c.setClampBounds (0, 0, width(), height());
 
         if (! d.layers.empty()) drawLayerStrip (c);
+    }
+
+    // ------------------------------------------------------------------ the Align step's rows
+    // Each track over what it lines up to, around the selected hit: the reference filled grey, the track as
+    // recorded as a ghost, the track where it sits now in its colour. On the right, its lamp (Lead, In phase,
+    // Corrected, Manual), what it lines up to, its delay and polarity, and how it sums before and after.
+    int alignIndexOf (int uiTrack) const
+    {
+        const auto& d = studio.data;
+        if (uiTrack < 0 || uiTrack >= (int) d.tracks.size()) return -1;
+        for (int k = 0; k < (int) d.align.mics.size(); ++k) if (d.align.mics[(size_t) k].name == d.tracks[(size_t) uiTrack].name) return k;
+        return uiTrack < (int) d.align.mics.size() ? uiTrack : -1;
+    }
+
+    void drawAlignRows (Canvas& c, float lh, float t0, int n)
+    {
+        const auto& d = studio.data; const auto& A = d.align;
+        const unsigned vio = neon::violet;
+        // the caption where the ruler sits
+        c.setColor (0xff0b0c0f); c.fill (0, 0, width(), t0);
+        c.setColor (0x40000000); c.fill (0, t0 - 1, width(), 1);
+        const float waveW = std::round (width() * 0.6f);
+        c.setColor (0xff8b9099);
+        draw::text (c, "HIT " + std::to_string (A.hit + 1) + "  \xc2\xb7  EACH TRACK OVER WHAT IT LINES UP TO", boldFont (9), Font::kLeft, 14, 0, waveW, t0);
+        draw::text (c, "LINES UP TO", boldFont (9), Font::kLeft, waveW + 160, 0, 120, t0);
+        draw::text (c, "SUM", boldFont (9), Font::kRight, width() - 130, 0, 116, t0);
+        c.setClampBounds (0, t0, width(), height() - t0 - 2);
+        for (int i = 0; i < n; ++i)
+        {
+            const float y = t0 + i * lh - studio.view.scrollY;
+            if (y + lh < t0 || y > height()) continue;
+            const auto& tr = d.tracks[(size_t) i];
+            const int k = alignIndexOf (i);
+            c.setColor (0xd9000000); c.fill (0, y + lh - 1, width(), 1);
+            c.setColor (0x14ffffff); c.fill (0, y + lh, width(), 1);
+            if (k < 0) continue;
+            const auto& m = A.mics[(size_t) k];
+            const bool selected = k == A.mic;
+            if (selected) { c.setColor (draw::withAlpha (vio, 0.10f)); c.fill (0, y, width(), lh - 1); c.setColor (draw::withAlpha (vio, 0.8f)); c.fill (0, y, 3, lh - 1); }
+
+            // the wave
+            const float wx = 12, wy = y + 8, wh = lh - 16, ww = waveW - 24;
+            c.setColor (0x0dffffff); c.fill (wx, wy + wh / 2, ww, 1);
+            if (! m.ref.empty())
+            {
+                const size_t N = m.ref.size();
+                // each wave at its own height: the shapes are what line up, not the levels
+                float pr = 1e-6f, pc = 1e-6f;
+                for (size_t q = 0; q < N; ++q) { pr = std::max (pr, std::abs (m.ref[q])); pc = std::max ({ pc, std::abs (m.cur[q]), std::abs (m.rec[q]) }); }
+                auto px = [&] (size_t q) { return wx + (float) q * ww / (float) (N - 1); };
+                float pk = pr;
+                auto py = [&] (float v) { return wy + wh / 2 - v / pk * wh * 0.47f; };
+                if (m.status != "lead")
+                {
+                    visage::Path ref; ref.moveTo (px (0), py (0));
+                    for (size_t q = 0; q < N; ++q) ref.lineTo (px (q), py (m.ref[q]));
+                    ref.lineTo (px (N - 1), py (0)); ref.close();
+                    c.setColor (0x33b9bec6); c.fill (ref);
+                    pk = pc;
+                    visage::Path rec; rec.moveTo (px (0), py (m.rec[0]));
+                    for (size_t q = 1; q < N; ++q) rec.lineTo (px (q), py (m.rec[q]));
+                    c.setColor (0x2effffff); c.stroke (rec, 0, 0, width(), height(), 0.8f);
+                }
+                visage::Path cur; cur.moveTo (px (0), py (m.cur[0]));
+                for (size_t q = 1; q < N; ++q) cur.lineTo (px (q), py (m.cur[q]));
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (draw::withAlpha (tr.colourA, 0.22f)); c.stroke (cur, 0, 0, width(), height(), 4.5f);
+                c.setBlendMode (visage::BlendMode::Alpha);
+                c.setColor (tr.colourA); c.stroke (cur, 0, 0, width(), height(), 1.4f);
+                // the hit's onset
+                const float ox0 = wx + 1.5f / m.spanMs * ww;
+                c.setColor (0x80ff5a3d);
+                for (float yy = wy; yy < wy + wh; yy += 4) c.fill (ox0, yy, 1, 2);
+                c.setColor (0xff5f6670);
+                draw::text (c, draw::fmt ("%.0f ms", (double) m.spanMs), monoFont (8.5f), Font::kRight, wx, wy - 2, ww, 11);
+            }
+
+            // the lamp
+            const float ix = waveW + 8;
+            const unsigned lampCol = m.status == "lead" ? neon::amber : m.status == "corrected" ? 0xff7cff9b : m.status == "manual" ? neon::magenta : 0xff4c8dff;
+            const char* lampTxt = m.status == "lead" ? "LEAD" : m.status == "corrected" ? "CORRECTED" : m.status == "manual" ? "MANUAL" : "IN PHASE";
+            const float ly = y + 16;
+            c.setColor (draw::withAlpha (lampCol, 0.4f)); c.circle (ix - 5, ly - 5, 10);
+            c.setColor (lampCol); c.circle (ix - 2.5f, ly - 2.5f, 5);
+            c.setColor (lampCol);
+            draw::text (c, lampTxt, boldFont (9.5f), Font::kLeft, ix + 9, ly - 7, 140, 14);
+            if (m.status == "lead")
+            {
+                c.setColor (0xff8b9099);
+                draw::text (c, "Everything lines up to this track", bodyFont (10.5f), Font::kLeft, ix, ly + 10, width() - ix - 12, 16);
+                continue;
+            }
+            // delay, polarity, phase EQ, L=R
+            c.setColor (0xffe8ecf2);
+            const std::string dl = A.samples ? draw::fmt ("%+.2f smp", (double) m.delaySmp) : draw::fmt ("%+.2f ms", (double) m.delayMs);
+            draw::text (c, dl, monoBold (10.5f), Font::kLeft, ix, ly + 10, 90, 16);
+            float bx = ix + 88;
+            auto badge = [&] (const char* t, bool on, unsigned col)
+            {
+                const float w = textWidth (boldFont (8.5f), t) + 10;
+                c.setColor (on ? draw::withAlpha (col, 0.22f) : Color (0x0dffffff)); c.roundedRectangle (bx, ly + 11, w, 14, 3);
+                c.setColor (on ? Color (col) : Color (0xff3e434b)); draw::text (c, t, boldFont (8.5f), Font::kCenter, bx, ly + 11, w, 14);
+                bx += w + 4;
+            };
+            badge ("\xc3\x98", m.flipped, neon::magenta);
+            badge ("EQ", m.eq, vio);
+            if (m.lrAvail) badge ("L=R", m.lr, neon::cyan);
+            // what it lines up to
+            c.setColor (0xffb9bec6);
+            draw::text (c, m.to, bodyFont (10.5f), Font::kLeft, waveW + 160, ly - 7, width() - waveW - 300, 14);
+            // the sum, before and after
+            if (std::isfinite (m.before) && std::isfinite (m.after))
+            {
+                const float sx = width() - 130, sw = 116, sy = ly + 13;
+                c.setColor (0x14ffffff); c.roundedRectangle (sx, sy, sw, 6, 3);
+                auto pos = [&] (float v) { return sx + std::clamp ((v + 1) / 2, 0.0f, 1.0f) * sw; };
+                const unsigned col = m.after < 0 ? 0xffff5a3d : 0xff7cff9b;
+                c.setColor (draw::withAlpha (col, 0.85f)); c.roundedRectangle (sx, sy, pos (m.after) - sx, 6, 3);
+                c.setColor (0xccffffff); c.fill (pos (m.before) - 0.75f, sy - 3, 1.5f, 12);
+                c.setColor (0xff8b9099);
+                draw::text (c, draw::fmt ("%+.2f", (double) m.before) + " \xe2\x86\x92 " + draw::fmt ("%+.2f", (double) m.after), monoFont (9.5f), Font::kRight, sx, ly - 7, sw, 14);
+            }
+        }
+        c.setClampBounds (0, 0, width(), height());
     }
 
     void drawEmpty (Canvas& c)
@@ -804,6 +929,12 @@ struct Studio::Screen : visage::Frame
         {
             scrubbing = true;
             if (studio.onSeek) studio.onSeek (std::max (0.0, xToTime (e.position.x)));
+            return;
+        }
+        if (studio.step() == Step::align && studio.data.align.valid)
+        {
+            const int i = (int) std::floor ((e.position.y - top() + studio.view.scrollY) / studio.laneHeight());
+            if (i >= 0 && i < (int) studio.data.tracks.size()) { studio.selectedTrack = i; if (studio.onSelectTrack) studio.onSelectTrack (i); }
             return;
         }
         const int h = hitNear (e.position.x);
