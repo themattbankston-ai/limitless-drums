@@ -19,16 +19,15 @@ at = R.at
 DISPLAY = (130, 28, 670, 272)                          # x, y, w, h
 PRISM = (66, 160, 82)
 BAY = (14, 40, 104, 214)                                  # centre, side
-METERS = [(836, 40, 16, 204), (860, 40, 16, 204)]
-BANDKEYS = [(130 + i * 84, 320, 72, 28) for i in range(6)] + [(634, 320, 46, 28)]
-TYPEKEYS = []; _x = 130
-for w_ in (54, 72, 72, 46, 58, 46):
-    TYPEKEYS.append((_x, 362, w_, 26)); _x += w_ + 12
-DYNKEY = (_x, 362, 70, 26)
-KNOBS = [(190, 466), (310, 466), (430, 466), (560, 466), (680, 466)]; KR = 22
-PHASEKEYS = [(836, 320, 92, 28), (836, 360, 92, 28)]
-OUTPUT = (882, 466, 24)
-LEFTKEYS = [(28, 388, 80, 26), (28, 426, 80, 26), (28, 464, 80, 26)]   # ON, SOLO, DELETE
+METER = (840, 40, 56, 206)                             # one glass window, two segmented bars inside
+KEY = (40, 36)                                         # every key is the same machined square
+BANDKEYS = [(130 + i * 52, 324) for i in range(6)]     # top-left corners
+SHAPEKEYS = [(470 + i * 52, 324) for i in range(6)]
+LEFTKEYS = [(46, 390), (46, 438), (46, 486)]           # band on / solo / delete
+DYNKEY = (480, 448)
+PHASEKEY = (822, 316, 92, 36)
+KNOBS = [(180, 466), (290, 466), (400, 466), (600, 466), (710, 466)]; KR = 22
+OUTPUT = (868, 466, 24)
 BANDLCD = (28, 326, 80, 50)
 
 def build():
@@ -54,9 +53,8 @@ def build():
     # a chamfered bright frame round the display
     fr = P.rounded_box('frame', (dw + 14) * U, (dh + 14) * U, 0.04, 0.11, 0.015); fr.location = at(dx + dw / 2, dy + dh / 2, 0.01)
     fc = P.rounded_box('fc', dw * U, dh * U, 0.5, 0.08, 0.01); fc.location = at(dx + dw / 2, dy + dh / 2, 0.0); cut(fr, fc); fr.data.materials.clear(); fr.data.materials.append(CHAMFER)
-    # meters: two glass slots
-    for (mx, my, mw, mh) in METERS:
-        R.window(plate, mx, my, mw, mh, depth=0.06)
+    # the meter: one glass window
+    mx, my, mw, mh = METER; R.window(plate, mx, my, mw, mh, depth=0.06)
     # the prism: an equilateral glass prism lying in a two-arm cradle
     # the prism sits in a satin silver bay so you can see it bend the light
     bx_, by_, bw_, bh_ = BAY
@@ -90,7 +88,7 @@ def build():
         box('cradle', px + dxx - 4, py + hgt / 3 - 4, 8, 22, 0.3, 0.04, 0.01, 0.006, CHAMFER)
     box('base', px - side / 2 - 4, py + hgt / 3 + 14, side + 8, 10, 0.06, -0.05, 0.01, 0.006, CHAMFER)
     # keys: machined caps over a frosted ring (the code lights the ring in the band's colour)
-    for (kx, ky, kw, kh) in BANDKEYS + TYPEKEYS + [DYNKEY] + PHASEKEYS + LEFTKEYS:
+    for (kx, ky, kw, kh) in [(x, y, *KEY) for (x, y) in BANDKEYS + SHAPEKEYS + LEFTKEYS + [DYNKEY]] + [PHASEKEY]:
         box('ring', kx - 3, ky - 3, kw + 6, kh + 6, 0.03, 0.01, 0.03, 0.008, R.ACRYLIC)
         box('key', kx, ky, kw, kh, 0.08, 0.05, 0.03, 0.012, KEYM)
     # band number LCD

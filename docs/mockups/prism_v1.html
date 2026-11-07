@@ -9,16 +9,28 @@ const g=c.getContext('2d');g.scale(2,2);
 </script><script src="fp.js"></script><script>
 const A0=PI*0.75,ASP=PI*1.5;
 const COL=['#ff5a5a','#ffa040','#ffe45a','#57ff9e','#57c8ff','#b46bff'];
-const DISPLAY=[130,28,670,272],PRISM=[66,160,82],BAY=[14,40,104,214],METERS=[[836,40,16,204],[860,40,16,204]];
-const BANDKEYS=[0,1,2,3,4,5].map(i=>[130+i*84,320,72,28]).concat([[634,320,46,28]]);
-const TW=[54,72,72,46,58,46],TYPEKEYS=[];let _tx=130;TW.forEach(w=>{TYPEKEYS.push([_tx,362,w,26]);_tx+=w+12;});
-const DYNKEY=[_tx,362,70,26],KNOBS=[[190,466],[310,466],[430,466],[560,466],[680,466]],KR=22,PHASEKEYS=[[836,320,92,28],[836,360,92,28]],OUTPUT=[882,466,24],LEFTKEYS=[[28,388,80,26],[28,426,80,26],[28,464,80,26]],BANDLCD=[28,326,80,50];
+const DISPLAY=[130,28,670,272],PRISM=[66,160,82],BAY=[14,40,104,214];
+const KW=40,KH=36,BANDKEYS=[0,1,2,3,4,5].map(i=>[130+i*52,324]),SHAPEKEYS=[0,1,2,3,4,5].map(i=>[470+i*52,324]),LEFTKEYS=[[46,390],[46,438],[46,486]],DYNKEY=[480,448],PHASEKEY=[822,316,92,36];
+const KNOBS=[[180,466],[290,466],[400,466],[600,466],[710,466]],KR=22,OUTPUT=[868,466,24],BANDLCD=[28,326,80,50],METER=[840,40,56,206];
 const ZD=-0.1; // display content sits under the glass slab
 const T=(t,px,py,z,size,col,opt={})=>surfText(t,px,py,z,`${size}px IS`,col,opt);
-function key(k,label,on,col,parent,size=10.5){const [x,y,w,h]=k,id=parent;layS(id,x+w/2,y+h/2,w+6,h+6);
-  if(on){g.save();g.globalCompositeOperation='lighter';g.shadowColor=col;g.shadowBlur=14;g.strokeStyle=col;g.lineWidth=2.4;rr(sx(x-2),sy(y-2,0.03),(w+4)*SX,(h+4)*SY,6);g.stroke();g.restore();}
-  else{g.save();g.strokeStyle=hex(col,0.25);g.lineWidth=1.4;rr(sx(x-2),sy(y-2,0.03),(w+4)*SX,(h+4)*SY,6);g.stroke();g.restore();}
-  T(label,x+w/2,y+h/2,0.09,size,on?'#ffffff':'rgba(20,22,26,0.85)',{ls:0.8,parent:id,glow:on?col:null,blur:6});}
+function keyBase(x,y,w,h,on,col,id){layS(id,x+w/2,y+h/2,w+6,h+6);
+  g.save();if(on){g.globalCompositeOperation='lighter';g.shadowColor=col;g.shadowBlur=14;g.strokeStyle=col;g.lineWidth=2.4;}else{g.strokeStyle=hex(col,0.3);g.lineWidth=1.4;}
+  rr(sx(x-2),sy(y-2,0.03),(w+4)*SX,(h+4)*SY,6);g.stroke();g.restore();}
+// icons drawn on the key top, in the key's plane
+function icon(kind,cx,cy,col,on){const z=0.09,P=(dx,dy)=>[sx(cx+dx),sy(cy+dy,z)];g.save();g.lineCap='round';g.lineJoin='round';g.strokeStyle=on?'#fff':'rgba(20,22,26,0.85)';g.fillStyle=g.strokeStyle;g.lineWidth=2;if(on){g.shadowColor=col;g.shadowBlur=8;}
+  const curve=f=>{g.beginPath();for(let i=0;i<=24;i++){const t=i/24,[x,y]=P(-14+28*t,f(t));i?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();};
+  if(kind==='bell')curve(t=>4-9*Math.exp(-Math.pow((t-0.5)*4.2,2)));
+  else if(kind==='loshelf')curve(t=>-4+8/(1+Math.exp(-(t-0.5)*14)));
+  else if(kind==='hishelf')curve(t=>4-8/(1+Math.exp(-(t-0.5)*14)));
+  else if(kind==='locut')curve(t=>t<0.45?9-(t/0.45)*12:-3);
+  else if(kind==='hicut')curve(t=>t>0.55?-3+((t-0.55)/0.45)*12:-3);
+  else if(kind==='notch')curve(t=>-3+11*Math.exp(-Math.pow((t-0.5)*14,2)));
+  else if(kind==='power'){g.beginPath();const [x,y]=P(0,1);g.arc(x,y,8,-PI/2+0.7,-PI/2-0.7+2*PI);g.stroke();g.beginPath();g.moveTo(...P(0,-9));g.lineTo(...P(0,0));g.stroke();}
+  else if(kind==='solo'){g.beginPath();const [x,y]=P(0,2);g.arc(x,y,9,PI,2*PI);g.stroke();g.fillRect(...P(-11,1),5,8);g.fillRect(...P(6,1),5,8);}
+  else if(kind==='delete'){g.beginPath();g.moveTo(...P(-8,-6));g.lineTo(...P(8,-6));g.stroke();g.beginPath();g.moveTo(...P(-3,-9));g.lineTo(...P(3,-9));g.stroke();g.beginPath();g.moveTo(...P(-6,-4));g.lineTo(...P(-5,9));g.lineTo(...P(5,9));g.lineTo(...P(6,-4));g.stroke();}
+  else if(kind==='dyn'){curve(t=>Math.sin(t*PI*3)*5*(1-t*0.6));}
+  g.restore();}
 function ringKnob(px,py,r,v,col,bip=false){const cx=sx(px),cy=sy(py,0.016),rr_=r*1.24;g.save();g.lineCap='round';g.strokeStyle='rgba(255,255,255,0.06)';g.lineWidth=3;g.beginPath();g.ellipse(cx,cy,rr_*SX,rr_*SY,0,A0,A0+ASP);g.stroke();
   const a0=bip?A0+ASP/2:A0,a1=A0+ASP*v;g.globalCompositeOperation='lighter';g.shadowColor=col;g.shadowBlur=12;g.strokeStyle=col;g.lineWidth=3.2;g.beginPath();g.ellipse(cx,cy,rr_*SX,rr_*SY,0,Math.min(a0,a1),Math.max(a0,a1)+0.001);g.stroke();g.restore();
   const tx=sx(px),ty=sy(py,0.195),a=A0+ASP*v;g.save();g.lineCap='round';g.strokeStyle='rgba(20,22,26,0.9)';g.lineWidth=2.4;g.beginPath();g.moveTo(tx+Math.cos(a)*r*0.2*SX,ty+Math.sin(a)*r*0.2*SY);g.lineTo(tx+Math.cos(a)*r*0.72*SX,ty+Math.sin(a)*r*0.72*SY);g.stroke();g.restore();}
@@ -28,8 +40,7 @@ function bandResp(f,b){const r=Math.log2(f/b.f);if(b.t==='bell')return b.g*Math.
 function prism(X,Y,img,st){
   const o=win(X,Y,1000,600,'KICK IN',1,COL[st.sel],'PRISM');BX=o.x;BY=o.y;
   g.save();rr(BX,BY,FW,FH,6);g.clip();g.drawImage(img.plate,BX,BY,FW,FH);
-  layS('display',DISPLAY[0]+DISPLAY[2]/2,DISPLAY[1]+DISPLAY[3]/2,DISPLAY[2]+14,DISPLAY[3]+14);layS('bay',BAY[0]+BAY[2]/2,BAY[1]+BAY[3]/2,BAY[2],BAY[3]);
-  METERS.forEach(([x,y,w,h],i)=>layS('meter'+i,x+w/2,y+h/2,w,h));KNOBS.forEach(([x,y],i)=>layC('knob'+i,x,y,KR*1.42));layC('output knob',OUTPUT[0],OUTPUT[1],OUTPUT[2]*1.42);
+  layS('display',DISPLAY[0]+DISPLAY[2]/2,DISPLAY[1]+DISPLAY[3]/2,DISPLAY[2]+14,DISPLAY[3]+14);layS('bay',BAY[0]+BAY[2]/2,BAY[1]+BAY[3]/2,BAY[2],BAY[3]);KNOBS.forEach(([x,y],i)=>layC('knob'+i,x,y,KR*1.42));layC('output knob',OUTPUT[0],OUTPUT[1],OUTPUT[2]*1.42);
   const bands=st.bands,sel=st.sel,sc=COL[sel],[dx,dy,dw,dh]=DISPLAY,mid=dy+dh*0.46,gY=d=>mid-d/24*(dh*0.42);
   const tot=f=>bands.reduce((s,b)=>s+bandResp(f,b),0);
   // ---- display
@@ -61,15 +72,20 @@ function prism(X,Y,img,st){
    COL.forEach((cl,k)=>{const y1=dy+40+k*14;g.filter='blur(3px)';wb(rx,inY+k*1.2,dx+2,y1,cl,6,0.5);g.filter='none';wb(rx,inY+k*1.2,dx+2,y1,cl,1.6,0.95);});
    g.restore();}
   surfText('PRISM',66,22,0,'15px IB','#ffffff',{ls:5,glow:'#9fb8ff',blur:8});
-  // ---- meters
-  METERS.forEach(([x,y,w,h],i)=>{const lv=i?0.7:0.76,zz=-0.06;const lg=g.createLinearGradient(0,sy(y+h,zz),0,sy(y,zz));COL.forEach((cl,k)=>lg.addColorStop(k/5,cl));g.save();g.shadowColor='#fff';g.shadowBlur=8;g.fillStyle=lg;g.fillRect(sx(x+3),sy(y+h*(1-lv),zz),(w-6)*SX,h*lv*SY);g.restore();});
-  T('OUT',856,258,0,10,'rgba(225,230,240,0.75)',{ls:2});nixie(856,278,'-3.1 dB',62,'#ffffff','#9fb8ff','#05070a');
-  // ---- keys
-  bands.forEach((b,k)=>key(BANDKEYS[k],`${k+1}   ${b.f>=1000?(b.f/1000)+'k':b.f}`,k===sel,COL[k],'band'+k));key(BANDKEYS[6],'+',false,'#ffffff','addband',14);
-  ['BELL','LO SHELF','HI SHELF','CUT','NOTCH','TILT'].forEach((t,i)=>key(TYPEKEYS[i],t,i===st.type,sc,'type'+i,9.5));key(DYNKEY,'DYNAMIC',st.dyn,sc,'dyn',9.5);
-  ['NATURAL','LINEAR'].forEach((t,i)=>key(PHASEKEYS[i],t,i===st.phase,'#ffffff','phase'+i,10));
-  T('PHASE',882,304,0,10,'rgba(225,230,240,0.75)',{ls:2});
-  ['ON','SOLO','DELETE'].forEach((t,i)=>key(LEFTKEYS[i],t,i===0,sc,'left'+i,10));
+  // ---- meter: one glass window, two segmented bars, peak-hold lines, dB scale beside it
+  {const [mx,my,mw,mh]=METER,zz=-0.06;layS('meter',mx+mw/2,my+mh/2,mw,mh);const segs=34,bw=16;
+   [0,1].forEach(ch=>{const lv=ch?0.72:0.78,pk=ch?0.8:0.85,x=mx+10+ch*(bw+4);for(let k=0;k<segs;k++){const t=k/segs,yy=my+mh-8-(k+1)*(mh-16)/segs,lit=t<lv;
+     const col=t>0.92?'#ff5a5a':t>0.82?'#ffe45a':'#e8f4ff';g.fillStyle=lit?col:'rgba(255,255,255,0.05)';if(lit){g.save();g.shadowColor=col;g.shadowBlur=6;}g.fillRect(sx(x),sy(yy+1,zz),bw*SX,((mh-16)/segs-2)*SY);if(lit)g.restore();}
+     const py=my+mh-8-pk*(mh-16);g.fillStyle='#ffffff';g.fillRect(sx(x),sy(py,zz),bw*SX,1.6);});
+   [[0,1],[-6,0.9],[-12,0.8],[-24,0.6],[-48,0.2]].forEach(([d,t])=>T(String(d),mx+mw+16,my+mh-8-t*(mh-16),0,9,'rgba(225,230,240,0.6)',{}));
+   T('OUT',mx+mw/2,my+mh+13,0,10,'rgba(225,230,240,0.75)',{ls:2});nixie(mx+mw/2,my+mh+32,'-3.1 dB',62,'#ffffff','#9fb8ff','#05070a');}
+  // ---- keys: all the same machined square
+  bands.forEach((b,k)=>{const [x,y]=BANDKEYS[k],on=k===sel;keyBase(x,y,KW,KH,on,COL[k],'band'+k);T(String(k+1),x+KW/2,y+KH/2,0.09,15,on?'#fff':COL[k],{parent:'band'+k,glow:on?COL[k]:null,blur:8});});
+  ['bell','loshelf','hishelf','locut','hicut','notch'].forEach((kind,i)=>{const [x,y]=SHAPEKEYS[i],on=i===st.type;keyBase(x,y,KW,KH,on,sc,'shape'+i);icon(kind,x+KW/2,y+KH/2,sc,on);});
+  T('BAND',130+(5*52+40)/2,312,0,9.5,'rgba(225,230,240,0.55)',{ls:2.5,nolay:true});T('SHAPE',470+(5*52+40)/2,312,0,9.5,'rgba(225,230,240,0.55)',{ls:2.5,nolay:true});
+  ['power','solo','delete'].forEach((kind,i)=>{const [x,y]=LEFTKEYS[i],on=i===0||(i===1&&st.solo);keyBase(x,y,KW,KH,on,sc,'left'+i);icon(kind,x+KW/2,y+KH/2,sc,on);});
+  {const [x,y]=DYNKEY;keyBase(x,y,KW,KH,st.dyn,sc,'dyn');icon('dyn',x+KW/2,y+KH/2,sc,st.dyn);T('DYNAMIC',x+KW/2,KNOBS[0][1]-46,0,10,'rgba(225,230,240,0.8)',{ls:1.6});}
+  {const [x,y,w,h]=PHASEKEY;keyBase(x,y,w,h,true,'#ffffff','phase');T(st.phase?'LINEAR':'NATURAL',x+w/2,y+h/2,0.09,10.5,'#fff',{ls:1.2,parent:'phase',glow:'#9fb8ff',blur:6});T('PHASE',x+w/2,y-14,0,10,'rgba(225,230,240,0.75)',{ls:2});}
   // band LCD
   {const [x,y,w,h]=BANDLCD,zz=-0.05;layS('bandlcd',x+w/2,y+h/2,w,h);surfText('BAND',x+w/2,y+11,zz,'8.5px IS','rgba(220,225,235,0.6)',{ls:1.5,parent:'bandlcd'});surfText(String(sel+1),x+w/2,y+32,zz,'24px IB',sc,{glow:sc,blur:12,parent:'bandlcd'});}
   // knobs
