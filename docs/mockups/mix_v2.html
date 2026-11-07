@@ -1,0 +1,111 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:IB;src:url(InterDisplay-Bold.otf)} @font-face{font-family:IS;src:url(InterDisplay-SemiBold.otf)}
+@font-face{font-family:IM;src:url(Inter-Medium.otf)} @font-face{font-family:MB;src:url(DejaVuSansMono-Bold.ttf)}
+html,body{margin:0;background:#000} canvas{display:block}
+</style></head><body><canvas id=c width=3360 height=2100 style="width:1680px;height:1050px"></canvas><script>
+const c=document.getElementById('c'),g=c.getContext('2d');g.scale(2,2);
+const L=s=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=s});
+(async()=>{
+await document.fonts.load('10px IB');await document.fonts.load('10px IM');await document.fonts.load('10px MB');await document.fonts.load('10px IS');
+const bg=await L('bg.png'),strip=await L('strip.png'),rack=await L('rack_mix2.png'),cap=await L('cap_small.png');
+g.drawImage(bg,0,0,1680,1050);
+// ---------------------------------------------------------------- the mixer
+g.fillStyle='#08090b';g.fillRect(64,334,1186,620);
+const tracks=[['Top','#29d3ff',['EQ','COMP','SATURATE'],0.35,0,-1.5,0.82],['Bottom','#3b8cff',['EQ','GATE'],0.2,0,-4,0.6],['Overheads','#3b8cff',['TUBE EQ','COMP'],0.15,0.4,-6,0.55],
+ ['Room Mono','#8b5cff',['COMP'],0,0,-7,0.5],['Room Close','#8b5cff',[],0,0,-9,0.45],['Room Far','#8b5cff',['WIDTH'],0,0,-11,0.38],['Room Crush','#ff4fb0',['SATURATE','COMP'],0,0,-14,0.4]];
+const k=0.885, sw=112*k, sh=690*k, y0=344;
+const vio='#a78bff', cyan='#29e3ff', amber='#ffa040';
+function arc(cx,cy,r,v,col,bip,w=2.2){const a0=Math.PI*0.75,a1=Math.PI*2.25;g.lineCap='round';
+ g.strokeStyle='rgba(255,255,255,0.07)';g.lineWidth=w;g.beginPath();g.arc(cx,cy,r,a0,a1);g.stroke();
+ const s=bip?Math.PI*1.5:a0,e=bip?Math.PI*1.5+(v-0.5)*1.5*Math.PI:a0+v*1.5*Math.PI;
+ g.save();g.shadowColor=col;g.shadowBlur=8;g.strokeStyle=col;g.lineWidth=w;g.beginPath();g.arc(cx,cy,r,Math.min(s,e),Math.max(s,e));g.stroke();g.restore();}
+function txt(t,x,y,f,col,al='center'){g.font=f;g.fillStyle=col;g.textAlign=al;g.textBaseline='middle';g.fillText(t,x,y);}
+function dbY(db,top,h){const m=[[6,0],[0,0.12],[-6,0.27],[-12,0.42],[-24,0.62],[-40,0.8],[-60,0.95]];for(let i=0;i<m.length-1;i++){if(db<=m[i][0]&&db>=m[i+1][0]){const u=(m[i][0]-db)/(m[i][0]-m[i+1][0]);return top+(m[i][1]+u*(m[i+1][1]-m[i][1]))*h;}}return top+h;}
+function drawStrip(x,name,col,ins,r1,r2,fdb,meter,master){
+ g.drawImage(strip,x,y0,sw,sh);
+ const P=(px,py)=>[x+px*k,y0+py*k];
+ // colour bar and name
+ let [nx,ny]=P(8,8);g.fillStyle=col;g.globalAlpha=0.9;g.fillRect(nx,ny-4*k,96*k,2);g.globalAlpha=1;
+ txt(name,x+56*k,y0+19*k,'600 10.5px IS',master?'#ffd2a6':'#e8ecf2');
+ // inserts
+ for(let i=0;i<5;i++){const [ix,iy]=P(8,38+i*26);const has=i<ins.length;
+  if(has){g.save();g.globalAlpha=0.16;g.fillStyle=master?amber:col;g.beginPath();g.roundRect(ix+3,iy+2,96*k-6,22*k-5,3);g.fill();g.restore();
+   g.fillStyle=master?amber:col;g.globalAlpha=0.9;g.fillRect(ix+10,iy+22*k-5,96*k-20,1.3);g.globalAlpha=1;}
+  txt(has?ins[i]:'',ix+48*k,iy+10*k,'700 8px IB',has?'#f2f4f8':'#4a4f57');}
+ // sends
+ let [ax,ay]=P(32,196);arc(ax,ay,15*k,r1,vio,false,2);txt('R1',ax,ay+20*k,'700 7px IB','#b9bec6');
+ [ax,ay]=P(80,196);arc(ax,ay,15*k,r2,cyan,false,2);txt('R2',ax,ay+20*k,'700 7px IB','#b9bec6');
+ // pan
+ if(!master){[ax,ay]=P(56,250);arc(ax,ay,17.5*k,0.5,'#ffffff',true,2);txt('C',ax,ay+21*k,'700 7px IB','#8b9099');}
+ else{[ax,ay]=P(56,250);arc(ax,ay,17.5*k,0.5,amber,true,2);txt('BAL',ax,ay+21*k,'700 7px IB','#8b9099');}
+ // mute / solo
+ let [mx,my]=P(12,282);txt('M',mx+21*k,my+9*k,'700 8.5px IB','#9aa0a9');[mx,my]=P(58,282);txt('S',mx+21*k,my+9*k,'700 8.5px IB','#9aa0a9');
+ // the fader scale, meter and cap
+ const [fx,ft]=P(52,314), fh=326*k;
+ g.font='7px MB';g.textAlign='right';g.textBaseline='middle';
+ for(const d of [6,0,-6,-12,-24,-40]){const yy=dbY(d,ft,fh);g.fillStyle='rgba(255,255,255,0.25)';g.fillRect(x+40*k,yy,8*k,1);g.fillStyle='#6f767f';g.fillText(d>0?'+'+d:''+d,x+38*k,yy);}
+ const [mxx,mty]=P(84,314);const mh=fh*meter;const gr=g.createLinearGradient(0,mty+fh,0,mty);gr.addColorStop(0,'#2ee6a6');gr.addColorStop(0.7,'#c8ff3d');gr.addColorStop(0.9,'#ffb347');gr.addColorStop(1,'#ff4d5e');
+ g.save();g.shadowColor='#7cff9b';g.shadowBlur=6;g.fillStyle=gr;g.fillRect(mxx+1.5,mty+fh-mh,10*k-3,mh);g.restore();
+ const cy=dbY(fdb,ft,fh);g.drawImage(cap,x+56*k-cap.width/4,cy-cap.height/4,cap.width/2,cap.height/2);
+ // readout
+ const [rx,ry]=P(20,652);txt((fdb>0?'+':'')+fdb.toFixed(1),rx+36*k,ry+11*k,'700 9.5px MB',master?amber:'#e8ecf2');
+}
+const xm=1238-sw, gap=(xm-26-76-7*sw)/6;
+let x=76;
+tracks.forEach((t,i)=>{drawStrip(x,...t);if(i==0){g.save();g.strokeStyle='rgba(255,160,64,0.9)';g.shadowColor='#ffa040';g.shadowBlur=10;g.lineWidth=1.5;g.beginPath();g.roundRect(x+1,y0+1,sw-2,sh-2,6);g.stroke();g.restore();}x+=sw+gap;});
+x=xm; g.fillStyle='rgba(255,160,64,0.35)';g.fillRect(x-13,y0+10,1,sh-20);
+drawStrip(x,'Master','#ffa040',['COMP','SATURATE','EQ'],0.25,0.1,0,0.86,true);
+// the hint line
+txt('Click a strip to edit its tone and shape in the rack  ·  click a slot to add or open a plugin  ·  ⌘-click to bypass  ·  drag to reorder',650,342-0,'500 9px IM','#5f6670');
+// ---------------------------------------------------------------- the rack
+const RX=1293, RY=335, RW=318, RH=664, kk=1.0;
+g.fillStyle='#050506';g.fillRect(RX-3,RY-3,RW+6,RH+6);g.drawImage(rack,RX,RY,RW,RH);
+const prx=1/1.01, pry=0.98163/1.01;
+const X=v=>RX+(159+(v-159)*prx)*kk, Y=v=>RY+(332+(v-332)*pry)*kk;
+function silk(t,x,y,col,s=8.5){g.font=`700 ${s}px IB`;g.fillStyle=col;g.textAlign='left';g.textBaseline='top';g.letterSpacing='2px';g.fillText(t,X(x),Y(y));g.letterSpacing='0px';}
+function key(x,y,w,h,t,on,col,en=true){if(on){g.save();g.globalAlpha=0.14;g.fillStyle=col;g.beginPath();g.roundRect(X(x+3),Y(y+1.5),w-6,h-6,3.5);g.fill();g.restore();g.fillStyle=col;g.fillRect(X(x+8),Y(y+h-4.5),w-16,1.6);}
+ txt(t,X(x+w/2),Y(y+h/2-1.6),'700 8px IB',!en?'#3e434b':on?'#f2f4f8':'#9aa0a9');}
+function knob(x,y,r,v,col,lab,val,bip){arc(X(x),Y(y-3),r*1.24,v,col,bip,3);txt(lab,X(x),Y(y+r+8),'700 6.8px IB','#d8c6b4');txt(val,X(x),Y(y+r+17),'700 7.8px MB',col);}
+// TONE
+silk('TONE',36,13,'#ffd2a6');
+key(26,30,84,24,'STANDARD',false,amber);key(117,30,84,24,'ALL FLAT',false,amber);
+txt('Top',X(216),Y(42),'500 10px IM','#e8ecf2','left');txt('CHANNEL',X(286),Y(42),'700 6px IB','#8b9099','right');
+{ // tone curve
+ const gx=32,gy=64,gw=254,gh=64; const f=[ -30,-24,-18,-9,-4,-8,-11,-12,-10,-9,-8,-7.5,-7,-6.5,-6,-6.5,-7,-8,-10,-13,-17];
+ const f2=f.map((v,i)=>v+(i>12&&i<17?2.2:0)+(i==5||i==6?-2:0)+(i<3?1.5:0));
+ g.fillStyle='rgba(255,255,255,0.08)';for(const t of [0.12,0.5,0.88]) g.fillRect(X(gx+t*gw),Y(gy),1,gh);
+ const P=(a,col,w,glow)=>{g.save();if(glow){g.shadowColor=col;g.shadowBlur=8}g.strokeStyle=col;g.lineWidth=w;g.beginPath();a.forEach((v,i)=>{const xx=X(gx+i/(a.length-1)*gw),yy=Y(gy+6+(-v/32)*(gh-12));i?g.lineTo(xx,yy):g.moveTo(xx,yy)});g.stroke();g.restore();};
+ P(f.map((v,i)=>v+(i>11?1.5*Math.sin(i):0)),'rgba(167,139,255,0.8)',1);P(f2,amber,1.8,true);P(f,'rgba(232,236,242,0.65)',1);
+ txt('WHITE: RECORDED  ·  AMBER: NOW  ·  VIOLET: REF',X(gx+gw-4),Y(gy+5),'700 6px IB','#8b9099','right');
+}
+const tc=['#29e3ff','#ff4fb0','#a78bff','#c8ff3d'];
+[['TONE',0.58,'+16',true],['CRACK',0.62,'+24',true],['RINGS',0.35,'35%',false],['TAME',0.25,'25%',false]].forEach((d,i)=>knob([59,126,193,260][i],160,15,d[1],tc[i],d[0],d[2],d[3]));
+// SHAPE: the transient designer
+silk('SHAPE',36,215,'#ffd2a6');txt('TRANSIENT DESIGNER',X(286),Y(219),'700 6.5px IB','#8b9099','right');
+{ const gx=32,gy=231,gw=254,gh=34;
+ const env=(a,s)=>{const p=[];for(let i=0;i<=120;i++){const t=i/120;let v=t<0.02?t/0.02:Math.exp(-(t-0.02)*(4.5-s))*(1+a*Math.exp(-(t-0.02)*40));p.push(Math.min(1,v));}return p;};
+ const draw=(p,col,w,glow)=>{g.save();if(glow){g.shadowColor=col;g.shadowBlur=8}g.strokeStyle=col;g.lineWidth=w;g.beginPath();p.forEach((v,i)=>{const xx=X(gx+i/120*gw),yy=Y(gy+gh-v*gh*0.92);i?g.lineTo(xx,yy):g.moveTo(xx,yy)});g.stroke();g.restore();};
+ draw(env(0.6,0.8),amber,1.8,true);draw(env(0,0),'rgba(232,236,242,0.65)',1);
+}
+knob(70,312,22,0.72,'#ff9a3d','ATTACK','+44',true);knob(248,312,22,0.4,'#c8ff3d','SUSTAIN','-20',true);
+knob(136,312,13,0.5,'#29e3ff','DECAY','+0',true);knob(182,312,13,0.5,'#a78bff','RELEASE','+0',true);
+// REFERENCE
+silk('REFERENCE',36,370,'#b9bec6',7.5);
+{ const wx=26,wy=382,ww=150,wh=48; for(let i=0;i<70;i++){const xx=X(wx+6+i*2),h=Math.exp(-i/14)*15*(0.6+0.4*Math.abs(Math.sin(i*1.7)));g.fillStyle='rgba(167,139,255,0.85)';g.fillRect(xx,Y(wy+20)-h,1.2,2*h+0.5);}
+ txt('Fav snare.wav',X(wx+6),Y(wy+wh-8),'500 8.5px IM','#e8ecf2','left');}
+knob(206,404,14,0.6,'#a78bff','MATCH CURVE','60%');knob(262,404,14,0.35,'#29e3ff','MATCH ENV','35%');
+key(26,438,104,20,'▶ REFERENCE VS MIX',false,vio);key(134,438,76,20,'CHANGE',false,vio);key(214,438,78,20,'REMOVE',false,vio);
+// REVERB: two units
+silk('REVERB',36,476,'#b9d4ff',7.5);
+[[26,'R1','ROOM','1.2 s',0.4,'#a78bff',['PRE','SIZE','TONE','WIDTH'],['8ms','62%','-2','100%']],[162,'R2','PLATE','2.4 s',0.62,'#29e3ff',['PRE','SIZE','TONE','WIDTH'],['20ms','80%','+1','120%']]].forEach(([ox,id,type,dec,v,col,labs,vals])=>{
+ txt(id,X(ox+10),Y(503),'700 9px IB',col,'left');txt(type,X(ox+60),Y(503),'700 9px IB','#e8ecf2');
+ g.fillStyle=col;g.beginPath();g.moveTo(X(ox+112),Y(500));g.lineTo(X(ox+120),Y(500));g.lineTo(X(ox+116),Y(505));g.fill();
+ arc(X(ox+65),Y(545),25,v,col,false,3.2);txt('DECAY',X(ox+65),Y(574),'700 6.8px IB','#c8d2e6');txt(dec,X(ox+65),Y(583),'700 8px MB',col);
+ labs.forEach((l,i)=>{const kx=ox+[18,50,82,112][i];arc(X(kx),Y(607),11.5,[0.2,0.6,0.45,0.7][i],col,i==2,1.8);txt(l,X(kx),Y(625),'700 6px IB','#9aa6bb');txt(vals[i],X(kx),Y(633),'700 6.5px MB',col);});
+});
+txt('100% WET  ·  FED BY EACH CHANNEL’S R1 / R2 SEND',X(159),Y(648),'700 6px IB','#5f6670');
+// header Mix tile status and notice
+g.fillStyle='#0b0c10';g.fillRect(470,966,520,22);txt('Mixer: 5 inserts per channel, R1 / R2 sends, master bus. Click a strip to edit its tone.',472,977,'500 11px IM','#8b9099','left');
+document.title='done';
+})();
+</script></body></html>
