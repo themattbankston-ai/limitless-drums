@@ -11,6 +11,11 @@ OUTDIR = sys.argv[1] if len(sys.argv) > 1 else 'out'; SC = sys.argv[2] if len(sy
 import render_rack as R
 from render_rack import P, U, box, cut, mat_principled
 HOT = os.environ.get('LD_HOT', '')
+LAYER = os.environ.get('LD_LAYER', '')   # '', 'plate', 'saw', 'skull'
+VU = (170, 204, 106)
+KEYS = [(60 + i * 78, 348, 70, 24) for i in range(3)]
+PXs = lambda v: 980 / 2 + (v - 980 / 2) / 1.01
+PYs = lambda v: 544 / 2 + (v - 544 / 2) * 0.98163 / 1.01
 FONTS = os.environ.get('LD_FONTS', '/tmp/claude-0/mk/fonts')
 W, H = 980, 544
 R.W, R.H = W, H
@@ -145,7 +150,7 @@ def fluted_knob(px, py, r, dark=False, collar=True):
 def skull(px, py, height_px):
     """The cast skull: a scanned-style skull mesh (models/skull.obj), subdivided, in grimy bone, embers in the sockets."""
     x0, y0, _ = at(px, py)
-    bpy.ops.wm.obj_import(filepath=os.path.join(HERE, 'models', 'skull.obj')); sk = bpy.context.selected_objects[0]
+    bpy.ops.wm.obj_import(filepath=os.path.join(HERE, 'models', 'skull.obj')); sk = bpy.context.selected_objects[0]; sk.name = 'skull_mesh'
     sk.rotation_euler = (0, 0, 0)
     bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
     k = height_px * U / sk.dimensions[1]
@@ -180,15 +185,10 @@ def sawblade(px, py, r):
     sol = o.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.035; bpy.ops.object.modifier_apply(modifier='s')
     bv = o.modifiers.new('bv', 'BEVEL'); bv.width = 0.012; bv.segments = 3; bv.limit_method = 'ANGLE'; bpy.ops.object.modifier_apply(modifier='bv')
     o.location = (x, y, 0.04)
-    # expansion slots and the gullet holes
-    for i in range(6):
-        a = 2 * math.pi * i / 6 + 0.2
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(x + math.cos(a) * R_ * 0.78, y + math.sin(a) * R_ * 0.78, 0.04)); c = bpy.context.object
-        c.scale = (R_ * 0.22, 0.012, 0.2); c.rotation_euler[2] = a; cut(o, c)
-        bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.022, depth=0.2, location=(x + math.cos(a) * R_ * 0.67, y + math.sin(a) * R_ * 0.67, 0.04)); cut(o, bpy.context.object)
+    # no slots or holes: the blade is the same at every tooth, so the app can spin the rendered image
     o.data.materials.clear(); o.data.materials.append(SAW)
     # hub
-    cyl(x, y, R_ * 0.2, 0.06, 0.07, 96, STEEL_DIRTY, 0.01)
+    hub = cyl(x, y, R_ * 0.2, 0.06, 0.07, 96, P.radial_brushed('hubm', (0.3, 0.3, 0.31), 0.3), 0.01); hub.name = 'sawhub'
     return o
 
 def porthole(px, py, r):
@@ -238,11 +238,11 @@ def build():
     # the plate
     plate = box('plate', 0, 0, W, H, 0.16, -0.08, 0.06, 0.016, powdercoat())
     # recess for the porthole
-    c = cyl(*at(170, 222)[:2], 1.12, 0.3, 0.0); cut(plate, c)
+    c = cyl(*at(*VU[:2])[:2], VU[2] * U * 0.98, 0.3, 0.0); cut(plate, c)
     for xx in range(40, W - 20, 46):
         for yy in (12, H - 12): rivet(xx, yy)
     for p_ in [(14, 14), (W - 14, 14), (14, H - 14), (W - 14, H - 14)]: R.screw(*p_) if False else rivet(*p_, 0.07)
-    porthole(170, 222, 114)
+    porthole(*VU)
     sawblade(490, 222, 156)
     skull(490, 212, 250)
     fluted_knob(812, 222, 64)
@@ -258,7 +258,8 @@ def build():
     d.data.materials.append(emissive('punish', (1.0, 0.05, 0.02), 2.6 if HOT == 'cracks' else 0.0, base=(0.5, 0.012, 0.008), rough=0.18, coat=1.0, sss=0.4))
     # model tags (stamped steel), toggle buttons
     for i in range(4): tag(32 + i * 92, 24, 84, 30)
-    for i in range(3): box('btnf', 64 + i * 74, 350, 64, 26, 0.04, 0.0, 0.04, 0.006, BONE_DK); box('btn', 68 + i * 74, 353, 56, 20, 0.06, 0.03, 0.035, 0.01, BLACKBONE)
+    for (bx_, by_, bw_, bh_) in KEYS:
+        box('btnf', bx_ - 4, by_ - 3, bw_ + 8, bh_ + 6, 0.04, 0.0, 0.04, 0.006, BONE_DK); box('btn', bx_, by_, bw_, bh_, 0.06, 0.03, 0.035, 0.01, BLACKBONE)
     # title, cast in bone
     bpy.ops.object.text_add(location=at(812, 52, 0.02)); tx = bpy.context.object
     tx.data.body = 'Skull Cutter'; tx.data.font = bpy.data.fonts.load(os.path.join(FONTS, 'MetalMania-Regular.ttf'))
@@ -271,8 +272,30 @@ def build():
     P.area(s, 'red', (2, -8, 0.8), 6, 300, (1.0, 0.12, 0.05))
     P.area(s, 'kick', (6, 3, 2), 2, 220, (1.0, 0.85, 0.7))
     P.area(s, 'soft', (0, 3.2, 9), 7, 80, (0.85, 0.9, 1.0))
-    if HOT: s.world.node_tree.nodes['Background'].inputs[1].default_value = 1.0
-    name = 'skull' + ('_' + HOT if HOT else '') + '.png'
+    # layers: the plate (saw and skull hidden from the camera, still casting shadows), the saw alone (the app
+    # spins it), the skull alone with the saw as a shadow catcher (its shadow stays put while the blade turns)
+    sk_objs = [o for o in s.objects if o.name.startswith(('skull', 'eyeball', 'ember'))]
+    saw_objs = [o for o in s.objects if o.name.startswith(('saw',))]
+    def border(cx, cy, r):
+        s.render.use_border = True; s.render.use_crop_to_border = False
+        s.render.border_min_x = (PXs(cx) - r) / W; s.render.border_max_x = (PXs(cx) + r) / W
+        s.render.border_min_y = 1 - (PYs(cy) + r) / H; s.render.border_max_y = 1 - (PYs(cy) - r) / H
+    if LAYER == 'plate':
+        for o in sk_objs + saw_objs: o.visible_camera = False
+        for o in saw_objs: o.visible_shadow = False   # the app draws the blade's shadow so it can spin
+    elif LAYER == 'saw':
+        s.render.film_transparent = True
+        for o in s.objects:
+            if o.type == 'MESH' and o not in saw_objs and o.name != 'plate': o.hide_render = True
+            if o.name == 'plate': o.visible_camera = False
+        border(490, 222, 168)
+    elif LAYER == 'skull':
+        s.render.film_transparent = True
+        for o in s.objects:
+            if o.type in ('MESH', 'FONT') and o not in sk_objs + saw_objs: o.visible_camera = False
+        for o in saw_objs: o.is_shadow_catcher = True
+        border(490, 212, 172)
+    name = 'skull' + ('_' + LAYER if LAYER else '') + ('_' + HOT if HOT else '') + '.png'
     s.render.filepath = os.path.join(OUTDIR, name); bpy.ops.render.render(write_still=True); print('rendered', name)
 
 if __name__ == '__main__':
