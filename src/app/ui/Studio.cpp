@@ -1443,8 +1443,14 @@ struct Studio::Rack : visage::Frame
     double padFlash[8] {};
     static constexpr float DW = 318, DH = 664;
     float k = 1, ox = 0;
-    float X (float v) const { return ox + v * k; }
-    float Y (float v) const { return v * k; }
+    // The renders look up 11 degrees at the panel and frame it 1% wide, so the panel lands slightly smaller in the
+    // picture, more so up and down. Everything drawn on top goes through the same projection, so it sits on the
+    // part it belongs to anywhere in the rack.
+    static constexpr float projX = 1.0f / 1.01f, projY = 0.98163f / 1.01f;
+    float X (float v) const { return ox + (DW / 2 + (v - DW / 2) * projX) * k; }
+    float Y (float v) const { return (DH / 2 + (v - DH / 2) * projY) * k; }
+    float panelX (float px) const { return DW / 2 + ((px - ox) / k - DW / 2) / projX; }
+    float panelY (float py) const { return DH / 2 + (py / k - DH / 2) / projY; }
     float S (float v) const { return v * k; }
     static constexpr float padX[3] = { 30, 123, 216 }, padY[2] = { 384, 456 };
 
@@ -1536,17 +1542,7 @@ struct Studio::Rack : visage::Frame
 
         // the buttons
         const struct { const char* t; float x; bool on; } btn[4] = { { "PER MIC", 26, ! lv.linked }, { "LINKED", 90, lv.linked }, { "EVEN", 166, ! lv.pro }, { "PRO", 230, lv.pro } };
-        for (auto& b : btn)
-        {
-            const float lx = X (b.x + 10), ly = Y (205);
-            if (b.on)
-            {
-                c.setColor (Color (green).withAlpha (0.45f)); c.circle (lx - S (6), ly - S (6), S (12));
-                c.setColor (green); c.circle (lx - S (2.2f), ly - S (2.2f), S (4.4f));
-            }
-            else { c.setColor (0xff2a2d33); c.circle (lx - S (2.2f), ly - S (2.2f), S (4.4f)); }
-            silk (c, b.t, b.x + 18, 199.5f, b.on ? 0xffe8ece9 : 0xff7d838c, 8.5f, 1.0f);
-        }
+        for (auto& b : btn) { const Key kk { b.x, 190, 60, 30, "" }; keyLabel (c, kk, b.t, b.on, green); }
 
         // the knobs: the Level settings
         const struct { float x; unsigned col; float v; const char* label; std::string val; } kn[4] = {
@@ -1636,13 +1632,22 @@ struct Studio::Rack : visage::Frame
         c.circle (X (x) - S (2.2f), Y (y) - S (2.2f), S (4.4f));
     }
 
-    void keyLabel (Canvas& c, const Key& kk, const std::string& t, bool on, unsigned col, bool enabled = true, bool withLed = true)
+    void keyLabel (Canvas& c, const Key& kk, const std::string& t, bool on, unsigned col, bool enabled = true, bool = true)
     {
-        const bool down = pressed == kk.id;
-        if (down) { c.setColor (Color (col).withAlpha (0.18f)); c.roundedRectangle (X (kk.x + 2), Y (kk.y + 2), S (kk.w - 4), S (kk.h - 4), S (4)); }
-        if (withLed) led (c, kk.x + 10, kk.y + kk.h / 2, on && enabled, col);
-        c.setColor (! enabled ? 0xff3e434b : on ? 0xffe8ecf2 : 0xff8d939c);
-        draw::text (c, t, boldFont (S (8)), Font::kCenter, X (kk.x + (withLed ? 14 : 0)), Y (kk.y), S (kk.w - (withLed ? 16 : 0)), S (kk.h));
+        // a key that is on glows from inside, with a lit strip along its lower edge; the label is centred on the
+        // key's top face (raised about 1.3 px above its footprint in the render)
+        const float x = kk.x + 3, y = kk.y + 2.5f - 1.3f, w = kk.w - 6, h = kk.h - 6;
+        const bool down = ! pressed.empty() && pressed == kk.id;
+        if ((on && enabled) || down)
+        {
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (col).withAlpha (down ? 0.22f : 0.13f)); c.roundedRectangle (X (x), Y (y), S (w), S (h), S (3.5f));
+            c.setColor (Color (col).withAlpha (0.35f)); c.roundedRectangleShadow (X (x + 8), Y (y + h - 3), S (w - 16), S (2), S (1), S (6));
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (Color (col).withAlpha (0.95f)); c.roundedRectangle (X (x + 8), Y (y + h - 3), S (w - 16), S (1.6f), S (0.8f));
+        }
+        c.setColor (! enabled ? 0xff3e434b : on ? 0xfff2f4f8 : 0xff9aa0a9);
+        draw::text (c, t, boldFont (S (8)), Font::kCenter, X (x), Y (y), S (w), S (h - 2));
     }
 
     static unsigned heatColour (float h)
@@ -1662,17 +1667,17 @@ struct Studio::Rack : visage::Frame
         auto unit = [&] (float smp) { return A.samples ? draw::fmt ("%+.2f smp", (double) smp) : draw::fmt ("%+.2f ms", (double) (smp / A.sr * 1000)); };
 
         // ALIGN
-        silk (c, "ALIGN", 36, 18, 0xffcbbcff, 9.5f, 2.2f);
+        silk (c, "ALIGN", 40, 18, 0xffcbbcff, 9.5f, 2.2f);
         led (c, 30, 23, live, vio);
         c.setColor (0xff8b9099);
         const int nm = (int) A.mics.size() - (live ? 1 : 0);
         draw::text (c, live ? std::to_string (std::max (0, nm)) + " TRACKS \xc2\xb7 " + std::to_string (A.fightingAfter) + " FIGHTING" : std::string ("NOT LINED UP YET"),
                     boldFont (S (8.5f)), Font::kRight, X (120), Y (16), S (168), S (12));
         keyLabel (c, keys[0], "ALIGN AGAIN", true, vio, true);
-        c.setColor (0xff5f6670); draw::text (c, "FIGHTING", boldFont (S (6.5f)), Font::kCenter, X (204), Y (42), S (88), S (9));
+        c.setColor (0xff5f6670); draw::text (c, "FIGHTING", boldFont (S (6.5f)), Font::kCenter, X (204), Y (44.5f), S (88), S (9));
         c.setColor (live ? (A.fightingAfter ? hot : cool) : Color (0xff3e434b));
         draw::text (c, live ? std::to_string (A.fightingBefore) + " \xe2\x86\x92 " + std::to_string (A.fightingAfter) : std::string ("\xe2\x80\x94"), monoBold (S (11)),
-                    Font::kCenter, X (204), Y (51), S (88), S (16));
+                    Font::kCenter, X (204), Y (52), S (88), S (15));
         keyLabel (c, keys[1], "TIGHT", A.timing == "tight", vio, live);
         keyLabel (c, keys[2], "VIBE", A.timing == "pro", vio, live);
         keyLabel (c, keys[3], "AS RECORDED", A.timing == "natural", vio, live);
@@ -1814,7 +1819,7 @@ struct Studio::Rack : visage::Frame
                 const float cx = bx + 12 + b * (bw - 24) / 8, w = (bw - 24) / 8 - 8;
                 c.setColor (0xff4a4f57); draw::text (c, lab[b], monoFont (S (7)), Font::kCenter, X (cx), Y (by + bh - 12), S (w), S (10));
                 if (! M) continue;
-                auto hgt = [&] (float v) { return std::clamp ((v + 1) / 2, 0.0f, 1.0f) * (bh - 22); };
+                auto hgt = [&] (float v) { return std::clamp ((v + 1) / 2, 0.0f, 1.0f) * (bh - 34); };
                 const float hb = hgt (M->bandsBefore[(size_t) b]), ha = hgt (M->bandsAfter[(size_t) b]);
                 const unsigned col = M->bandsAfter[(size_t) b] < 0 ? hot : cool;
                 c.setColor (Color (col).withAlpha (0.18f)); c.roundedRectangleShadow (X (cx), Y (by + bh - 14 - ha), S (w), S (ha), S (2), S (6));
@@ -1824,9 +1829,9 @@ struct Studio::Rack : visage::Frame
             if (M && std::isfinite (M->before) && std::isfinite (M->after))
             {
                 c.setColor (0xffb9bec6);
-                draw::text (c, draw::fmt ("%+.2f", (double) M->before) + " \xe2\x86\x92 " + draw::fmt ("%+.2f", (double) M->after), monoBold (S (8.5f)), Font::kRight, X (bx), Y (by + 3), S (bw - 8), S (11));
+                draw::text (c, draw::fmt ("%+.2f", (double) M->before) + " \xe2\x86\x92 " + draw::fmt ("%+.2f", (double) M->after), monoBold (S (8.5f)), Font::kRight, X (bx), Y (by + 5), S (bw - 8), S (11));
             }
-            if (M && ! M->eqText.empty()) { c.setColor (0xff8b9099); draw::text (c, M->eqText, bodyFont (S (8)), Font::kLeft, X (bx + 8), Y (by + 3), S (170), S (11)); }
+            if (M && ! M->eqText.empty()) { c.setColor (0xff8b9099); draw::text (c, M->eqText, bodyFont (S (8)), Font::kLeft, X (bx + 8), Y (by + 5), S (170), S (11)); }
         }
         keyLabel (c, keys[15], "\xe2\x96\xb6 PAIR AS RECORDED", false, vio, M != nullptr, false);
         keyLabel (c, keys[16], "\xe2\x96\xb6 PAIR ALIGNED", false, vio, M != nullptr, false);
@@ -1858,7 +1863,7 @@ struct Studio::Rack : visage::Frame
     void mouseDrag (const visage::MouseEvent& e) override
     {
         if (studio.step() != Step::align) return;
-        const float x = (e.position.x - ox) / k, y = e.position.y / k;
+        const float x = panelX (e.position.x), y = panelY (e.position.y);
         const auto& A = studio.data.align;
         if (jogging)
         {
@@ -1893,7 +1898,7 @@ struct Studio::Rack : visage::Frame
     void mouseDown (const visage::MouseEvent& e) override
     {
         studio.requestKeyboardFocus();
-        const float dx = (e.position.x - ox) / k, dy = e.position.y / k;
+        const float dx = panelX (e.position.x), dy = panelY (e.position.y);
         if (studio.step() == Step::align) { alignDown (dx, dy); return; }
         for (int v = 0; v < 6; ++v)
         {
