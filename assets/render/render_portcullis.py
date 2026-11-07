@@ -19,20 +19,24 @@ R.W, R.H = W, H
 at = R.at
 
 # layout (panel px); the overlay uses the same numbers
-OPEN = dict(x0=340, x1=640, y_spring=170, y_bot=338, ry=84)      # the opening: straight jambs, elliptical arch on top
-GATE = dict(x0=344, x1=636, y0=70, y1=338, cols=9, rows=6)
-LANTERNS = [(262, 150), (718, 150)]                                # OPEN (green), CLOSED (red)
+OPEN = dict(x0=340, x1=640, y_spring=182, y_bot=338, ry=76)      # the opening: straight jambs, elliptical arch on top
+GATE = dict(x0=344, x1=636, y0=96, y1=338, cols=9, rows=6)
+LANTERNS = [(274, 150), (706, 150)]                                # OPEN (green), CLOSED (red)
 THRESH = (138, 212, 50)
 KEYSRC = (836, 92, 150, 30)
 KEYBTN = [(764, 136, 66, 26), (842, 136, 66, 26)]
 KEYKNOB = [(790, 246, 22), (884, 246, 22)]
 ROW = [100 + i * 130 for i in range(7)]; KY = 452
-TITLE = (490, 36)
+TITLE = (490, 32)
+MEDAL = (138, 212, 96)
+# stone plaques the labels are carved into: (centre x, centre y, w, h)
+PLAQUES = ([(x, KY - 48, 112, 22) for x in ROW] + [(138, 96, 112, 24), (836, 62, 132, 22), (790, 200, 86, 20), (884, 200, 86, 20),
+           (274, 216, 72, 22), (706, 216, 90, 22)])
 
 def stone():
     m = bpy.data.materials.new('stone'); m.use_nodes = True; nt = m.node_tree; p = nt.nodes['Principled BSDF']
     tc = nt.nodes.new('ShaderNodeTexCoord'); br = nt.nodes.new('ShaderNodeTexBrick')
-    br.inputs['Scale'].default_value = 0.9; br.inputs['Mortar Size'].default_value = 0.022; br.inputs['Brick Width'].default_value = 0.7; br.inputs['Row Height'].default_value = 0.3; br.inputs['Bias'].default_value = 0.0
+    br.inputs['Scale'].default_value = 0.55; br.inputs['Mortar Size'].default_value = 0.02; br.inputs['Brick Width'].default_value = 0.9; br.inputs['Row Height'].default_value = 0.42; br.inputs['Bias'].default_value = 0.0
     br.inputs['Mortar Smooth'].default_value = 0.3; br.offset = 0.5
     br.inputs['Color1'].default_value = (0.15, 0.135, 0.115, 1); br.inputs['Color2'].default_value = (0.08, 0.075, 0.07, 1)
     nt.links.new(tc.outputs['Object'], br.inputs['Vector'])
@@ -158,7 +162,7 @@ def build():
     s = P.reset(); s.render.film_transparent = False; s.cycles.samples = SAMP
     c = P.camera(s, W, H, max(W, H) * U * 1.01); t = math.radians(11); c.location = (0, -10 * math.sin(t), 10 * math.cos(t)); c.rotation_euler = (t, 0, 0)
     IRON = iron(); BRONZE = P.metal('bronze', (0.42, 0.26, 0.11), 0.34); SK.STEEL_DIRTY = IRON
-    DRESSED = dressed()
+    DRESSED = dressed(); PLAQUE = dressed('plaque', (0.3, 0.28, 0.25))
     plate = box('plate', 0, 0, W, H, 0.16, -0.08, 0.04, 0.012, stone())
     # the opening: cut through the wall into a dark recess with the display glass at the back
     import bmesh
@@ -170,7 +174,7 @@ def build():
         box('band', 0, y0, W, 22, 0.05, 0.025, 0.004, 0.006, IRON)
         for xx in range(24, W, 48): SK.rivet(xx, y0 + 11, 0.05)
     # title lintel: a dressed stone plaque with raised iron letters
-    box('lintel', TITLE[0] - 170, TITLE[1] - 26, 340, 52, 0.14, 0.07, 0.02, 0.012, dressed('lintelm', (0.42, 0.39, 0.34)))
+    box('lintel', TITLE[0] - 170, TITLE[1] - 24, 340, 48, 0.14, 0.07, 0.02, 0.012, dressed('lintelm', (0.42, 0.39, 0.34)))
     bpy.ops.object.text_add(location=at(TITLE[0], TITLE[1] + 2, 0.15)); tx = bpy.context.object
     tx.data.body = 'Portcullis'; tx.data.font = bpy.data.fonts.load(os.path.join(FONTS, 'PirataOne-Regular.ttf'))
     tx.data.size = 0.56; tx.data.align_x = 'CENTER'; tx.data.align_y = 'CENTER'; tx.data.extrude = 0.02; tx.data.bevel_depth = 0.004; tx.data.bevel_resolution = 2
@@ -182,6 +186,10 @@ def build():
     for on, (px, py), col in ((gON, LANTERNS[0], (0.3, 1.0, 0.6)), (rON, LANTERNS[1], (1.0, 0.18, 0.06))):
         if on:
             l = bpy.data.lights.new('lamp', 'POINT'); l.energy = 40; l.color = col; lo = bpy.data.objects.new('lamp', l); s.collection.objects.link(lo); lo.location = (*at(px, py)[:2], 0.3)
+    # a dressed stone medallion behind THRESH (its scale is carved into it), and the label plaques
+    mx, my, mr = MEDAL; x, y, _ = at(mx, my)
+    md = cyl(x, y, mr * U, 0.06, 0.0, 128, PLAQUE, 0.02)
+    for (px_, py_, pw, ph) in PLAQUES: box('plq', px_ - pw / 2, py_ - ph / 2, pw, ph, 0.05, 0.02, 0.01, 0.008, PLAQUE)
     # controls
     iron_knob(THRESH[0], THRESH[1], THRESH[2])
     for x in ROW: iron_knob(x, KY, 21)
