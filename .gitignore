@@ -8,3 +8,4 @@ cmake-build-*/
 tools/parity/harness.html
 __pycache__/
 assets/render/out/sk/
+assets/render/out/vise/
