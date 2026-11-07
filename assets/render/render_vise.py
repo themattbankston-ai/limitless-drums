@@ -25,8 +25,8 @@ PRESS = dict(x0=330, x1=690, beam_y=(66, 112), cyl=(458, 522, 40, 128), screen=(
 RAM = dict(head=(384, 132, 252, 22), rod=(478, 24, 24, 112))
 INPUT = (845, 300, 50)
 BEACON = (368, 40, 20)
-MODEL = (845, 128, 30)
-TITLE = (40, 22)
+MODEL = (845, 112, 30)
+TITLE = (160, 50)   # centred over the gauge
 WARN = (40, 346, 260, 48)
 KY = 452
 
@@ -178,9 +178,9 @@ def build():
     win = P.rounded_box('win2', 118 * U, 66 * U, 0.5, 0.04, 0.008); win.location = at(490, KY, 0.0); cut(plate, win)
     tsc.scale = (118 * U, 66 * U, 1); tsc.location = at(490, KY, -0.06); tsc.data.materials.append(GLASS)
     # title: cast black steel letters
-    bpy.ops.object.text_add(location=at(TITLE[0], TITLE[1] + 30, 0.02)); tx = bpy.context.object
+    bpy.ops.object.text_add(location=at(TITLE[0], TITLE[1], 0.02)); tx = bpy.context.object
     tx.data.body = 'THE VISE'; tx.data.font = bpy.data.fonts.load(os.path.join(FONTS, 'BlackOpsOne-Regular.ttf'))
-    tx.data.size = 0.5; tx.data.align_x = 'LEFT'; tx.data.align_y = 'CENTER'; tx.data.extrude = 0.03; tx.data.bevel_depth = 0.005; tx.data.bevel_resolution = 3
+    tx.data.size = 0.5; tx.data.align_x = 'CENTER'; tx.data.align_y = 'CENTER'; tx.data.extrude = 0.03; tx.data.bevel_depth = 0.005; tx.data.bevel_resolution = 3
     tx.data.materials.append(mat_principled('castblack', (0.015, 0.014, 0.014), 0.35, coat=0.3))
     # lights: cold factory key, warm fill, a rim
     P.area(s, 'key', (-5, 6, 7), 4, 650, (0.95, 0.97, 1.0))

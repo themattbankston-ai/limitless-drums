@@ -10,7 +10,7 @@ const g=c.getContext('2d');g.scale(2,2);
 </script><script src="fp.js"></script><script>
 const A0=PI*0.75,ASP=PI*1.5;
 const AMB='#ffb21a',AMBG='#ff8a00',INK='#16130e';
-const GAUGE=[160,214,104],SCR=[360,160,300,196],HEAD=[384,132,252,22],INPUT=[845,300,50],MODEL=[845,128,30],KY=452,BEACON=[368,40,20];
+const GAUGE=[160,214,104],SCR=[360,160,300,196],HEAD=[384,132,252,22],INPUT=[845,300,50],MODEL=[845,112,30],KY=452,BEACON=[368,40,20];
 
 function needle(cx,cy,a,len,tail,col='#151515'){g.save();g.shadowColor='rgba(0,0,0,0.45)';g.shadowBlur=4;g.shadowOffsetX=3;g.shadowOffsetY=3;g.fillStyle=col;g.beginPath();
   const n=[Math.cos(a),Math.sin(a)],p=[-n[1],n[0]];g.moveTo(cx-n[0]*tail+p[0]*4,cy-n[1]*tail+p[1]*4);g.lineTo(cx+n[0]*len,cy+n[1]*len);g.lineTo(cx-n[0]*tail-p[0]*4,cy-n[1]*tail-p[1]*4);g.closePath();g.fill();g.restore();
@@ -49,7 +49,7 @@ function vise(X,Y,img,st){
   needle(gcx,gcy,ga,0.8*fr*0.98,16);
   const sh=g.createLinearGradient(sx(GAUGE[0]-90),sy(GAUGE[1]-90),sx(GAUGE[0]+30),sy(GAUGE[1]+40));sh.addColorStop(0,'rgba(255,255,255,0.2)');sh.addColorStop(0.45,'rgba(255,255,255,0.03)');sh.addColorStop(0.46,'rgba(255,255,255,0)');g.save();g.beginPath();g.ellipse(gcx,sy(GAUGE[1]),fr*SX,fr*SY,0,0,2*PI);g.clip();g.fillStyle=sh;g.fillRect(gcx-fr,sy(GAUGE[1])-fr,2*fr,2*fr);g.restore();
   // ---- model selector
-  const models=['DISTRESS','FET','VARI-MU','VCA','CLEAN'];models.forEach((m,i)=>{const a=(-180+45*i)*PI/180,px=MODEL[0]+Math.cos(a)*(i%4?62:78),py=MODEL[1]+Math.sin(a)*(i%4?54:0)-(i%4?0:2);
+  const models=['PANIC','FET','VARI-MU','VCA','CLEAN'];models.forEach((m,i)=>{const a=(-180+45*i)*PI/180,px=MODEL[0]+Math.cos(a)*84,py=MODEL[1]+Math.sin(a)*66;
     if(i===st.model)surfText(m,px,py,0,'11px OPS',AMB,{glow:AMBG,ls:0.5});else surfText(m,px,py,0,'11px OPS',INK,{ls:0.5,wear:0.3});});
   {const a=(-180+45*st.model)*PI/180,cx=sx(MODEL[0]),cy=sy(MODEL[1],0.315),r=MODEL[2]*0.62;g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=6;g.strokeStyle=AMB;g.lineWidth=3;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+Math.cos(a)*r*0.95*SX,cy+Math.sin(a)*r*0.95*SY);g.stroke();g.restore();}
   // ---- INPUT
@@ -57,22 +57,20 @@ function vise(X,Y,img,st){
   for(let i=0;i<=10;i++){const a=A0+ASP*i/10;surfText(''+i,INPUT[0]+Math.cos(a)*96,INPUT[1]+Math.sin(a)*96,0,'13px OPS',INK,{wear:0.25});}
   g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=14;g.strokeStyle=AMB;g.lineWidth=3;g.beginPath();g.ellipse(sx(INPUT[0]),sy(INPUT[1]),70*SX,70*SY,0,A0,A0+ASP*st.input);g.stroke();g.restore();
   knobPtr(INPUT[0],INPUT[1],0.315,INPUT[2]*0.62,st.input);
-  surfText('INPUT',INPUT[0]-112,INPUT[1]-92,0,'15px OPS',INK,{ls:3,wear:0.35});
-  nixie(INPUT[0],INPUT[1]+86,st.inputT,72,AMB,AMBG,'#0b0803');
+  surfText('INPUT',INPUT[0],INPUT[1]-120,0,'15px OPS',INK,{ls:3,wear:0.35});
+  nixie(INPUT[0],INPUT[1]+83,st.inputT,72,AMB,AMBG,'#0b0803');
   // ---- bottom row
   const ratios=['4','8','12','20','ALL'];
   [[82,'RATIO',st.ratio/4,ratios[st.ratio]+(st.ratio<4?' : 1':'')],[194,'ATTACK',st.atk,st.atkT],[306,'RELEASE',st.rel,st.relT],[676,'SC HPF',st.hpf,st.hpfT],[788,'MIX',st.mix,st.mixT],[904,'OUTPUT',st.out,st.outT]].forEach(([px,l,v,t],k)=>{
-    if(k===0)ratios.forEach((r,i)=>{const a=A0+ASP*i/4;surfText(r,px+Math.cos(a)*44,KY+Math.sin(a)*38,0,'9.5px OPS',i===st.ratio?'#000':INK,{wear:0.2});});
+    const RA=[135,180,225,315,360].map(d=>d*PI/180);if(k===0)ratios.forEach((r,i)=>{const a=RA[i];i===st.ratio?surfText(r,px+Math.cos(a)*48,KY+Math.sin(a)*40,0,'10px OPS',AMB,{glow:AMBG,blur:6}):surfText(r,px+Math.cos(a)*48,KY+Math.sin(a)*40,0,'9.5px OPS',INK,{wear:0.2});});
     else ticksAround(px,KY,36,40,11,'rgba(22,19,14,0.65)',1.2);
-    knobPtr(px,KY,0.315,23*0.62,v);surfText(l,px,KY-57,0,'12px OPS',INK,{ls:1.6,wear:0.35});nixie(px,KY+50,t,68,AMB,AMBG,'#0b0803');});
+    if(k===0){const a=RA[st.ratio],cx=sx(px),cy=sy(KY,0.315),r=23*0.62;g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=6;g.strokeStyle=AMB;g.lineWidth=3;g.beginPath();g.moveTo(cx+Math.cos(a)*r*0.15*SX,cy+Math.sin(a)*r*0.15*SY);g.lineTo(cx+Math.cos(a)*r*0.95*SX,cy+Math.sin(a)*r*0.95*SY);g.stroke();g.restore();}else knobPtr(px,KY,0.315,23*0.62,v);surfText(l,px,KY-48,0,'12px OPS',INK,{ls:1.6,wear:0.35});nixie(px,KY+50,t,68,AMB,AMBG,'#0b0803');});
   // transfer curve in the small screen
   {const tx=490-59,ty=KY-33,tw=118,th=66,z=-0.06;g.save();rr(sx(tx),sy(ty,z),tw*SX,th*SY,3);g.clip();g.strokeStyle='rgba(255,178,26,0.12)';g.lineWidth=1;g.beginPath();g.moveTo(sx(tx),sy(ty+th,z));g.lineTo(sx(tx+tw),sy(ty,z));g.stroke();
    const k=0.55;g.save();g.shadowColor=AMBG;g.shadowBlur=8;g.strokeStyle=AMB;g.lineWidth=2;g.beginPath();g.moveTo(sx(tx+4),sy(ty+th-4,z));g.lineTo(sx(tx+tw*k),sy(ty+th-th*k+2,z));g.quadraticCurveTo(sx(tx+tw*k+10),sy(ty+th-th*k-4,z),sx(tx+tw-4),sy(ty+th*0.24,z));g.stroke();g.restore();
    const dotx=tx+tw*0.78,doty=ty+th*0.33;g.fillStyle='#fff';g.shadowColor=AMB;g.shadowBlur=10;g.beginPath();g.arc(sx(dotx),sy(doty,z),3,0,2*PI);g.fill();g.restore();
-   surfText('CURVE',490,KY-57,0,'12px OPS',INK,{ls:1.6,wear:0.35});}
+   surfText('CURVE',490,KY-48,0,'12px OPS',INK,{ls:1.6,wear:0.35});}
   // stencils on the yellow
-  surfText('MAX LOAD 20 dB',760,26,0,'10px OPS','rgba(22,19,14,0.7)',{ls:1.5,wear:0.5});
-  surfText('LD-COMP  ·  SERIAL 0042',230,328+GAUGE[2]*0-0,0,'1px OPS','rgba(0,0,0,0)');
   g.restore();
 }
 
