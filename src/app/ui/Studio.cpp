@@ -1543,7 +1543,7 @@ struct Studio::Rack : visage::Frame
         draw::text (c, live ? std::to_string (A.fightingBefore) + " \xe2\x86\x92 " + std::to_string (A.fightingAfter) : std::string ("\xe2\x80\x94"), monoBold (S (11)),
                     Font::kCenter, X (204), Y (51), S (88), S (16));
         keyLabel (c, keys[1], "TIGHT", A.timing == "tight", vio, live);
-        keyLabel (c, keys[2], "LIKE THE PROS", A.timing == "pro", vio, live);
+        keyLabel (c, keys[2], "VIBE", A.timing == "pro", vio, live);
         keyLabel (c, keys[3], "AS RECORDED", A.timing == "natural", vio, live);
 
         // SCOPE: the two selectors
