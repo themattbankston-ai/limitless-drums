@@ -14,5 +14,8 @@ for v in sys.argv[4:]:
     if tint == 'ember':
         l = h.max(axis=2); t = np.clip((l - 0.45) / 0.55, 0, 1)[..., None]
         h = (np.array([1.0, 0.22, 0.04]) * (1 - t) + np.array([1.0, 0.62, 0.32]) * t) * np.clip(l * 1.15, 0, 1)[..., None]
+    if tint == 'amber':
+        l = h.max(axis=2); t = np.clip((l - 0.5) / 0.5, 0, 1)[..., None]
+        h = (np.array([1.0, 0.5, 0.03]) * (1 - t) + np.array([1.0, 0.8, 0.45]) * t) * np.clip(l * 1.1, 0, 1)[..., None]
     Image.fromarray((np.clip(h, 0, 1) * 255).astype('uint8')).save(f'{out}/{base}_{name}_add.png')
 Image.open(f'{d}/{base}.png').save(f'{out}/{base}.png'); print('ok', base)

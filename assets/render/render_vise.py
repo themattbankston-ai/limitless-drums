@@ -27,7 +27,8 @@ INPUT = (845, 300, 50)
 BEACON = (368, 40, 20)
 MODEL = (845, 128, 30)
 TITLE = (40, 22)
-WARN = (40, 362, 260, 52)
+WARN = (40, 346, 260, 48)
+KY = 452
 
 def paint_yellow():
     m = bpy.data.materials.new('yellow'); m.use_nodes = True; nt = m.node_tree; p = nt.nodes['Principled BSDF']
@@ -153,7 +154,7 @@ def build():
     box('ram_face', hx + 2, hy + hh - 5, hw - 4, 5, 0.22, 0.2, 0.004, 0.003, CHROME)
     # INPUT knob, other knobs, ratio
     machine_knob(INPUT[0], INPUT[1], INPUT[2])
-    for x_ in (82, 194, 306, 676, 788, 904): machine_knob(x_, 470, 23)
+    for x_ in (82, 194, 306, 676, 788, 904): machine_knob(x_, KY, 23)
     # model selector
     machine_knob(*MODEL)
     # beacon: base, amber dome, wire cage
@@ -174,8 +175,8 @@ def build():
     for (a_, b_) in ((wx + 8, wy + 8), (wx + ww - 8, wy + 8), (wx + 8, wy + wh - 8), (wx + ww - 8, wy + wh - 8)): SK.rivet(a_, b_, 0.03)
     # transfer curve screen
     bpy.ops.mesh.primitive_plane_add(size=1); tsc = bpy.context.object
-    win = P.rounded_box('win2', 118 * U, 66 * U, 0.5, 0.04, 0.008); win.location = at(490, 456, 0.0); cut(plate, win)
-    tsc.scale = (118 * U, 66 * U, 1); tsc.location = at(490, 456, -0.06); tsc.data.materials.append(GLASS)
+    win = P.rounded_box('win2', 118 * U, 66 * U, 0.5, 0.04, 0.008); win.location = at(490, KY, 0.0); cut(plate, win)
+    tsc.scale = (118 * U, 66 * U, 1); tsc.location = at(490, KY, -0.06); tsc.data.materials.append(GLASS)
     # title: cast black steel letters
     bpy.ops.object.text_add(location=at(TITLE[0], TITLE[1] + 30, 0.02)); tx = bpy.context.object
     tx.data.body = 'THE VISE'; tx.data.font = bpy.data.fonts.load(os.path.join(FONTS, 'BlackOpsOne-Regular.ttf'))

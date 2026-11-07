@@ -1,0 +1,89 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:IB;src:url(InterDisplay-Bold.otf)} @font-face{font-family:IS;src:url(InterDisplay-SemiBold.otf)}
+@font-face{font-family:IM;src:url(Inter-Medium.otf)} @font-face{font-family:MB;src:url(DejaVuSansMono-Bold.ttf)}
+@font-face{font-family:OPS;src:url(fonts/BlackOpsOne-Regular.ttf)}
+html,body{margin:0;background:#070708}
+</style></head><body><canvas id=c></canvas><script>
+const SW=2120,SH=760;
+const c=document.getElementById('c');c.width=SW*2;c.height=SH*2;c.style.width=SW+'px';c.style.height=SH+'px';
+const g=c.getContext('2d');g.scale(2,2);
+</script><script src="fp.js"></script><script>
+const A0=PI*0.75,ASP=PI*1.5;
+const AMB='#ffb21a',AMBG='#ff8a00',INK='#16130e';
+const GAUGE=[160,214,104],SCR=[360,160,300,196],HEAD=[384,132,252,22],INPUT=[845,300,50],MODEL=[845,128,30],KY=452,BEACON=[368,40,20];
+
+function needle(cx,cy,a,len,tail,col='#151515'){g.save();g.shadowColor='rgba(0,0,0,0.45)';g.shadowBlur=4;g.shadowOffsetX=3;g.shadowOffsetY=3;g.fillStyle=col;g.beginPath();
+  const n=[Math.cos(a),Math.sin(a)],p=[-n[1],n[0]];g.moveTo(cx-n[0]*tail+p[0]*4,cy-n[1]*tail+p[1]*4);g.lineTo(cx+n[0]*len,cy+n[1]*len);g.lineTo(cx-n[0]*tail-p[0]*4,cy-n[1]*tail-p[1]*4);g.closePath();g.fill();g.restore();
+  g.save();g.strokeStyle='#c8201a';g.lineWidth=2.4;g.beginPath();g.moveTo(cx+n[0]*len*0.72,cy+n[1]*len*0.72);g.lineTo(cx+n[0]*len,cy+n[1]*len);g.stroke();g.restore();
+  const hb=g.createRadialGradient(cx-3,cy-3,1,cx,cy,11);hb.addColorStop(0,'#f2f2f4');hb.addColorStop(0.5,'#8a8a90');hb.addColorStop(1,'#2a2a2e');g.fillStyle=hb;g.beginPath();g.arc(cx,cy,10,0,2*PI);g.fill();}
+function knobPtr(px,py,z,r,v,col=AMB){const cx=sx(px),cy=sy(py,z),a=A0+ASP*v;g.save();g.lineCap='round';g.shadowColor=col;g.shadowBlur=6;g.strokeStyle=col;g.lineWidth=3;g.beginPath();g.moveTo(cx+Math.cos(a)*r*0.15*SX,cy+Math.sin(a)*r*0.15*SY);g.lineTo(cx+Math.cos(a)*r*0.95*SX,cy+Math.sin(a)*r*0.95*SY);g.stroke();g.restore();}
+function ticksAround(px,py,r0,r1,n,col,w=1.4){const x=sx(px),y=sy(py);g.strokeStyle=col;g.lineWidth=w;for(let i=0;i<n;i++){const a=A0+ASP*i/(n-1);g.beginPath();g.moveTo(x+Math.cos(a)*r0*SX,y+Math.sin(a)*r0*SY);g.lineTo(x+Math.cos(a)*r1*SX,y+Math.sin(a)*r1*SY);g.stroke();}}
+
+function vise(X,Y,img,st){
+  const o=win(X,Y,1000,600,'DRUM BUS',1,AMB,'THE VISE');BX=o.x;BY=o.y;
+  g.save();rr(BX,BY,FW,FH,6);g.clip();
+  g.drawImage(img.plate,BX,BY,FW,FH);
+  if(st.beacon){g.globalCompositeOperation='lighter';g.drawImage(img.beacon,BX,BY,FW,FH);g.filter='blur(16px)';g.drawImage(img.beacon,BX,BY,FW,FH);g.filter='none';g.globalCompositeOperation='source-over';
+    // rotating beacon sweep across the plate
+    const bx=sx(BEACON[0]),by=sy(BEACON[1],0.34);g.save();g.globalCompositeOperation='lighter';const sw=g.createConicGradient(st.sweep,bx,by);sw.addColorStop(0,'rgba(255,150,20,0.22)');sw.addColorStop(0.06,'rgba(255,150,20,0)');sw.addColorStop(0.94,'rgba(255,150,20,0)');sw.addColorStop(1,'rgba(255,150,20,0.22)');g.fillStyle=sw;g.fillRect(BX,BY,FW,FH);g.restore();}
+  // ---- the screen: hits under the press. Everything above the ram face gets flattened.
+  const travel=st.gr/20*58, faceY=HEAD[1]+HEAD[3]+travel;
+  const [x0,y0,w0,h0]=SCR,zs=-0.07;g.save();rr(sx(x0),sy(y0,zs),w0*SX,h0*SY,4);g.clip();
+  g.fillStyle='rgba(255,178,26,0.05)';for(let i=1;i<6;i++){g.fillRect(sx(x0),sy(y0+h0*i/6,zs),w0*SX,1);}for(let i=1;i<10;i++){g.fillRect(sx(x0+w0*i/10),sy(y0,zs),1,h0*SY);}
+  const base=y0+h0-14,limit=faceY-4;   // the ram face sits higher than the glass: meet it where it looks
+  {const shy=sy(limit,zs);const shg=g.createLinearGradient(0,shy,0,shy+14);shg.addColorStop(0,'rgba(0,0,0,0.45)');shg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=shg;g.fillRect(sx(x0),sy(y0,zs),w0*SX,shy+14-sy(y0,zs));}let s=3;const rn=()=>{s=(s*16807)%2147483647;return s/2147483647;};
+  // envelope of the hits; whatever rises past the ram face is pressed flat against it (drawn amber, hot line on contact)
+  const room=base-limit,col=[];for(let i=0;i<=w0;i++){const t=i/w0,p=(t*3.4+0.02)%1;const env=(p<0.025?0.8+8*p:Math.exp(-(p-0.025)*4.2))*(0.9+0.1*Math.sin(i*1.7)*Math.sin(i*0.37));col.push(env*(base-(HEAD[1]+HEAD[3]+4))*1.12);}
+  const pathTo=(f)=>{g.beginPath();g.moveTo(sx(x0),sy(base,zs));col.forEach((hh,i)=>g.lineTo(sx(x0+i),sy(base-f(hh),zs)));g.lineTo(sx(x0+w0),sy(base,zs));g.closePath();};
+  pathTo(hh=>Math.min(hh,room));const wf=g.createLinearGradient(0,sy(limit,zs),0,sy(base,zs));wf.addColorStop(0,'rgba(190,215,240,0.9)');wf.addColorStop(1,'rgba(120,150,190,0.35)');g.fillStyle=wf;g.fill();
+  g.save();g.beginPath();g.rect(sx(x0),sy(limit,zs),w0*SX,40*SY);g.clip();pathTo(hh=>Math.min(hh,room));const cg=g.createLinearGradient(0,sy(limit,zs),0,sy(limit+40,zs));cg.addColorStop(0,'rgba(255,170,30,1)');cg.addColorStop(1,'rgba(255,170,30,0)');g.fillStyle=cg;g.fill();g.restore();
+  g.save();g.shadowColor=AMBG;g.shadowBlur=10;g.fillStyle='#ffd27a';col.forEach((hh,i)=>{if(hh>=room)g.fillRect(sx(x0+i),sy(limit,zs)-1.5,1.2,3.5);});g.restore();
+  g.fillStyle='rgba(255,255,255,0.12)';g.fillRect(sx(x0),sy(base,zs),w0*SX,1);
+  // ram shadow on the glass
+  surfText(`-${st.gr.toFixed(1)} dB`,x0+w0-38,y0+h0-28,zs,'11px MB',AMB,{glow:AMBG,blur:6});
+  g.restore();
+  // ---- the ram, slid down by the gain reduction; the rod comes out of the cylinder
+  g.save();g.beginPath();g.rect(BX,sy(128,0.38)+1,FW,FH);g.clip();g.drawImage(img.ram,BX,BY+travel*SY,FW,FH);g.restore();
+  // ---- gauge needle (dial is printed in the render)
+  const fr=GAUGE[2]*0.99,gcx=sx(GAUGE[0]),gcy=sy(GAUGE[1],-0.03),ga=(135+270*st.gr/20)*PI/180;
+  needle(gcx,gcy,ga,0.8*fr*0.98,16);
+  const sh=g.createLinearGradient(sx(GAUGE[0]-90),sy(GAUGE[1]-90),sx(GAUGE[0]+30),sy(GAUGE[1]+40));sh.addColorStop(0,'rgba(255,255,255,0.2)');sh.addColorStop(0.45,'rgba(255,255,255,0.03)');sh.addColorStop(0.46,'rgba(255,255,255,0)');g.save();g.beginPath();g.ellipse(gcx,sy(GAUGE[1]),fr*SX,fr*SY,0,0,2*PI);g.clip();g.fillStyle=sh;g.fillRect(gcx-fr,sy(GAUGE[1])-fr,2*fr,2*fr);g.restore();
+  // ---- model selector
+  const models=['DISTRESS','FET','VARI-MU','VCA','CLEAN'];models.forEach((m,i)=>{const a=(-180+45*i)*PI/180,px=MODEL[0]+Math.cos(a)*(i%4?62:78),py=MODEL[1]+Math.sin(a)*(i%4?54:0)-(i%4?0:2);
+    if(i===st.model)surfText(m,px,py,0,'11px OPS',AMB,{glow:AMBG,ls:0.5});else surfText(m,px,py,0,'11px OPS',INK,{ls:0.5,wear:0.3});});
+  {const a=(-180+45*st.model)*PI/180,cx=sx(MODEL[0]),cy=sy(MODEL[1],0.315),r=MODEL[2]*0.62;g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=6;g.strokeStyle=AMB;g.lineWidth=3;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+Math.cos(a)*r*0.95*SX,cy+Math.sin(a)*r*0.95*SY);g.stroke();g.restore();}
+  // ---- INPUT
+  ticksAround(INPUT[0],INPUT[1],76,84,21,INK,1.6);
+  for(let i=0;i<=10;i++){const a=A0+ASP*i/10;surfText(''+i,INPUT[0]+Math.cos(a)*96,INPUT[1]+Math.sin(a)*96,0,'13px OPS',INK,{wear:0.25});}
+  g.save();g.lineCap='round';g.shadowColor=AMBG;g.shadowBlur=14;g.strokeStyle=AMB;g.lineWidth=3;g.beginPath();g.ellipse(sx(INPUT[0]),sy(INPUT[1]),70*SX,70*SY,0,A0,A0+ASP*st.input);g.stroke();g.restore();
+  knobPtr(INPUT[0],INPUT[1],0.315,INPUT[2]*0.62,st.input);
+  surfText('INPUT',INPUT[0]-112,INPUT[1]-92,0,'15px OPS',INK,{ls:3,wear:0.35});
+  nixie(INPUT[0],INPUT[1]+86,st.inputT,72,AMB,AMBG,'#0b0803');
+  // ---- bottom row
+  const ratios=['4','8','12','20','ALL'];
+  [[82,'RATIO',st.ratio/4,ratios[st.ratio]+(st.ratio<4?' : 1':'')],[194,'ATTACK',st.atk,st.atkT],[306,'RELEASE',st.rel,st.relT],[676,'SC HPF',st.hpf,st.hpfT],[788,'MIX',st.mix,st.mixT],[904,'OUTPUT',st.out,st.outT]].forEach(([px,l,v,t],k)=>{
+    if(k===0)ratios.forEach((r,i)=>{const a=A0+ASP*i/4;surfText(r,px+Math.cos(a)*44,KY+Math.sin(a)*38,0,'9.5px OPS',i===st.ratio?'#000':INK,{wear:0.2});});
+    else ticksAround(px,KY,36,40,11,'rgba(22,19,14,0.65)',1.2);
+    knobPtr(px,KY,0.315,23*0.62,v);surfText(l,px,KY-57,0,'12px OPS',INK,{ls:1.6,wear:0.35});nixie(px,KY+50,t,68,AMB,AMBG,'#0b0803');});
+  // transfer curve in the small screen
+  {const tx=490-59,ty=KY-33,tw=118,th=66,z=-0.06;g.save();rr(sx(tx),sy(ty,z),tw*SX,th*SY,3);g.clip();g.strokeStyle='rgba(255,178,26,0.12)';g.lineWidth=1;g.beginPath();g.moveTo(sx(tx),sy(ty+th,z));g.lineTo(sx(tx+tw),sy(ty,z));g.stroke();
+   const k=0.55;g.save();g.shadowColor=AMBG;g.shadowBlur=8;g.strokeStyle=AMB;g.lineWidth=2;g.beginPath();g.moveTo(sx(tx+4),sy(ty+th-4,z));g.lineTo(sx(tx+tw*k),sy(ty+th-th*k+2,z));g.quadraticCurveTo(sx(tx+tw*k+10),sy(ty+th-th*k-4,z),sx(tx+tw-4),sy(ty+th*0.24,z));g.stroke();g.restore();
+   const dotx=tx+tw*0.78,doty=ty+th*0.33;g.fillStyle='#fff';g.shadowColor=AMB;g.shadowBlur=10;g.beginPath();g.arc(sx(dotx),sy(doty,z),3,0,2*PI);g.fill();g.restore();
+   surfText('CURVE',490,KY-57,0,'12px OPS',INK,{ls:1.6,wear:0.35});}
+  // stencils on the yellow
+  surfText('MAX LOAD 20 dB',760,26,0,'10px OPS','rgba(22,19,14,0.7)',{ls:1.5,wear:0.5});
+  surfText('LD-COMP  ·  SERIAL 0042',230,328+GAUGE[2]*0-0,0,'1px OPS','rgba(0,0,0,0)');
+  g.restore();
+}
+
+(async()=>{
+  for(const f of ['12px IB','12px IS','12px IM','12px MB','12px OPS'])await document.fonts.load(f);
+  const img={plate:await L('vise/vise_plate.png'),beacon:await L('vise/vise_plate_beacon_add.png'),ram:await L('vise/vise_ram.png')};
+  const bg=g.createRadialGradient(SW/2,SH*0.4,100,SW/2,SH/2,SW*0.7);bg.addColorStop(0,'#1c1b1f');bg.addColorStop(1,'#060607');g.fillStyle=bg;g.fillRect(0,0,SW,SH);
+  uiText('COMP  →  THE VISE',SW/2,34,'15px IB','rgba(240,240,245,0.92)',3);
+  uiText('Left: light squeeze, 3 dB  ·  Right: slammed, 15 dB. The ram comes down on the hits as it compresses; the beacon spins up when it’s working hard.',SW/2,58,'12px IM','rgba(220,220,230,0.5)');
+  vise(40,100,img,{gr:3.1,beacon:false,model:1,input:0.42,inputT:'+4.0',ratio:0,atk:0.3,atkT:'3',rel:0.5,relT:'5',hpf:0.25,hpfT:'80 Hz',mix:1,mixT:'100 %',out:0.5,outT:'0.0 dB'});
+  vise(1080,100,img,{gr:15.2,beacon:true,sweep:-0.4,model:0,input:0.86,inputT:'+11.5',ratio:4,atk:0.1,atkT:'1',rel:0.3,relT:'3',hpf:0.4,hpfT:'120 Hz',mix:0.7,mixT:'70 %',out:0.38,outT:'-4.0 dB'});
+  document.title='done';
+})();
+</script></body></html>
