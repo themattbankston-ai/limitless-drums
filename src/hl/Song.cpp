@@ -146,6 +146,9 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
         auto o = onsetsOf (monos[t], sr, (int) t, oh ? Drum::cymbal : d);
         all.insert (all.end(), o.begin(), o.end());
     }
+    // names that say nothing (Audio 1, Track 2): every mic is a source, its hits untagged
+    if (all.empty())
+        for (size_t t = 0; t < monos.size(); ++t) { auto o = onsetsOf (monos[t], sr, (int) t, Drum::other); all.insert (all.end(), o.begin(), o.end()); }
     std::sort (all.begin(), all.end(), [] (auto& a, auto& b) { return a.pos < b.pos; });
     // 2. one hit per drum per moment: bleed (much weaker than another drum's mic at the same time) dropped,
     //    the same drum's mics (snare top and bottom) merged, the earliest arrival kept
@@ -157,7 +160,7 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
         std::vector<size_t> grp { i };
         for (size_t j = i + 1; j < all.size() && all[j].pos - all[i].pos <= win; ++j) if (! used[j]) grp.push_back (j);
         float strongest = 0; for (auto g : grp) strongest = std::max (strongest, all[g].vel);
-        for (int d = 0; d < 5; ++d)
+        for (int d = 0; d < 6; ++d)
         {
             long pos = -1; float vel = 0;
             for (auto g : grp)

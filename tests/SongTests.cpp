@@ -179,3 +179,20 @@ TEST_CASE ("Song mode: a whole session, tightened and exported")
     names.clear();
     CHECK (ld::hl::writeKit (S, M, [&] (const std::string& p, const juce::MemoryBlock&) { names.push_back (p); }) == (int) S.tracks.size() + 1);
 }
+
+TEST_CASE ("Song mode: mics with names that say nothing still give hits and a tempo")
+{
+    const auto dir = juce::File (juce::SystemStats::getEnvironmentVariable ("LD_SONG", "/home/claude/songtest/song60"));
+    if (! dir.isDirectory()) return;
+    const auto S = loadSong (dir);
+    std::vector<std::string> names; for (size_t i = 0; i < S.names.size(); ++i) names.push_back ("Audio " + std::to_string (i + 1));
+    const auto A = analyseSong (S.monos, names, S.sr);
+    CHECK (A.hits.size() > 100);
+    double avg = 0; const auto bp = bpmOf (gridBeats (A, {})); for (double b : bp) avg += b; avg /= std::max<size_t> (1, bp.size());
+    WARN ("untagged: " << A.hits.size() << " hits, " << avg << " BPM");
+    CHECK (avg > 115); CHECK (avg < 125);
+    // and nothing at all: a silent take
+    std::vector<F32> silent (3, F32 ((size_t) (S.sr * 10), 0.0f));
+    const auto Z = analyseSong (silent, { "Kick", "Snare", "OH" }, S.sr);
+    CHECK (Z.hits.empty()); CHECK (planEdits (Z, SongSettings { "smooth", 1.0 }).empty());
+}
