@@ -510,6 +510,12 @@ ui::StudioModel::MixView buildMixView (const EngineState& es, int sel, int hit, 
     for (auto& tr : S.tracks) v.chans.push_back ({ slotsOf (tr.strip.inserts), (float) tr.strip.r1, (float) tr.strip.r2 });
     v.bus = { slotsOf (S.busIns), (float) S.busR1, (float) S.busR2 };
     v.busFader = (float) S.busFader; v.busMute = S.busMute;
+    v.hasRefEnv = S.tone.hasRefEnv; v.refEnvAmt = (float) S.tone.refEnvAmt;
+    for (int k = 0; k < 2; ++k)
+    {
+        const auto& u = S.verbs[(size_t) k];
+        v.verbs[(size_t) k] = { u.type, (float) u.decay, (float) u.pre, (float) u.size, (float) u.tone, (float) u.width };
+    }
     return v;
 }
 } // namespace ld

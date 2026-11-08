@@ -30,6 +30,9 @@ struct ToneSettings : ToneMoves
     bool hasRef = false;              ///< a reference sound is loaded
     F64 refCurve;                     ///< its curve on the 30 third-octave bands (dB)
     double refAmt = 0;
+    bool hasRefEnv = false;           ///< the reference's envelope against the mix: body, sustain, tail (dB, theirs - ours)
+    std::array<double, 3> refEnv { 0, 0, 0 };
+    double refEnvAmt = 0;             ///< Match envelope: 0..1
 };
 
 struct Strip
@@ -175,6 +178,8 @@ public:
     double arrOf (int t) const;       ///< first arrival after the lead (samples)
     double proTarget (int t) const;   ///< where the pros put this mic after the lead (samples), NaN if none
     double proLag (int t) const;      ///< the delay that puts it there (Standard timing)
+    /** Where the pro libraries' envelope sits against this mic's (body, sustain, tail, dB, clamped +-6), at full match. */
+    std::array<double, 3> proEnvDelta (int t) const;
 
 private:
     struct Ref { juce::var v; double arr = NAN; bool ok = false; };
@@ -194,7 +199,11 @@ bool fxOn (const Session&);
 bool trackFxOn (const Session&, int t);
 bool roomLive (const Session&);
 bool busLive (const Session&);
-bool verbLive (const Session&, int k);   ///< anything sends to reverb unit k (0 = R1, 1 = R2)
+bool verbLive (const Session&, int k);
+bool refEnvLive (const Session&);
+/** Standard: the Tone and Shape knobs set to land close to where the pro libraries put this channel (sel -1: the bus,
+    every channel), as plain knob values you can then move. Rings and Tame get their usual starting amounts. */
+std::pair<ToneMoves, ShapeMoves> standardMoves (const Session&, const MixRender&, int sel);   ///< anything sends to reverb unit k (0 = R1, 1 = R2)
 /** The reverb unit's parameters for the reverb engine (model, programme and knobs). */
 juce::var verbParams (const VerbUnit&);
 

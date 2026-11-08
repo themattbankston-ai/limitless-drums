@@ -1629,6 +1629,24 @@ void MainComponent::onMixAction (const std::string& a, double v)
         rerender();
     };
     const juce::String where = sel < 0 ? juce::String ("every channel") : juce::String (S.tracks[(size_t) sel].mic);
+    if (a.rfind ("knob:", 0) == 0 && std::stoi (a.substr (5)) >= 11)
+    {
+        const int i = std::stoi (a.substr (5));
+        if (i == 11)
+        {
+            change ([v] (hl::Session& s) { s.tone.refEnvAmt = std::clamp (v, 0.0, 1.0); }, "Match envelope: " + juce::String ((int) std::lround (v * 100)) + " %.");
+            return;
+        }
+        const int u = i >= 17 ? 1 : 0, w = (i - 12) % 5;
+        static const char* names[5] = { "decay", "pre-delay", "size", "tone", "width" };
+        change ([u, w, v] (hl::Session& s)
+        {
+            auto& R = s.verbs[(size_t) u];
+            double* f[5] = { &R.decay, &R.pre, &R.size, &R.tone, &R.width };
+            *f[w] = v;
+        }, juce::String (u ? "R2 " : "R1 ") + names[w] + ": " + (w == 0 ? "x" + juce::String (v, 2) : w == 1 ? juce::String ((int) std::lround (v)) + " ms" : w == 3 ? juce::String (v, 1) : juce::String ((int) std::lround (v * 100)) + " %") + ".");
+        return;
+    }
     if (a.rfind ("knob:", 0) == 0)
     {
         const int i = std::stoi (a.substr (5));
@@ -1651,8 +1669,33 @@ void MainComponent::onMixAction (const std::string& a, double v)
     }
     if (a == "start")
     {
-        const bool cym = hl::soundsLikeCymbal (S) || ! (S.drum == "kick" || S.drum == "snare" || S.drum == "tom");
-        change ([cym] (hl::Session& s) { s.tone.match = 0.6; s.tone.smooth = cym ? 0.5 : 0.35; s.tone.tame = cym ? 0.4 : 0.25; s.shape.match = 0.5; }, "Standard start: pro tone 60 %, rings and tame, the pro envelope at half.");
+        // Standard: the knobs set to land near where the pro libraries put this channel, then yours to move
+        // (it listens to every mic first, off the message thread, on a copy)
+        if (S.onsets.empty()) { setNotice ("Run Auto Prep first."); return; }
+        setNotice (juce::CharPointer_UTF8 ("Standard: listening to the mics\xe2\x80\xa6"));
+        auto copy = std::make_shared<hl::Session> (S);
+        std::thread ([copy, sel, where, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            auto L = *copy; L.tone.match = std::max (0.01, L.tone.match);   // the tone pass only listens while tone is live
+            const auto M = hl::renderMix (L);
+            const auto res = hl::standardMoves (*copy, M, sel);
+            juce::MessageManager::callAsync ([sp, st, res, sel, where]
+            {
+                if (sp == nullptr || sp->engineState != st) return;
+                const auto [T, H] = res;
+                if (sp->audition) sp->audition->stop();
+                auto& s = st->session;
+                hl::ToneMoves& tm = sel < 0 ? (hl::ToneMoves&) s.tone : s.tracks[(size_t) sel].strip.tone;
+                hl::ShapeMoves& hm = sel < 0 ? s.shape : s.tracks[(size_t) sel].strip.shape;
+                tm.match = 0; tm.bright = T.bright; tm.crack = T.crack; tm.smooth = T.smooth; tm.tame = T.tame;
+                hm = H;
+                sp->refreshModel(); sp->refreshMix(); sp->updateHeader();
+                sp->setNotice ("Standard on " + where + ": tone " + juce::String ((int) std::lround (T.bright * 100)) + ", crack " + juce::String ((int) std::lround (T.crack * 100))
+                               + ", rings " + juce::String ((int) std::lround (T.smooth * 100)) + " %, tame " + juce::String ((int) std::lround (T.tame * 100))
+                               + " %, sustain " + juce::String ((int) std::lround (H.sus * 100)) + ". Move any knob from here.");
+                sp->rerender();
+            });
+        }).detach();
         return;
     }
     if (a == "flat")
@@ -1750,6 +1793,7 @@ void MainComponent::onMixAction (const std::string& a, double v)
             if (audition) audition->stop();
             auto& s = engineState->session;
             s.tone.hasRef = true; s.tone.refCurve = curve; if (s.tone.refAmt == 0) s.tone.refAmt = 0.6;
+            s.tone.hasRefEnv = R.hasEnv; s.tone.refEnv = R.env; if (R.hasEnv && s.tone.refEnvAmt == 0) s.tone.refEnvAmt = 0.5;
             refreshModel(); refreshMix(); updateHeader();
             setNotice ("Reference loaded: " + juce::String (refName) + ". The mix moves toward it at " + juce::String ((int) std::lround (s.tone.refAmt * 100)) + " %.");
             rerender();
@@ -1759,7 +1803,7 @@ void MainComponent::onMixAction (const std::string& a, double v)
     if (a == "ref:remove")
     {
         refAudio.clear(); refName.clear();
-        change ([] (hl::Session& s) { s.tone.hasRef = false; s.tone.refCurve.clear(); }, "Reference removed.");
+        change ([] (hl::Session& s) { s.tone.hasRef = false; s.tone.refCurve.clear(); s.tone.hasRefEnv = false; }, "Reference removed.");
         return;
     }
     if (a == "ref:play")
@@ -1780,6 +1824,24 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
     const auto& S = engineState->session;
     const auto opts = juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (x, y, w, h).toNearestInt())).withMinimumWidth ((int) w);
     juce::PopupMenu m;
+    if (what == "verb0" || what == "verb1")
+    {
+        const int u = what.back() - '0';
+        static const char* types[4] = { "room", "plate", "hall", "chamber" };
+        static const char* labels[4] = { "Room", "Plate", "Hall", "Chamber" };
+        m.addSectionHeader (u ? "R2" : "R1");
+        for (int i = 0; i < 4; ++i) m.addItem (i + 1, labels[i], true, S.verbs[(size_t) u].type == types[i]);
+        m.showMenuAsync (opts, [this, u] (int r)
+        {
+            if (r <= 0 || ! engineState) return;
+            if (audition) audition->stop();
+            engineState->session.verbs[(size_t) u].type = types[r - 1];
+            refreshModel(); refreshMix(); updateHeader();
+            setNotice (juce::String (u ? "R2: " : "R1: ") + labels[r - 1] + ".");
+            rerender();
+        });
+        return;
+    }
     if (what.rfind ("ins:", 0) == 0)
     {
         // an insert slot: the built-in plugins (and, filled, open / bypass / remove)

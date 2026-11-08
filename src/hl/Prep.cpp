@@ -695,11 +695,15 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
     const auto& B = bands3();
     auto median = [] (std::vector<double> v) -> double { if (v.empty()) return NAN; std::sort (v.begin(), v.end()); return v[v.size() / 2]; };
     std::vector<std::vector<double>> theirs (B.size()), mine (B.size());
+    std::array<std::vector<double>, 3> envT, envM;
+    auto addEnv = [] (std::array<std::vector<double>, 3>& e, const EnvStats& st)
+    { if (std::isfinite (st.body) && std::isfinite (st.sus) && std::isfinite (st.tail)) { e[0].push_back (st.body); e[1].push_back (st.sus); e[2].push_back (st.tail); } };
     for (size_t k = 0; k < ons.size() && k < 12; ++k)
     {
         const double maxN = (double) ((k + 1 < ons.size() ? ons[k + 1] : (long) m.size()) - ons[k] + 64);
         const auto b = bandSpec (m, ons[k], sr, maxN);
         for (size_t j = 0; j < B.size(); ++j) theirs[j].push_back (b[j]);
+        addEnv (envT, envStats (m, ons[k], sr, maxN));
     }
     // the sum of your mics on the hardest hits, after clean-up and before tone and shape
     std::vector<size_t> top;
@@ -717,6 +721,12 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
             }
         const auto b = bandSpec (mm, pre, S.sr);
         for (size_t j = 0; j < B.size(); ++j) mine[j].push_back (b[j]);
+        addEnv (envM, envStats (mm, pre, S.sr));
+    }
+    if (! envT[0].empty() && ! envM[0].empty())
+    {
+        R.hasEnv = true;
+        for (int k = 0; k < 3; ++k) R.env[(size_t) k] = std::round (std::clamp (median (envT[(size_t) k]) - median (envM[(size_t) k]), -6.0, 6.0) * 100) / 100;
     }
     F64 U (B.size()), D (B.size());
     for (size_t j = 0; j < B.size(); ++j)

@@ -122,6 +122,9 @@ struct StudioModel
         // the selected hit on the selected channel: third-octave shape before and after, and the envelope (dB)
         std::vector<float> specBefore, specAfter, refDelta, envBefore, envAfter;
         bool hasRef = false, refAudio = false; std::string refName; float refAmt = 0;
+        bool hasRefEnv = false; float refEnvAmt = 0;  ///< Match envelope
+        struct Verb { std::string type = "room"; float decay = 1, pre = 0, size = 1, tone = 0, width = 1; };
+        std::array<Verb, 2> verbs;                 ///< R1, R2
         std::vector<float> refWave;                ///< peaks of the reference's first hit
         struct Ins { std::string name; bool on = false; };
         std::vector<Ins> inserts;                  ///< the selected channel's insert slots

@@ -121,6 +121,7 @@ if(LD_BUILD_APP)
         assets/ui/rack_align.png
         assets/ui/rack_tune.png
         assets/ui/rack_mixstep.png
+        assets/ui/rack_mix2.png
         assets/ui/parts/module_top.png
         assets/ui/parts/module_mid.png
         assets/ui/parts/module_bot.png
@@ -181,6 +182,7 @@ if(LD_BUILD_TESTS)
         tests/RulesTests.cpp
         tests/AlignOpsTests.cpp
     tests/VerbSendTests.cpp
+    tests/StandardTests.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp

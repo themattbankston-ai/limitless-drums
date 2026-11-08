@@ -70,6 +70,7 @@ void parallelFor (size_t n, const std::function<void (size_t)>& fn)
 bool toneAny (const ToneMoves& T) { return T.match != 0 || T.bright != 0 || T.crack != 0 || T.smooth != 0 || T.tame != 0; }
 bool shapeAny (const ShapeMoves& H) { return H.atk != 0 || H.dec != 0 || H.sus != 0 || H.rel != 0 || H.match != 0; }
 bool refLive (const Session& S) { return S.tone.hasRef && S.tone.refAmt != 0; }
+bool refEnvOn (const Session& S) { return S.tone.hasRefEnv && S.tone.refEnvAmt != 0; }
 
 bool insLive (const juce::var& s)
 {
@@ -180,7 +181,7 @@ int Session::velOfHit (size_t i) const
 bool fxOn (const Session& S)
 {
     if (S.mode == "kit") return false;
-    if (S.tone.repair || refLive (S)) return true;
+    if (S.tone.repair || refLive (S) || refEnvOn (S)) return true;
     for (int t = 0; t < (int) S.tracks.size(); ++t) if (trackFxOn (S, t)) return true;
     return false;
 }
@@ -402,10 +403,24 @@ double ToneEngine::harshOf (int t) const
     return c ? jclamp (s / c, 0, 6) * 0.8 : 0;
 }
 
+std::array<double, 3> ToneEngine::proEnvDelta (int t) const
+{
+    const auto& A = scans[(size_t) t];
+    const auto ref = libRef (t);
+    if (! A || ! ref.ok) return { 0, 0, 0 };
+    std::vector<size_t> top;
+    for (size_t k = 0; k < S.onsets.size(); ++k) if (S.velOfHit (k) >= S.det.V - 2) top.push_back (k);
+    if (top.empty()) for (size_t k = 0; k < S.onsets.size(); ++k) top.push_back (k);
+    auto u = [&] (double EnvStats::* key) { F64 col; for (auto k : top) if (k < A->env.size()) col.push_back (A->env[k].*key); return median1 (col); };
+    auto num = [] (const juce::var& v) { return v.isVoid() || v.isUndefined() ? NAN : (double) v; };
+    auto c = [&] (double r, double x) { return std::isfinite (r) && std::isfinite (x) && r > -100 && x > -100 ? jclamp (r - x, -6, 6) : 0.0; };
+    return { c (num (ref.v["body"]), u (&EnvStats::body)), c (num (ref.v["sus"]), u (&EnvStats::sus)), c (num (ref.v["tail"]), u (&EnvStats::tail)) };
+}
+
 F32 ToneEngine::shapeTable (int t) const
 {
     const auto H = shapeMoves (t);
-    if (! shapeAny (H)) return {};
+    if (! shapeAny (H) && ! refEnvOn (S)) return {};
     auto d = libDrum(); if (d.empty()) d = "snare";
     const auto si = SHAPE_T.find (d);
     const auto T0 = si != SHAPE_T.end() ? si->second : SHAPE_T.at ("snare");
@@ -414,16 +429,8 @@ F32 ToneEngine::shapeTable (int t) const
     const double Ta = T0[0], Tm = T0[1], Ts = T0[2], Tr = T0[3], Te = T0[4];
     const double Atk = H.atk * 10, hold = std::min (5.0, 0.4 * Ta), tau = 1.4 * Ta, D = H.dec * 6, Su = H.sus * 8, R = H.rel > 0 ? H.rel * 6 : H.rel * 12;
     double mB = 0, mS = 0, mT = 0;
-    if (H.match != 0 && A && ref.ok)
-    {
-        std::vector<size_t> top;
-        for (size_t k = 0; k < S.onsets.size(); ++k) if (S.velOfHit (k) >= S.det.V - 2) top.push_back (k);
-        if (top.empty()) for (size_t k = 0; k < S.onsets.size(); ++k) top.push_back (k);
-        auto u = [&] (double EnvStats::* key) { F64 col; for (auto k : top) if (k < A->env.size()) col.push_back (A->env[k].*key); return median1 (col); };
-        auto num = [] (const juce::var& v) { return v.isVoid() || v.isUndefined() ? NAN : (double) v; };
-        auto c = [&] (double r, double x) { return std::isfinite (r) && std::isfinite (x) && r > -100 && x > -100 ? jclamp (r - x, -6, 6) * H.match : 0.0; };
-        mB = c (num (ref.v["body"]), u (&EnvStats::body)); mS = c (num (ref.v["sus"]), u (&EnvStats::sus)); mT = c (num (ref.v["tail"]), u (&EnvStats::tail));
-    }
+    if (H.match != 0) { const auto d = proEnvDelta (t); mB = d[0] * H.match; mS = d[1] * H.match; mT = d[2] * H.match; }
+    if (refEnvOn (S)) { mB += S.tone.refEnv[0] * S.tone.refEnvAmt; mS += S.tone.refEnv[1] * S.tone.refEnvAmt; mT += S.tone.refEnv[2] * S.tone.refEnvAmt; }
     auto lt = [] (double ms) { return std::log (1 + std::max (0.0, ms)); };
     using Pts = std::vector<std::pair<double, double>>;
     auto seg = [&] (const Pts& pts, double ms)
@@ -541,7 +548,7 @@ double ToneEngine::proLag (int t) const
 bool trackFxOn (const Session& S, int t)
 {
     if (S.mode == "kit") return false;
-    if (S.tone.repair || refLive (S)) return true;
+    if (S.tone.repair || refLive (S) || refEnvOn (S)) return true;
     static const std::vector<std::optional<MixRender::Scan>> none;
     ToneEngine e (S, none);
     return toneAny (e.moves (t)) || shapeAny (e.shapeMoves (t));
@@ -555,6 +562,7 @@ bool busLive (const Session& S)
 static double sendOf (const SessionTrack& tr) { return tr.strip.send; }
 static double verbSendOf (const SessionTrack& tr, int k) { return k == 0 ? tr.strip.r1 : tr.strip.r2; }
 static double busVerbSendOf (const Session& S, int k) { return k == 0 ? S.busR1 : S.busR2; }
+bool refEnvLive (const Session& S) { return refEnvOn (S); }
 bool verbLive (const Session& S, int k)
 {
     if (S.mode == "kit") return false;
@@ -872,7 +880,65 @@ MixRender renderMix (const Session& S)
         }
         M.rev[(size_t) k] = verbWet ({ sL, sR }, S.sr, verbParams (S.verbs[(size_t) k]));
     }
+    // the in-between stages aren't read after the render: free them (each is a full copy of every mic)
+    std::vector<Chs>().swap (M.tone); std::vector<Chs>().swap (M.ins);
     return M;
+}
+
+std::pair<ToneMoves, ShapeMoves> standardMoves (const Session& S0, const MixRender& M, int sel)
+{
+    // the target: the pro libraries' curve and envelope at Hitline's standard amounts (tone 60 %, envelope 50 %)
+    Session S = S0;
+    S.tone.match = 0.6; S.tone.bright = S.tone.crack = 0; S.tone.refAmt = 0; S.shape = {};
+    for (auto& tr : S.tracks) { tr.strip.tone = {}; tr.strip.shape = {}; }
+    ToneEngine E (S, M.scan);
+    const bool cym = E.isCymbal() || ! (S0.drum == "kick" || S0.drum == "snare" || S0.drum == "tom");
+    std::vector<int> ts;
+    if (sel >= 0) ts.push_back (sel); else for (int t = 0; t < (int) S.tracks.size(); ++t) ts.push_back (t);
+    const int v = std::max (0, S.det.V - 1);
+    // Tone and Crack: the pair whose curve lands closest to the target's, weighted toward where drums live
+    const auto& B = bands3();
+    F64 target (30, 0.0); int n = 0;
+    for (int t : ts)
+    {
+        if (t >= (int) M.scan.size() || ! M.scan[(size_t) t]) continue;
+        const auto mb = E.matchBands (t, v);
+        for (size_t j = 0; j < 30; ++j) target[j] += mb[j];
+        ++n;
+    }
+    ToneMoves T; T.smooth = cym ? 0.5 : 0.35; T.tame = cym ? 0.4 : 0.25;
+    ShapeMoves H;
+    if (n == 0) return { T, H };
+    for (auto& x : target) x /= n;
+    const int t0 = ts.front();
+    double best = 1e18;
+    S.tone.match = 0;
+    for (int bi = -20; bi <= 20; ++bi)
+        for (int ci = -20; ci <= 20; ++ci)
+        {
+            S.tone.bright = bi / 20.0; S.tone.crack = ci / 20.0;
+            ToneEngine Eq (S, M.scan);
+            double err = 0;
+            for (size_t j = 0; j < 30; ++j)
+            {
+                if (B[j] < 100 || B[j] > 12000) continue;
+                const double d = Eq.toneAt (t0, nullptr, B[j]) - target[j];
+                err += d * d;
+            }
+            err += 0.5 * (bi * bi + ci * ci) / 400.0;   // a little pull toward small moves
+            if (err < best) { best = err; T.bright = bi / 20.0; T.crack = ci / 20.0; }
+        }
+    // Attack, Decay, Sustain, Release from the envelope target (body at decay, sustain, tail at release)
+    std::array<double, 3> d { 0, 0, 0 }; int m = 0;
+    for (int t : ts) { const auto e = E.proEnvDelta (t); if (e[0] != 0 || e[1] != 0 || e[2] != 0) { for (int k = 0; k < 3; ++k) d[(size_t) k] += e[(size_t) k]; ++m; } }
+    if (m) for (auto& x : d) x = x / m * 0.5;
+    H.dec = jclamp (d[0] / 6, -1, 1); H.sus = jclamp (d[1] / 8, -1, 1);
+    const double R = d[2] - d[1];
+    H.rel = jclamp (R > 0 ? R / 6 : R / 12, -1, 1);
+    H.atk = 0;
+    auto r2 = [] (double x) { return std::round (x * 100) / 100; };
+    T.bright = r2 (T.bright); T.crack = r2 (T.crack); H.dec = r2 (H.dec); H.sus = r2 (H.sus); H.rel = r2 (H.rel);
+    return { T, H };
 }
 
 LevelResult measureLevels (const Session& S, const MixRender& M)
@@ -1441,7 +1507,8 @@ juce::var settingsToVar (const Session& S)
     put (st, "exp", e);
     auto dn = obj(); put (dn, "on", S.dnOn); put (dn, "db", S.dnDb); put (st, "dn", dn);
     auto tn = toneVar (S.tone);
-    put (tn, "repair", S.tone.repair); put (tn, "proSrc", juce::String (S.tone.proSrc)); put (tn, "refAmt", S.tone.refAmt);
+    put (tn, "repair", S.tone.repair); put (tn, "proSrc", juce::String (S.tone.proSrc)); put (tn, "refAmt", S.tone.refAmt); put (tn, "refEnvAmt", S.tone.refEnvAmt);
+    if (S.tone.hasRefEnv) { juce::Array<juce::var> e; for (double x : S.tone.refEnv) e.add (x); put (tn, "refEnv", e); }
     if (S.tone.hasRef) { auto r = obj(); juce::Array<juce::var> c; for (double v : S.tone.refCurve) c.add (v); put (r, "curve", c); put (tn, "ref", r); }
     put (st, "tone", tn);
     put (st, "shape", shapeVar (S.shape));
@@ -1505,7 +1572,8 @@ void applySettings (Session& S, const juce::var& st)
     if (tn.isObject())
     {
         static_cast<ToneMoves&> (S.tone) = toneOf (tn);
-        S.tone.repair = truthy (tn, "repair"); S.tone.proSrc = s_ (tn, "proSrc", ""); S.tone.refAmt = nn (tn, "refAmt", 0);
+        S.tone.repair = truthy (tn, "repair"); S.tone.proSrc = s_ (tn, "proSrc", ""); S.tone.refAmt = nn (tn, "refAmt", 0); S.tone.refEnvAmt = nn (tn, "refEnvAmt", 0);
+        S.tone.hasRefEnv = false; if (auto* e = tn["refEnv"].getArray()) if (e->size() == 3) { S.tone.hasRefEnv = true; for (int k = 0; k < 3; ++k) S.tone.refEnv[(size_t) k] = (double) (*e)[k]; }
         S.tone.hasRef = false; S.tone.refCurve.clear();
         if (tn["ref"].isObject()) if (auto* c = tn["ref"]["curve"].getArray()) { S.tone.hasRef = true; for (auto& v : *c) S.tone.refCurve.push_back ((double) v); }
     }
