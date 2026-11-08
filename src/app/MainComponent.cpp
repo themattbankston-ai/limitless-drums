@@ -1035,6 +1035,46 @@ void MainComponent::saveProject (bool saveAs, std::function<void (bool)> done)
                           });
 }
 
+// ---------------------------------------------------------------- undo for the engine's settings
+// Mix, plugins, Song mode and Clean change the engine's session, not the Tracktion edit; each change goes onto the
+// edit's undo list as an action holding the settings before and after (no audio, a few KB), so Undo, Redo and the
+// History panel cover them alongside everything else.
+namespace
+{
+struct SettingsChange : juce::UndoableAction
+{
+    SettingsChange (MainComponent& m, juce::var b, juce::var a) : mc (m), before (std::move (b)), after (std::move (a)) {}
+    bool perform() override { if (first) { first = false; return true; } mc.restoreSettings (after); return true; }
+    bool undo() override { mc.restoreSettings (before); return true; }
+    int getSizeInUnits() override { return 10; }
+    MainComponent& mc; juce::var before, after; bool first = true;
+};
+}
+
+juce::var MainComponent::settingsSnapshot() const
+{
+    if (! engineState) return {};
+    // a deep copy: the session's insert lists are shared vars that later changes edit in place
+    return juce::JSON::parse (juce::JSON::toString (hl::settingsToVar (engineState->session), true));
+}
+
+void MainComponent::recordChange (const juce::var& before, const juce::String& what)
+{
+    if (! edit || ! engineState || before.isVoid()) return;
+    auto& um = edit->getUndoManager();
+    um.beginNewTransaction (what);
+    um.perform (new SettingsChange (*this, before, settingsSnapshot()), what);
+}
+
+void MainComponent::restoreSettings (const juce::var& v)
+{
+    if (! engineState || v.isVoid()) return;
+    if (audition) audition->stop();
+    hl::applySettings (engineState->session, juce::JSON::parse (juce::JSON::toString (v, true)));
+    refreshModel(); refreshMix(); updateHeader();
+    rerender();
+}
+
 void MainComponent::undo (bool redo)
 {
     if (! edit) return;
@@ -1757,7 +1797,9 @@ void MainComponent::onSongAction (const std::string& a, double v)
     auto change = [this] (std::function<void (hl::Session&)> op, const juce::String& what)
     {
         if (audition) audition->stop();
+        const auto before = settingsSnapshot();
         op (engineState->session);
+        recordChange (before, what);
         refreshModel(); updateHeader(); setNotice (what);
         rerender();
     };
@@ -1794,7 +1836,9 @@ void MainComponent::onMixAction (const std::string& a, double v)
     auto change = [this] (std::function<void (hl::Session&)> op, const juce::String& what)
     {
         if (audition) audition->stop();
+        const auto before = settingsSnapshot();
         op (engineState->session);
+        recordChange (before, what);
         refreshModel(); refreshMix(); updateHeader(); setNotice (what);
         rerender();
     };
@@ -2189,9 +2233,11 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
             auto mutate = [&] (std::function<void (juce::Array<juce::var>&)> op, const juce::String& what2)
             {
                 if (audition) audition->stop();
+                const auto before = settingsSnapshot();
                 juce::var& ii = t < 0 ? s0.busIns : s0.tracks[(size_t) t].strip.inserts;
                 if (! ii.isArray()) ii = juce::var (juce::Array<juce::var>());
                 op (*ii.getArray());
+                recordChange (before, what2);
                 refreshModel(); refreshMix(); updateHeader(); setNotice (what2);
                 rerender();
             };

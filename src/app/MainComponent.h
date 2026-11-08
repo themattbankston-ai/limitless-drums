@@ -96,6 +96,12 @@ private:
     int plugT = -2, plugK = 0;   ///< the insert whose window is open (-2 none, -1 the bus)
     void onMixAction (const std::string& action, double v);
     void onSongAction (const std::string& action, double v);
+public:
+    /** Undo for the engine's settings (mix, plugins, Song mode): a deep copy of them, and putting one back. */
+    juce::var settingsSnapshot() const;
+    void restoreSettings (const juce::var&);
+private:
+    void recordChange (const juce::var& before, const juce::String& what);
     void onMixMenu (const std::string& which, float x, float y, float w, float h);
     // the Tune step
     int tuneHit = -2;

@@ -78,3 +78,25 @@ TEST_CASE ("Reverb sends R1 and R2")
     CHECK (S2.verbs[0].type == "chamber"); CHECK (S2.verbs[0].decay == 1.7);
     CHECK (S2.busR2 == 0); CHECK (S2.tracks[(size_t) t].strip.r2 == -9);
 }
+
+TEST_CASE ("Undo: settings snapshot and restore round-trip")
+{
+    const auto root = juce::SystemStats::getEnvironmentVariable ("LD_PARITY_SESSIONS", {});
+    if (root.isEmpty()) { WARN ("LD_PARITY_SESSIONS not set; skipped"); return; }
+    auto files = juce::File (root).getChildFile ("SNARE 1 - MH/Center").findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::vector<juce::File> fv (files.begin(), files.end());
+    auto st = ld::openTake (fv, "Center", {});
+    auto& S = st->session;
+    REQUIRE (! S.tracks.empty());
+    auto snap = [&] { return juce::JSON::toString (ld::hl::settingsToVar (S), true); };
+    const auto before = juce::JSON::parse (snap());
+    const auto beforeText = snap();
+    // change a lot: a fader, a send, the bus, an insert, the reverbs, song settings
+    S.tracks[0].fader = -7; S.tracks[0].strip.r1 = -12; S.busFader = -3; S.busR2 = -9;
+    S.verbs[1].decay = 2.2; S.song.set.tightness = 0.7; S.song.set.tempoMode = "flatten"; S.kitBleed = 9;
+    auto* o = new juce::DynamicObject(); o->setProperty ("type", "sat"); o->setProperty ("on", true); o->setProperty ("p", juce::JSON::parse ("{\"model\":\"devil\"}"));
+    juce::Array<juce::var> a; a.add (juce::var (o)); S.tracks[0].strip.inserts = juce::var (a);
+    CHECK (snap() != beforeText);
+    ld::hl::applySettings (S, before);
+    CHECK (snap() == beforeText);
+}
