@@ -1911,6 +1911,66 @@ struct Studio::Rack : visage::Frame
             }
         }
     }
+    /** Song mode, Session step: what the take is and what was found, instead of the sample tools. */
+    void drawSongSession (Canvas& c)
+    {
+        skeys.clear();
+        const auto& g = studio.data.song;
+        const auto& H = studio.headerState();
+        c.setColor (0xff0c0d10); c.fill (0, 0, width(), height());
+        plate (c, 10, 10, 298, 150, "THE SONG", g.valid ? std::string ("ANALYSED") : H.prepping ? std::string ("LISTENING") : std::string ("NOT YET"));
+        c.setColor (0xffd2d6de);
+        draw::text (c, H.sessionLine, boldFont (S (13)), Font::kCenter, X (16), Y (38), S (286), S (18));
+        c.setColor (0xff8b9099);
+        draw::text (c, H.detailLine, bodyFont (S (10)), Font::kCenter, X (16), Y (58), S (286), S (14));
+        if (g.valid)
+        {
+            draw::glass (c, X (24), Y (82), S (270), S (60), S (6));
+            const std::string b = draw::fmt ("%.1f", g.avgBpm);
+            const float bw = textWidth (monoBold (S (26)), b) + S (6) + textWidth (boldFont (S (10)), "BPM");
+            const float bx = X (159) - bw / 2;
+            c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (SONGCOL).withAlpha (0.35f));
+            draw::text (c, b, monoBold (S (26)), Font::kLeft, bx + S (1), Y (86), S (150), S (34)); c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (0xffffe2c8); draw::text (c, b, monoBold (S (26)), Font::kLeft, bx, Y (86), S (150), S (34));
+            c.setColor (0xb3ff8a3d); draw::text (c, "BPM", boldFont (S (10)), Font::kLeft, bx + textWidth (monoBold (S (26)), b) + S (6), Y (102), S (40), S (14));
+            const int bars = g.beats.size() > 1 ? (int) (g.beats.size() / 4) : 0;
+            c.setColor (0xff8b9099);
+            draw::text (c, draw::fmt ("%.0f bars", (double) bars) + "  \xc2\xb7  " + std::to_string (g.hits.size()) + " hits", monoFont (S (9.5f)), Font::kCenter, X (24), Y (122), S (270), S (14));
+        }
+        else
+        {
+            skey (c, "autoprep", H.prepping ? "LISTENING\xe2\x80\xa6" : "AUTO PREP", 24, 88, 270, 40, false, ! H.prepping, SONGCOL);
+            c.setColor (0xff8b9099);
+            draw::text (c, "Finds every hit, the tempo and the alignment.", bodyFont (S (9.5f)), Font::kCenter, X (16), Y (136), S (286), S (14));
+        }
+        // what was found, per drum
+        plate (c, 10, 170, 298, 170, "HITS FOUND", g.valid ? std::to_string (g.hits.size()) : std::string ("-"));
+        {
+            static const char* dn[5] = { "KICK", "SNARE", "TOMS", "HATS", "CYMBALS" };
+            static const unsigned dc[5] = { 0xffffb23e, 0xff2ee6ff, 0xffb46bff, 0xffe8f060, 0xff7cff9b };
+            int most = 1; for (int i = 0; i < 5; ++i) most = std::max (most, g.counts[i]);
+            for (int i = 0; i < 5; ++i)
+            {
+                const float y = 200 + i * 26.0f;
+                c.setColor (0xff8b9099); draw::text (c, dn[i], boldFont (S (8.5f)), Font::kLeft, X (24), Y (y), S (70), S (14));
+                c.setColor (0xff1a1d22); c.roundedRectangle (X (96), Y (y + 3), S (150), S (8), S (4));
+                if (g.counts[i] > 0) { c.setColor (dc[i]); c.roundedRectangle (X (96), Y (y + 3), S (std::max (8.0f, 150.0f * (float) g.counts[i] / (float) most)), S (8), S (4)); }
+                c.setColor (0xffd2d6de); draw::text (c, std::to_string (g.counts[i]), monoBold (S (9.5f)), Font::kRight, X (250), Y (y), S (44), S (14));
+            }
+        }
+        // the way through
+        plate (c, 10, 350, 298, 160, "NEXT");
+        {
+            static const char* steps[4][2] = { { "EDIT", "Tempo map, tightness, swing, problems" }, { "ALIGN", "Phase between the mics" },
+                                               { "MIX", "Console, inserts, reverbs" }, { "CLEAN", "Bleed and consistency" } };
+            for (int i = 0; i < 4; ++i)
+            {
+                const float y = 380 + i * 30.0f;
+                c.setColor (SONGCOL); draw::text (c, steps[i][0], boldFont (S (9)), Font::kLeft, X (24), Y (y), S (60), S (14));
+                c.setColor (0xff8b9099); draw::text (c, steps[i][1], bodyFont (S (9.5f)), Font::kLeft, X (84), Y (y), S (210), S (14));
+            }
+        }
+    }
     void drawClean (Canvas& c)
     {
         skeys.clear();
@@ -1963,14 +2023,15 @@ struct Studio::Rack : visage::Frame
         if (const auto* k2 = skeyAt (x, y))
         {
             if (! k2->en) return;
+            if (k2->id == "autoprep") { if (studio.onAutoPrep) studio.onAutoPrep(); return; }
             if (k2->id == "changes") { studio.showChanges = ! studio.showChanges; studio.redrawAll(); return; }
             fire (k2->id, 0); return;
         }
         auto near = [&] (float cx, float cy, float r) { return (x - cx) * (x - cx) + (y - cy) * (y - cy) < r * r; };
         std::string id;
         if (studio.step() == Step::hits) { if (near (88, 312, 44)) id = "tight"; else if (near (230, 312, 36)) id = "swing"; }
-        else if (near (159, 112, 50)) id = "bleed";
-        else if (near (159, 372, 50)) id = "cons";
+        else if (studio.step() == Step::level && near (159, 112, 50)) id = "bleed";
+        else if (studio.step() == Step::level && near (159, 372, 50)) id = "cons";
         if (id.empty()) return;
         if (e.repeatClickCount() >= 2) { fire (id, 0); return; }
         songDrag = id; songDragY0 = y; songDragV0 = songVal (id); songLive = songDragV0;
@@ -1989,6 +2050,7 @@ struct Studio::Rack : visage::Frame
         c.fill (0, 0, width(), height());
         c.setColor (0xffffffff);
         if (isSong() && studio.step() == Step::hits) { drawSong (c); return; }
+        if (isSong() && studio.step() == Step::session) { drawSongSession (c); return; }
         if (isSong() && studio.step() == Step::level) { drawClean (c); return; }
         if (studio.step() == Step::exportStep) { drawExport (c); return; }
         if (studio.step() == Step::align) { drawAlign (c); return; }
@@ -2949,7 +3011,7 @@ struct Studio::Rack : visage::Frame
     {
         studio.requestKeyboardFocus();
         const float dx = panelX (e.position.x), dy = panelY (e.position.y);
-        if ((isSong() && (studio.step() == Step::hits || studio.step() == Step::level)) || studio.step() == Step::exportStep) { songDown (dx, dy, e); return; }
+        if ((isSong() && (studio.step() == Step::hits || studio.step() == Step::level || studio.step() == Step::session)) || studio.step() == Step::exportStep) { songDown (dx, dy, e); return; }
         if (studio.step() == Step::align) { alignDown (dx, dy); return; }
         if (studio.step() == Step::tune) { tuneDown (dx, dy, e); return; }
         if (studio.step() == Step::mix) { mixDown (dx, dy, e); return; }

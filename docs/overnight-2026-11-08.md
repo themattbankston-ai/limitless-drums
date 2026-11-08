@@ -71,11 +71,11 @@ Notes for the morning, kept up to date through the night.
   on the sample session went from 2.2 GB to 1.15 GB.
 
 ## Rough or unapproved
-- **Song mode screens**: Edit & Tempo, Clean and Export were built without an approved mockup.
+- **Song mode screens**: Session, Edit & Tempo, Clean and Export were built without an approved mockup.
 - **Reverb renders**: a 4-minute song with a reverb send takes about 6–9 s to re-render on this 2-core machine.
   Without one it takes about 1 s.
-- **Session step of a Song**: the right-hand rack still shows the sample-mode Level panel and pads. It should show
-  something for songs instead.
+- **Session step of a Song**: the right-hand rack now shows a song overview instead of the sample-mode Level panel
+  and pads. It has the tempo, bars, hits per drum, and the steps that follow. This is also without a mockup.
 - **Smaller windows**: at 1280×800 everything scales cleanly. The status line now ends in an ellipsis when it's too
   long instead of being cut mid-word.
 - **Audible playback**: this machine has no audio device, so I couldn't listen. The offline playback tests pass.
