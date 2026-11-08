@@ -715,9 +715,10 @@ MixRender renderMix (const Session& S)
     if (kit)
     {
         // whole kit: close mics can be gated against bleed from the rest of the kit; nothing else is touched
-        M.tone = M.dn;
+        // (a song is long: the clean-up stage moves on rather than staying as a copy; nothing reads it afterwards)
+        M.tone = std::move (M.dn); M.dn.clear();
         if (S.kitBleed != 0)
-            parallelFor ((size_t) nT, [&] (size_t t) { if (isCloseKind (S.tracks[t])) M.tone[t] = bleedGate (M.dn[t], sr, S.kitBleed); });
+            parallelFor ((size_t) nT, [&] (size_t t) { if (isCloseKind (S.tracks[t])) M.tone[t] = bleedGate (M.tone[t], sr, S.kitBleed); });
         // Song mode: the mixer still applies (inserts, the bus, the reverbs); Tone and Shape work per sampled hit and
         // don't apply to a performance
     }

@@ -48,6 +48,10 @@ TEST_CASE ("Song render timing probe", "[.perf]")
     ld::TakeOptions o; o.drum = "kit";
     auto st = ld::prepareTake (fv, dir.getFileName(), o);
     auto& S = st->session;
+    {
+        std::ifstream f ("/proc/self/status"); std::string l;
+        while (std::getline (f, l)) if (l.rfind ("VmHWM:", 0) == 0) WARN ("peak after prepare: " << std::stol (l.substr (6)) / 1024 << " MB, now " << rssMb() << " MB");
+    }
     auto timeIt = [&] (const char* what)
     {
         const auto t = juce::Time::getMillisecondCounterHiRes();
