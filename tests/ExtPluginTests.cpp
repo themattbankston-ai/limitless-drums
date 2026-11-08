@@ -49,3 +49,34 @@ TEST_CASE ("Third-party plugins: found, run offline in time, state kept")
     const auto pass = ld::ext::render (bad, in, 48000);
     CHECK (pass[0][1000] == 1.0f);
 }
+
+#include "../src/app/Engine.h"
+#include "../src/hl/FxSat.h"
+TEST_CASE ("Third-party plugin on every mic of a 4-minute song: render time", "[.perf]")
+{
+    const auto path = juce::SystemStats::getEnvironmentVariable ("LD_PLUGIN_PATH", "/home/claude/testplug/build/LDTestGain_artefacts/Release/VST3");
+    const auto dir = juce::File (juce::SystemStats::getEnvironmentVariable ("LD_SONG", "/home/claude/songtest/song240"));
+    if (! juce::File (path).isDirectory() || ! dir.isDirectory()) return;
+    juce::ScopedJuceInitialiser_GUI gui;
+    ld::hl::setExternalRenderer ([] (const juce::var& ins, const ld::hl::Chs& in, double sr) { return ld::ext::render (ins, in, sr); });
+    juce::FileSearchPath sp (path);
+    juce::KnownPluginList list;
+    for (auto* f : ld::ext::formats().getFormats()) if (f->getName() == "VST3") { juce::PluginDirectoryScanner sc (list, *f, sp, true, juce::File(), false); juce::String n; while (sc.scanNextFile (true, n)) {} }
+    REQUIRE (list.getNumTypes() >= 1);
+    const auto ins = ld::ext::makeInsert (list.getTypes()[0]);
+    ld::hl::setReverbLibrary (juce::JSON::parse (juce::File (LD_SOURCE_DIR).getChildFile ("assets/irlib.json")));
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::vector<juce::File> fv (files.begin(), files.end());
+    ld::TakeOptions o; o.drum = "kit";
+    auto st = ld::prepareTake (fv, dir.getFileName(), o);
+    auto& S = st->session;
+    for (auto& t : S.tracks) { juce::Array<juce::var> a; a.add (ins); t.strip.inserts = juce::var (a); }
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    // as in the app: the render on a worker, the message thread free (plugins are made and freed there)
+    ld::hl::MixRender M; std::atomic<bool> done { false };
+    std::thread w ([&] { M = ld::hl::renderMix (S); done = true; });
+    while (! done) juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+    w.join();
+    WARN ("render with the plugin on all " << S.tracks.size() << " mics: " << (juce::Time::getMillisecondCounterHiRes() - t0) / 1000 << " s");
+    CHECK (M.proc.size() == S.tracks.size());
+}
