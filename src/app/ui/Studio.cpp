@@ -1673,7 +1673,8 @@ struct Studio::Console : visage::Frame
         {
             case ins:
                 if (e.isCmdDown() || e.isAltDown()) { if (studio.onMix) studio.onMix ("insbyp:" + who + ":" + std::to_string (h.slot), 0); }
-                else if (! e.isRightButton() && studio.onMix && ! (bus ? studio.data.mix.bus : studio.data.mix.chans[(size_t) h.si]).ins[(size_t) h.slot].name.empty())
+                else if (! e.isRightButton() && studio.onMix && (bus || h.si < (int) studio.data.mix.chans.size()) && h.slot >= 0 && h.slot < 5
+                         && ! (bus ? studio.data.mix.bus : studio.data.mix.chans[(size_t) h.si]).ins[(size_t) h.slot].name.empty())
                     studio.onMix ("plug:open:" + who + ":" + std::to_string (h.slot), 0);   // a filled slot opens its window; right-click for the menu
                 else if (studio.onMixMenu)
                 {
