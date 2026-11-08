@@ -82,6 +82,20 @@ static juce::var band (const char* type, double f, double g, double q)
     return juce::var (o);
 }
 
+double insertCurveDb (const juce::String& type, const juce::var& p, double f, int band)
+{
+    double m = 1;
+    if (type == "pultec") m = pultecMag (p, f) * dbl (orr (p, "out", 0));
+    else if (type == "eq")
+    {
+        if (auto* a = p.getProperty ("bands", juce::var()).getArray())
+            for (int i = 0; i < a->size(); ++i)
+                if ((band < 0 || band == i) && ! isFalse ((*a)[i], "on")) m *= bandMag ((*a)[i], f);
+        if (band < 0) m *= dbl (orr (p, "out", 0));
+    }
+    return 20 * std::log10 (std::max (1e-9, m));
+}
+
 double pultecMag (const juce::var& p, double f)
 {
     double m = 1;

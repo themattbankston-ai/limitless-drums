@@ -108,3 +108,12 @@ if os.path.isdir(pd):
     with open(os.path.join(dst, 'port_arch_box.txt'), 'w') as fh: fh.write('%d %d %d %d\n' % box)
     print('arch box', box)
     src = src0
+
+# ---------------------------------------------------------------- Ember
+ed = os.path.join(src, 'ember')
+if os.path.isdir(ed):
+    src0 = src; src = ed
+    cold = load('ember.png')
+    jpg(cold, 'ember_plate')
+    jpg(add_layer(load('ember_tubes.png'), cold), 'ember_hot')
+    src = src0

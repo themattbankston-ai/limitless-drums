@@ -7,6 +7,9 @@ namespace ld::hl
     stores it. Each returns new channels; inputs are untouched. */
 Chs eqRender (const Chs& chs, double sr, const juce::var& p);
 double pultecMag (const juce::var& p, double f);
+/** An EQ insert's response in dB at f, for the windows' curves: "pultec" or "eq" (each band on, dynamic bands at
+    their static gain); band >= 0 gives that one band alone. */
+double insertCurveDb (const juce::String& type, const juce::var& p, double f, int band = -1);
 Chs pultecRender (const Chs& chs, double sr, const juce::var& p);
 Chs widthRender (const Chs& chs, double sr, const juce::var& p);
 double corrOf (const Chs& chs);

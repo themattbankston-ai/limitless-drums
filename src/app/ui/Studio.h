@@ -148,6 +148,10 @@ struct PluginView
     std::map<std::string, double> num;      ///< numbers and switches (1 / 0)
     std::map<std::string, std::string> str; ///< choices ("model", "decap.style")
     std::shared_ptr<const std::vector<float>> gr;   ///< a compressor's gain reduction, dB per millisecond of the timeline
+    /** EQs: the response in dB at CURVE_N log-spaced points, 20 Hz to 20 kHz; bandCurves: each band alone. */
+    static constexpr int CURVE_N = 240;
+    std::vector<float> curve;
+    std::vector<std::vector<float>> bandCurves;
     double get (const std::string& k, double d) const { auto i = num.find (k); return i == num.end() ? d : i->second; }
     std::string gets (const std::string& k, const std::string& d) const { auto i = str.find (k); return i == str.end() ? d : i->second; }
 };

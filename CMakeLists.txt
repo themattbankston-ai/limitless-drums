@@ -139,6 +139,8 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_eyes.jpg
         assets/ui/plugins/skull_plate.jpg
         assets/ui/plugins/vise_plate.jpg
+        assets/ui/plugins/ember_plate.jpg
+        assets/ui/plugins/ember_hot.jpg
         assets/ui/plugins/port_plate.jpg
         assets/ui/plugins/port_open.jpg
         assets/ui/plugins/port_closed.jpg
@@ -165,6 +167,7 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_skull.png
         assets/fonts/BlackOpsOne-Regular.ttf
         assets/fonts/Cinzel-Bold.ttf
+        assets/fonts/Oswald-SemiBold.ttf
         assets/irlib.json
         assets/libref.json
         assets/logo/lockup-horizontal-night.svg

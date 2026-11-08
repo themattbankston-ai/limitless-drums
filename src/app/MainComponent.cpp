@@ -2,6 +2,7 @@
 #include "SessionModel.h"
 #include "hl/Detect.h"
 #include "hl/FxSat.h"
+#include "hl/FxInserts.h"
 #include "BinaryData.h"
 #include <thread>
 
@@ -1647,6 +1648,18 @@ void MainComponent::refreshPlugin()
                     }
             };
             flat (it["p"], "");
+            if (pv.type == "pultec" || pv.type == "eq")
+            {
+                auto curveOf = [&] (int band)
+                {
+                    std::vector<float> c ((size_t) ui::PluginView::CURVE_N);
+                    for (int i = 0; i < ui::PluginView::CURVE_N; ++i)
+                        c[(size_t) i] = (float) hl::insertCurveDb (it["type"].toString(), it["p"], 20 * std::pow (1000.0, i / (double) (ui::PluginView::CURVE_N - 1)), band);
+                    return c;
+                };
+                pv.curve = curveOf (-1);
+                if (auto* bands = it["p"]["bands"].getArray()) for (int b = 0; b < bands->size(); ++b) pv.bandCurves.push_back (curveOf (b));
+            }
             if (engineState->mix)
             {
                 const auto key = (plugT < 0 ? std::string ("bus") : std::to_string (plugT)) + ":" + std::to_string (plugK);
@@ -1849,13 +1862,17 @@ void MainComponent::onMixAction (const std::string& a, double v)
                 { "dist.ratio", "Ratio" }, { "76.ratio", "Ratio" }, { "160.ratio", "Ratio" }, { "chan.ratio", "Ratio" }, { "scHpf", "Side-chain HPF" },
                 // Portcullis
                 { "thr", "Threshold" }, { "range", "Range" }, { "ratio", "Ratio" }, { "hyst", "Hysteresis" }, { "atk", "Attack" }, { "hold", "Hold" },
-                { "rel", "Release" }, { "look", "Look-ahead" }, { "hpf", "Key HPF" }, { "lpf", "Key LPF" }, { "listen", "Key listen" }, { "flip", "Flip" }, { "keyT", "Key" } };
+                { "rel", "Release" }, { "look", "Look-ahead" }, { "hpf", "Key HPF" }, { "lpf", "Key LPF" }, { "listen", "Key listen" }, { "flip", "Flip" }, { "keyT", "Key" },
+                // Ember
+                { "lf", "Low frequency" }, { "lfBoost", "Low boost" }, { "lfAtten", "Low atten" }, { "hf", "High frequency" }, { "bw", "Bandwidth" },
+                { "hfBoost", "High boost" }, { "hfa", "Atten select" }, { "hfAtten", "High atten" }, { "drive", "Drive" }, { "eqp", "EQP section" },
+                { "meq", "Mid EQ section" }, { "tube", "Tube" }, { "phase", "Phase" } };
             const auto& arr = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
             const juce::String plug (insertDisplayName (arr[k]["type"].toString()));
             const auto n = names.count (path) ? names.at (path) : path;
             juce::String val2;
             if (isStr) val2 = juce::String (sval).toUpperCase();
-            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip") val2 = val > 0.5 ? "on" : "off";
+            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip" || path == "eqp" || path == "meq" || path == "tube") val2 = val > 0.5 ? "on" : "off";
             else if (path == "keyT") val2 = val < 0 ? juce::String ("self") : juce::String (S.tracks[(size_t) (int) val].mic);
             else if ((path == "decap.lowcut" || path == "decap.highcut") && val == 0) val2 = "off";
             else if (path == "mix") val2 = juce::String (juce::roundToInt (val * 100)) + " %";

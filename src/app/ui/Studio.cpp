@@ -1,5 +1,6 @@
 #include <chrono>
 #include "Studio.h"
+#include <complex>
 #include "Draw.h"
 
 #include <algorithm>
@@ -2838,6 +2839,22 @@ namespace pw
     static Font cinzel (float s) { return fontOf (BinaryData::CinzelBold_ttf, BinaryData::CinzelBold_ttfSize, s); }
     static const Img portGate { LD_IMG (port_gate_png) }, portArch { LD_IMG (port_arch_png) };
     static const float portGateBox[4] = { 690, 197, 1270, 675 }, portArchBox[4] = { 663, 131, 1297, 688 };
+    static Font oswald (float s) { return fontOf (BinaryData::OswaldSemiBold_ttf, BinaryData::OswaldSemiBold_ttfSize, s); }
+    /** Magnitudes (dB) of a real signal's spectrum, n a power of two; out has n/2 bins. */
+    static void fftDb (std::vector<float> x, std::vector<float>& out)
+    {
+        const size_t n = x.size();
+        std::vector<std::complex<float>> a (n);
+        for (size_t i = 0; i < n; ++i) a[i] = { x[i] * (0.5f - 0.5f * std::cos (6.2831853f * (float) i / (float) n)), 0.0f };
+        for (size_t i = 1, j = 0; i < n; ++i) { size_t bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) std::swap (a[i], a[j]); }
+        for (size_t len = 2; len <= n; len <<= 1)
+        {
+            const float ang = -6.2831853f / (float) len; const std::complex<float> wl (std::cos (ang), std::sin (ang));
+            for (size_t i = 0; i < n; i += len) { std::complex<float> w (1, 0); for (size_t j = 0; j < len / 2; ++j) { const auto u = a[i + j], t = a[i + j + len / 2] * w; a[i + j] = u + t; a[i + j + len / 2] = u - t; w *= wl; } }
+        }
+        out.resize (n / 2);
+        for (size_t i = 0; i < n / 2; ++i) out[i] = 20 * std::log10 (std::abs (a[i]) * 4.0f / (float) n + 1e-9f);
+    }
     static const Img sawBlur[8] = { { LD_IMG (skull_sawb_0_jpg) }, { LD_IMG (skull_sawb_1_jpg) }, { LD_IMG (skull_sawb_2_jpg) }, { LD_IMG (skull_sawb_3_jpg) },
                                     { LD_IMG (skull_sawb_4_jpg) }, { LD_IMG (skull_sawb_5_jpg) }, { LD_IMG (skull_sawb_6_jpg) }, { LD_IMG (skull_sawb_7_jpg) } };
 }
@@ -2847,7 +2864,9 @@ struct Studio::PluginWindow : visage::Frame
     explicit PluginWindow (Studio& s) : studio (s) { setVisible (false); }
     Studio& studio;
     PluginView v;
-    static constexpr float FW = 980, FH = 544, TH = 46, WW = 1000, WH = 600;
+    float FW = 980;   ///< the faceplate's width in panel px (Ember is wider)
+    static constexpr float FH = 544, TH = 46, WH = 600;
+    float WW() const { return FW + 20; }
     float k = 1;                  // window scale
     float sawAngle = 0;           // in teeth
     // drag state
@@ -2901,6 +2920,7 @@ struct Studio::PluginWindow : visage::Frame
     {
         if (v.type == "comp") return viseRange (key);
         if (v.type == "gate") return portRange (key);
+        if (v.type == "pultec") return emberRange (key);
         const auto m = model();
         if (key == "mix") return { "mix", 0, 1, false, true };
         if (key == "out") return { "out", -24, 24, false, true };
@@ -2927,7 +2947,7 @@ struct Studio::PluginWindow : visage::Frame
         static const std::map<std::string, double> d { { "decap.drive", 3 }, { "devil.crush", 4 }, { "devil.darkness", 2 }, { "decap.lowcut", 20 }, { "decap.highcut", 20000 }, { "mix", 1 },
             { "dist.input", 5 }, { "dist.attack", 5 }, { "dist.release", 5 }, { "76.input", 6.2 }, { "76.attack", 3 }, { "76.release", 3 },
             { "fair.thresh", 5 }, { "fair.tc", 2 }, { "thr", -40 }, { "range", -40 }, { "hyst", 4 }, { "atk", 0.3 }, { "hold", 40 }, { "rel", 120 }, { "look", 1.5 },
-            { "hpf", 20 }, { "lpf", 20000 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
+            { "hpf", 20 }, { "lpf", 20000 }, { "lfBoost", 0 }, { "lfAtten", 0 }, { "bw", 5 }, { "hfBoost", 0 }, { "hfAtten", 0 }, { "drive", 1 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
         auto i = d.find (path); return i == d.end() ? 0.0 : i->second;
     }
     float posOf (const std::string& key) const
@@ -2948,6 +2968,11 @@ struct Studio::PluginWindow : visage::Frame
     {
         const auto R = rangeOf (key); const double x = valueAt (key, pos);
         if (! R.on) return "off";
+        if (v.type == "pultec")
+        {
+            if (R.path == "out") return draw::fmt ("%+.1f dB", x);
+            return draw::fmt ("%.1f", x);
+        }
         if (v.type == "gate")
         {
             if (R.path == "thr" || R.path == "range" || R.path == "hyst") return draw::fmt ("%.0f dB", x);
@@ -3645,6 +3670,252 @@ struct Studio::PluginWindow : visage::Frame
         if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffe8e0d0); draw::text (c, "BYPASSED", pw::cinzel (S (28)), Font::kCenter, bx, by, fw, fh); }
     }
 
+    // ---------------------------------------------------------------- the live spectrum (Ember's screen, Prism's graph)
+    static constexpr int SPEC_N = 160;
+    std::vector<float> spec = std::vector<float> (SPEC_N, -120.0f);
+    void updateSpectrum (double dt)
+    {
+        // what's going into the plugin under the playhead: 2048 samples of its mic (or every mic, on the bus)
+        std::vector<float> now (SPEC_N, -120.0f);
+        if (studio.playing)
+        {
+            std::vector<float> x (2048, 0.0f); double sr = 44100; bool any = false;
+            for (size_t i = 0; i < studio.data.tracks.size(); ++i)
+            {
+                if (v.who >= 0 && (int) i != v.who) continue;
+                const auto& tr = studio.data.tracks[i];
+                if (! tr.wave || ! tr.wave->a || tr.mute) continue;
+                sr = tr.wave->sampleRate;
+                const long s0 = (long) (studio.playhead * sr) - 1024;
+                for (auto& ch : *tr.wave->a)
+                    for (long q = 0; q < 2048; ++q) { const long m = s0 + q; if (m >= 0 && m < (long) ch.size()) x[(size_t) q] += ch[(size_t) m] / (float) tr.wave->a->size(); }
+                any = true;
+            }
+            if (any)
+            {
+                std::vector<float> db; pw::fftDb (x, db);
+                for (int i = 0; i < SPEC_N; ++i)
+                {
+                    const double f0 = 20 * std::pow (1000.0, i / (double) SPEC_N), f1 = 20 * std::pow (1000.0, (i + 1) / (double) SPEC_N);
+                    const int b0 = std::max (1, (int) (f0 * 2048 / sr)), b1 = std::max (b0 + 1, (int) (f1 * 2048 / sr));
+                    float m = -120; for (int b = b0; b < std::min (b1, (int) db.size()); ++b) m = std::max (m, db[(size_t) b]);
+                    now[(size_t) i] = m + 3.0f * (float) std::log2 (f0 / 1000);   // tilted +3 dB/oct, so drums read flat-ish
+                }
+            }
+        }
+        // phosphor afterglow: up at once, down slowly
+        for (int i = 0; i < SPEC_N; ++i) spec[(size_t) i] = std::max (now[(size_t) i], spec[(size_t) i] - (float) dt * 40.0f);
+    }
+
+    // ---------------------------------------------------------------- Ember (the tube EQ)
+    Range emberRange (const std::string& key) const
+    {
+        if (key == "out") return { "out", -24, 24, false, true };
+        if (key == "drive") return { "drive", 0, 10, false, v.get ("tube", 1) > 0.5 };
+        for (const char* k : { "lfBoost", "lfAtten", "bw", "hfBoost", "hfAtten" }) if (key == k) return { key, 0, 10, false, v.get ("eqp", 1) > 0.5 };
+        return { "", 0, 1, false, false };
+    }
+    struct Steps { const char* path; std::vector<double> vals; std::vector<std::string> labels; const char* unit; };
+    static const Steps& emberSteps (const std::string& key)
+    {
+        static const Steps lf { "lf", { 20, 30, 60, 100 }, { "20", "30", "60", "100" }, "Hz" };
+        static const Steps hf { "hf", { 3, 4, 5, 8, 10, 12, 16 }, { "3", "4", "5", "8", "10", "12", "16" }, "kHz" };
+        static const Steps hfa { "hfa", { 5, 10, 20 }, { "5", "10", "20" }, "kHz" };
+        return key == "lf" ? lf : key == "hf" ? hf : hfa;
+    }
+    int stepIndex (const Steps& st, double def) const
+    {
+        const double cur = v.get (st.path, def); int b = 0;
+        for (size_t i = 0; i < st.vals.size(); ++i) if (std::abs (st.vals[i] - cur) < std::abs (st.vals[(size_t) b] - cur)) b = (int) i;
+        return b;
+    }
+    float heatNow = 0, flick[3] = { 0, 0, 0 }, flickT = 0;
+    static const std::vector<Ctl>& emberCtls()
+    {
+        static const std::vector<Ctl> c = {
+            { "lf", 100, 310, 26, 4 }, { "lfBoost", 220, 310, 26, 0 }, { "lfAtten", 340, 310, 26, 0 }, { "hf", 480, 310, 26, 4 }, { "bw", 600, 310, 26, 0 },
+            { "hfBoost", 720, 310, 26, 0 }, { "hfa", 860, 310, 26, 4 }, { "hfAtten", 980, 310, 26, 0 }, { "drive", 120, 462, 30, 0 }, { "out", 940, 462, 30, 0 },
+            { "eqp", 270, 476, 18, 2 }, { "meq", 350, 476, 18, 2 }, { "tube", 430, 476, 18, 2 }, { "natural", 670, 476, 18, 2 }, { "linear", 750, 476, 18, 2 } };
+        return c;
+    }
+    void eng (Canvas& c, const std::string& t, float px, float py, float size, float ls, unsigned col = 0xffefe2c4)
+    {
+        labelLS (c, t, px, py - 0.8f, 0, pw::oswald (S (size)), 0x8c000000, ls);
+        labelLS (c, t, px, py, 0, pw::oswald (S (size)), col, ls);
+    }
+    void litE (Canvas& c, const std::string& t, float px, float py, float size, float ls)
+    {
+        labelLS (c, t, px, py, 0, pw::oswald (S (size)), 0xffffb35a, ls);
+        c.setBlendMode (visage::BlendMode::Add); labelLS (c, t, px, py, 0, pw::oswald (S (size)), 0x80ff7a10, ls); c.setBlendMode (visage::BlendMode::Alpha);
+    }
+    void enix (Canvas& c, float px, float py, const std::string& t, float w)
+    {
+        const auto p = P (px, py);
+        c.setColor (0xff0d0703); c.roundedRectangle (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3));
+        c.setColor (0x40ffb35a); c.roundedRectangleBorder (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3), S (1));
+        glowLabel (c, t, px, py, 0, monoBold (S (10.5f)), 0xffffb35a, w);
+    }
+    void creamPtr (Canvas& c, float px, float py, float z, float r, float a, bool en = true)
+    {
+        const auto cc = P (px, py, z);
+        const float x0 = cc.x + std::cos (a) * S (r) * 0.25f, y0 = cc.y + std::sin (a) * S (r) * 0.25f, x1 = cc.x + std::cos (a) * S (r) * 0.92f, y1 = cc.y + std::sin (a) * S (r) * 0.92f;
+        c.setColor (0x80000000); c.segment (x0 + S (1), y0 + S (1), x1 + S (1), y1 + S (1), S (2.6f), true);
+        c.setColor (en ? 0xfff3ead6 : 0x80f3ead6); c.segment (x0, y0, x1, y1, S (2.6f), true);
+    }
+    void drawEmber (Canvas& c)
+    {
+        const float fw = S (FW), fh = S (FH), bx = BX(), by = BY(), pi = 3.14159265f, A0 = 0.75f * pi, ASP = 1.5f * pi;
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (ember_plate_jpg), bx, by, fw, fh);
+        // the valves: glow with Drive, flickering a touch while audio passes
+        {
+            const float heat = heatNow * (1 + 0.04f * (flick[0] + flick[1] + flick[2]) / 3);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (0xffffffff).withAlpha (std::clamp (heat, 0.0f, 1.0f)));
+            c.image (LD_IMG (ember_hot_jpg), bx, by, fw, fh);
+            c.setBlendMode (visage::BlendMode::Alpha);
+        }
+        // ---- VU needle
+        {
+            const float vx = 205, vy = 98, vw = 230, vh = 122, Rn = 0.92f * vh;
+            const auto a0 = P (vx - vw / 2, vy - vh / 2, -0.05f);
+            c.saveState(); c.trimClampBounds (a0.x, a0.y, S (vw / 1.01f), S (vh * 0.972f));
+            const float lv = studio.pluginLevel (v.who) * (float) std::pow (10.0, (v.get ("out", 0)) / 20);
+            const float vu = std::clamp (lv, 0.0f, 1.1f) / 1.1f;
+            const float a = (-128 + 76 * vu) * pi / 180;
+            const auto pc = P (vx, vy - vh / 2 + 1.18f * vh, -0.05f);
+            c.setColor (0x66000000); c.segment (pc.x + std::cos (a) * S (Rn * 0.45f) + S (3), pc.y + std::sin (a) * S (Rn * 0.45f) + S (2), pc.x + std::cos (a) * S (Rn + 14) + S (3), pc.y + std::sin (a) * S (Rn + 14) + S (2), S (1.5f), true);
+            c.setColor (0xff1a120a); c.segment (pc.x + std::cos (a) * S (Rn * 0.45f), pc.y + std::sin (a) * S (Rn * 0.45f), pc.x + std::cos (a) * S (Rn + 14), pc.y + std::sin (a) * S (Rn + 14), S (1.5f), true);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (0xffffa046).withAlpha (0.06f + 0.1f * heatNow)); c.fill (a0.x, a0.y, S (vw), S (vh));
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.restoreState();
+        }
+        // ---- the transformer cans' decals
+        for (int i = 0; i < 2; ++i)
+        {
+            const float x = i ? 922.0f : 808.0f, y = 96, r = 44;
+            labelLS (c, i ? "OUTPUT" : "INPUT", x, y - r * 0.58f, 0.29f, pw::oswald (S (8)), 0xbfefe2c4, 1.4f);
+            labelLS (c, "TRANSFORMER", x, y + r * 0.58f, 0.29f, pw::oswald (S (7)), 0x99efe2c4, 1.2f);
+        }
+        // ---- section headers with engraved rules
+        struct Hd { const char* t; float a, b; };
+        for (auto [t, a, b] : { Hd { "LOW FREQUENCY", 100, 340 }, Hd { "HIGH FREQUENCY", 480, 720 }, Hd { "ATTENUATION", 860, 980 } })
+        {
+            const float cx = (a + b) / 2, y = 238;
+            eng (c, t, cx, y, 11, 2.4f);
+            const float w = (textWidth (pw::oswald (S (11)), t) + S (2.4f) * (float) (std::strlen (t) - 1)) / S (1) / 2 + 10;
+            c.setColor (0x66efe2c4);
+            for (auto [x0, x1] : { std::pair<float, float> { a - 40, cx - w }, { cx + w, b + 40 } })
+                if (x1 > x0) { const auto p0 = P (x0, y), p1 = P (x1, y); c.fill (p0.x, p0.y, p1.x - p0.x, S (1)); }
+        }
+        // ---- row A
+        const float KY = 310;
+        auto stepped = [&] (const std::string& key, float px, const char* name, double def)
+        {
+            const auto& st = emberSteps (key); const int sel = stepIndex (st, def); const int n = (int) st.vals.size();
+            const bool en = v.get ("eqp", 1) > 0.5;
+            for (int i = 0; i < n; ++i)
+            {
+                const float a = A0 + ASP * i / (n - 1);
+                if (i == sel && en) litE (c, st.labels[(size_t) i], px + std::cos (a) * 50, KY + std::sin (a) * 49, 10, 0.3f);
+                else eng (c, st.labels[(size_t) i], px + std::cos (a) * 50, KY + std::sin (a) * 49, 10, 0.3f);
+            }
+            creamPtr (c, px, KY, 0.29f, 26 * 0.78f, A0 + ASP * sel / (n - 1), en);
+            eng (c, name, px, KY + 53, 11, 1.6f);
+            enix (c, px, KY + 75, st.labels[(size_t) sel] + " " + st.unit, 64);
+        };
+        auto cont = [&] (const std::string& key, float px, const char* name)
+        {
+            const auto R = rangeOf (key); const float pos = posOf (key);
+            ticks (c, px, KY, 37, 41, 11, 0x99efe2c4, 1.2f);
+            const char* tl[3] = { "0", "5", "10" };
+            for (int i = 0; i < 3; ++i) { const float a = A0 + ASP * i / 2; eng (c, tl[i], px + std::cos (a) * 50, KY + std::sin (a) * 49, 10, 0.3f); }
+            creamPtr (c, px, KY, 0.29f, 26 * 0.78f, A0 + ASP * pos, R.on);
+            eng (c, name, px, KY + 53, 11, 1.6f);
+            enix (c, px, KY + 75, text (key, pos), 64);
+        };
+        stepped ("lf", 100, "CPS", 60); cont ("lfBoost", 220, "BOOST"); cont ("lfAtten", 340, "ATTEN");
+        stepped ("hf", 480, "KCS", 10); cont ("bw", 600, "BANDWIDTH"); cont ("hfBoost", 720, "BOOST");
+        stepped ("hfa", 860, "ATTEN SEL", 20); cont ("hfAtten", 980, "ATTEN");
+        // ---- DRIVE / OUTPUT
+        for (int i = 0; i < 2; ++i)
+        {
+            const float px = i ? 940.0f : 120.0f, py = 462; const std::string key = i ? "out" : "drive";
+            const auto R = rangeOf (key); const float pos = posOf (key);
+            eng (c, i ? "OUTPUT" : "DRIVE", px, 404.5f, 11, 2);
+            const auto o = P (px, py); const float Rr = S (45);
+            if (R.on)
+            {
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (0x4dff7a10); c.arc (o.x - Rr - S (4), o.y - Rr - S (4), 2 * Rr + S (8), S (8), -0.75f * pi + ASP * pos / 2, ASP * pos / 2, true);
+                c.setBlendMode (visage::BlendMode::Alpha);
+                c.setColor (0xffffb35a); c.arc (o.x - Rr - S (1.3f), o.y - Rr - S (1.3f), 2 * Rr + S (2.6f), S (2.6f), -0.75f * pi + ASP * pos / 2, ASP * pos / 2, true);
+            }
+            creamPtr (c, px, py, 0.29f, 30 * 0.78f, A0 + ASP * pos, R.on);
+            enix (c, px, py + 56, R.on ? text (key, pos) : std::string ("off"), 70);
+        }
+        // ---- push buttons with jewel lamps
+        const char* bn[5] = { "EQP", "MID EQ", "TUBE", "NATURAL", "LINEAR" };
+        const bool lin = v.gets ("phase", "min") == "lin";
+        const bool on[5] = { v.get ("eqp", 1) > 0.5, v.get ("meq", 0) > 0.5, v.get ("tube", 1) > 0.5, ! lin, lin };
+        const float bxs[5] = { 270, 350, 430, 670, 750 };
+        for (int i = 0; i < 5; ++i)
+        {
+            if (on[i])
+            {
+                const auto j = P (bxs[i], 476 - 34, 0.06f);
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (0x40ff7814); c.circle (j.x - S (22), j.y - S (22), S (44));
+                c.setColor (0x99ff9628); c.circle (j.x - S (9), j.y - S (9), S (18));
+                c.setColor (0xf2ffe6a0); c.circle (j.x - S (4), j.y - S (4), S (8));
+                c.setBlendMode (visage::BlendMode::Alpha);
+                litE (c, bn[i], bxs[i], 476 + 34, 10.5f, 1.2f);
+            }
+            else eng (c, bn[i], bxs[i], 476 + 34, 10.5f, 1.2f);
+        }
+        eng (c, "PHASE", 710, 414, 11, 2.4f); eng (c, "SECTIONS", 350, 414, 11, 2.4f);
+        // ---- the green screen: the curve in phosphor, the live spectrum glowing behind it
+        {
+            const float cx = 530, cy = 466, cr = 46, z = -0.04f;
+            const auto o = P (cx, cy, z);
+            auto inCircle = [&] (float dx, float y) { const float h = std::sqrt (std::max (0.0f, cr * cr - dx * dx)); return std::clamp (y, cy - h, cy + h); };
+            c.setColor (0x1f7dffa0);
+            for (int i = -2; i <= 2; ++i)
+            {
+                const float d = i * cr / 3, h = std::sqrt (cr * cr - d * d);
+                { const auto p0 = P (cx - h, cy + d, z), p1 = P (cx + h, cy + d, z); c.fill (p0.x, p0.y, p1.x - p0.x, 1); }
+                { const auto p0 = P (cx + d, cy - h, z), p1 = P (cx + d, cy + h, z); c.fill (p0.x, p0.y, 1, p1.y - p0.y); }
+            }
+            const int W = (int) (2 * cr);
+            for (int i = 0; i < W; ++i)
+            {
+                const int si = std::clamp (i * SPEC_N / W, 0, SPEC_N - 1);
+                const float lvl = std::clamp ((spec[(size_t) si] + 60) / 60, 0.0f, 1.0f);
+                if (lvl <= 0.01f) continue;
+                const float dx = -cr + i, yb = inCircle (dx, cy + cr), yt = inCircle (dx, cy + cr - lvl * cr * 1.6f);
+                const auto p0 = P (cx + dx, yt, z), p1 = P (cx + dx, yb, z);
+                c.setColor (Brush::linear (Color (0x477dffa0), Color (0x0a7dffa0), Point (0, P (0, cy - cr, z).y), Point (0, P (0, cy + cr, z).y)));
+                c.fill (p0.x, p0.y, S (1.05f), p1.y - p0.y);
+            }
+            if (! v.curve.empty())
+            {
+                visage::Path cv;
+                for (int i = 0; i <= W; ++i)
+                {
+                    const int ci = std::clamp (i * (PluginView::CURVE_N - 1) / W, 0, PluginView::CURVE_N - 1);
+                    const float dx = -cr + i, y = inCircle (dx, cy - v.curve[(size_t) ci] * 2.2f);
+                    const auto q = P (cx + dx, y, z);
+                    if (i == 0) cv.moveTo (q.x, q.y); else cv.lineTo (q.x, q.y);
+                }
+                c.setBlendMode (visage::BlendMode::Add); c.setColor (0x597dffa0); c.stroke (cv, 0, 0, width(), height(), S (6)); c.setBlendMode (visage::BlendMode::Alpha);
+                c.setColor (0xff7dffa0); c.stroke (cv, 0, 0, width(), height(), S (2));
+            }
+            (void) o;
+        }
+        if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffefe2c4); draw::text (c, "BYPASSED", pw::oswald (S (28)), Font::kCenter, bx, by, fw, fh); }
+    }
+
     void draw (Canvas& c) override
     {
         // shadow, chrome, title bar
@@ -3654,7 +3925,7 @@ struct Studio::PluginWindow : visage::Frame
         c.roundedRectangle (0, 0, width(), S (38), S (10));
         c.setColor (0xff1a1a1e); c.fill (0, S (20), width(), S (18));
         c.setColor (0x99000000); c.fill (0, S (37), width(), 1);
-        const unsigned col = v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : 0xffff6a2a;
+        const unsigned col = v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : v.type == "pultec" ? 0xffffb35a : 0xffff6a2a;
         // bypass power
         {
             const float px = S (22), py = S (19), r = S (6.5f);
@@ -3672,6 +3943,7 @@ struct Studio::PluginWindow : visage::Frame
         if (v.type == "sat") drawSkull (c);
         else if (v.type == "comp") drawVise (c);
         else if (v.type == "gate") drawPort (c);
+        else if (v.type == "pultec") drawEmber (c);
         else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
     }
 
@@ -3682,6 +3954,11 @@ struct Studio::PluginWindow : visage::Frame
         {
             for (int i = 0; i < 5; ++i) { const auto mp = modelPos (i); const auto p = P (mp.x, mp.y); if (std::abs (q.x - p.x) < S (34) && std::abs (q.y - p.y) < S (11)) return "cm:" + std::to_string (i); }
             for (auto& ct : viseCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
+            return {};
+        }
+        if (v.type == "pultec")
+        {
+            for (auto& ct : emberCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
             return {};
         }
         if (v.type == "gate")
@@ -3740,6 +4017,17 @@ struct Studio::PluginWindow : visage::Frame
                 if (R.str) { if (studio.onMix) studio.onMix ("plugstr:" + cmodel() + ".ratio:" + R.vals[(size_t) nx], 0); }
                 else send ("set:" + cmodel() + ".ratio", std::stod (R.vals[(size_t) nx]));
                 return;
+            }
+        }
+        if (v.type == "pultec")
+        {
+            if (key == "eqp" || key == "meq" || key == "tube") { send ("set:" + key, v.get (key, key == "meq" ? 0 : 1) > 0.5 ? 0 : 1); return; }
+            if (key == "natural" || key == "linear") { if (studio.onMix) studio.onMix (std::string ("plugstr:phase:") + (key == "linear" ? "lin" : "min"), 0); return; }
+            if (key == "lf" || key == "hf" || key == "hfa")
+            {
+                const auto& st = emberSteps (key); const int n = (int) st.vals.size();
+                const int nx = (stepIndex (st, key == "lf" ? 60 : key == "hf" ? 10 : 20) + (e.isRightButton() ? n - 1 : 1)) % n;
+                send ("set:" + key, st.vals[(size_t) nx]); return;
             }
         }
         if (v.type == "gate")
@@ -3806,6 +4094,25 @@ struct Studio::PluginWindow : visage::Frame
     void advance (double dt)
     {
         if (! isVisible()) return;
+        if (v.type == "pultec" || v.type == "eq")
+        {
+            updateSpectrum (dt);
+            if (v.type == "pultec")
+            {
+                const float tgt = v.on && v.get ("tube", 1) > 0.5 ? std::min (1.0f, 0.25f + 0.75f * (float) v.get ("drive", 1) / 10) : 0.0f;
+                heatNow += (tgt - heatNow) * (float) std::min (1.0, dt * 4);
+                // flicker: smoothed noise per valve while audio passes, settling when it's quiet
+                const float lv = studio.pluginLevel (v.who);
+                flickT += (float) dt;
+                for (int i = 0; i < 3; ++i)
+                {
+                    const float n = std::sin (flickT * (5.1f + i * 1.7f) + i * 2.1f) * std::sin (flickT * (2.3f + i * 0.9f));
+                    flick[i] += ((lv > 0.02f ? n : 0.0f) - flick[i]) * (float) std::min (1.0, dt * 10);
+                }
+            }
+            redraw();
+            return;
+        }
         if (v.type == "gate")
         {
             const float tgt = openTarget();
@@ -4037,11 +4344,14 @@ void Studio::tick (double t)
 void Studio::setPlugin (PluginView p)
 {
     const bool wasOpen = pluginWin->isVisible();
+    const float oldW = pluginWin->FW;
     pluginWin->v = std::move (p);
     if (! pluginWin->v.open) { pluginWin->setVisible (false); redrawAll(); return; }
-    const float k = std::min (1.0f, (width() - 40) / PluginWindow::WW);
+    pluginWin->FW = pluginWin->v.type == "pultec" ? 1060.0f : 980.0f;
+    const float k = std::min (1.0f, (width() - 40) / pluginWin->WW());
     pluginWin->k = k;
-    if (! wasOpen) pluginWin->setBounds ((width() - PluginWindow::WW * k) / 2, std::max (20.0f, (height() - PluginWindow::WH * k) / 2), PluginWindow::WW * k, PluginWindow::WH * k);
+    if (! wasOpen || oldW != pluginWin->FW)
+        pluginWin->setBounds ((width() - pluginWin->WW() * k) / 2, std::max (20.0f, (height() - PluginWindow::WH * k) / 2), pluginWin->WW() * k, PluginWindow::WH * k);
     pluginWin->setVisible (true);
     pluginWin->redraw();
 }
