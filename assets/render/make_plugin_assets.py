@@ -117,3 +117,8 @@ if os.path.isdir(ed):
     jpg(cold, 'ember_plate')
     jpg(add_layer(load('ember_tubes.png'), cold), 'ember_hot')
     src = src0
+
+# ---------------------------------------------------------------- Prism
+prd = os.path.join(src, 'prism')
+if os.path.isdir(prd):
+    jpg(Image.open(os.path.join(prd, 'prism.png')).convert('RGBA'), 'prism_plate')

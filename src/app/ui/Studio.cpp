@@ -2921,6 +2921,7 @@ struct Studio::PluginWindow : visage::Frame
         if (v.type == "comp") return viseRange (key);
         if (v.type == "gate") return portRange (key);
         if (v.type == "pultec") return emberRange (key);
+        if (v.type == "eq") return prismRange (key);
         const auto m = model();
         if (key == "mix") return { "mix", 0, 1, false, true };
         if (key == "out") return { "out", -24, 24, false, true };
@@ -2948,7 +2949,14 @@ struct Studio::PluginWindow : visage::Frame
             { "dist.input", 5 }, { "dist.attack", 5 }, { "dist.release", 5 }, { "76.input", 6.2 }, { "76.attack", 3 }, { "76.release", 3 },
             { "fair.thresh", 5 }, { "fair.tc", 2 }, { "thr", -40 }, { "range", -40 }, { "hyst", 4 }, { "atk", 0.3 }, { "hold", 40 }, { "rel", 120 }, { "look", 1.5 },
             { "hpf", 20 }, { "lpf", 20000 }, { "lfBoost", 0 }, { "lfAtten", 0 }, { "bw", 5 }, { "hfBoost", 0 }, { "hfAtten", 0 }, { "drive", 1 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
-        auto i = d.find (path); return i == d.end() ? 0.0 : i->second;
+        auto i = d.find (path); if (i != d.end()) return i->second;
+        // Prism's bands: "bands.<n>.<what>"
+        auto ends = [&] (const char* e) { const std::string se (e); return path.size() > se.size() && path.compare (path.size() - se.size(), se.size(), se) == 0; };
+        if (ends (".f")) return 1000;
+        if (ends (".q")) return 1;
+        if (ends (".dyn.thr")) return -30;
+        if (ends (".dyn.range")) return -6;
+        return 0.0;
     }
     float posOf (const std::string& key) const
     {
@@ -2968,6 +2976,14 @@ struct Studio::PluginWindow : visage::Frame
     {
         const auto R = rangeOf (key); const double x = valueAt (key, pos);
         if (! R.on) return "off";
+        if (v.type == "eq")
+        {
+            auto ends = [&] (const char* e) { const std::string se (e); return R.path.size() > se.size() && R.path.compare (R.path.size() - se.size(), se.size(), se) == 0; };
+            if (ends (".f")) return x < 1000 ? draw::fmt ("%.0f Hz", x) : draw::fmt ("%.2f kHz", x / 1000);
+            if (ends (".q")) return draw::fmt ("%.2f", x);
+            if (ends (".dyn.thr")) return v.get (bandPath ("dyn.on"), 0) > 0.5 ? draw::fmt ("%.0f dB", x) : std::string ("off");
+            return draw::fmt ("%+.1f dB", x);
+        }
         if (v.type == "pultec")
         {
             if (R.path == "out") return draw::fmt ("%+.1f dB", x);
@@ -3916,6 +3932,329 @@ struct Studio::PluginWindow : visage::Frame
         if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffefe2c4); draw::text (c, "BYPASSED", pw::oswald (S (28)), Font::kCenter, bx, by, fw, fh); }
     }
 
+    // ---------------------------------------------------------------- Prism (the EQ)
+    // each band is one colour of the spectrum, from its beam out of the prism to its glow on the curve, its key and its knob rings
+    static constexpr unsigned BANDCOL[6] = { 0xffff5a5a, 0xffffa040, 0xffffe45a, 0xff57ff9e, 0xff57c8ff, 0xffb46bff };
+    int selBand = 0;
+    int nBands() const { return std::min (6, (int) v.get ("bands.count", 0)); }
+    std::string bandPath (const std::string& what, int b = -1) const { return "bands." + std::to_string (b < 0 ? selBand : b) + "." + what; }
+    std::string bandType (int b) const { return v.gets (bandPath ("type", b), "bell"); }
+    Range prismRange (const std::string& key) const
+    {
+        const bool has = selBand < nBands();
+        const bool cut = has && (bandType (selBand) == "lowcut" || bandType (selBand) == "highcut");
+        if (key == "out") return { "out", -24, 24, false, true };
+        if (key == "freq") return { bandPath ("f"), 20, 20000, true, has };
+        if (key == "gain") return { bandPath ("g"), -24, 24, false, has && ! cut && bandType (selBand) != "notch" };
+        if (key == "q") return { bandPath ("q"), 0.1, 10, true, has };
+        if (key == "dthr") return { bandPath ("dyn.thr"), -60, 0, false, has && v.get (bandPath ("dyn.on"), 0) > 0.5 };
+        if (key == "drange") return { bandPath ("dyn.range"), -24, 24, false, has && v.get (bandPath ("dyn.on"), 0) > 0.5 };
+        return { "", 0, 1, false, false };
+    }
+    // the graph: 20 Hz - 20 kHz across, +-24 dB
+    static constexpr float DX = 130, DY = 28, DW = 670, DH = 272, ZD = -0.1f;
+    static float FX (double f) { return DX + (float) (std::log10 (f / 20) / 3) * DW; }
+    static float GY (double d) { return DY + DH * 0.46f - (float) d / 24 * (DH * 0.42f); }
+    float nodeY (int b) const
+    {
+        const auto t = bandType (b);
+        if (t == "lowcut" || t == "highcut" || t == "notch") return GY (-3);
+        return GY (v.get (bandPath ("g", b), 0));
+    }
+    struct Drag2 { int band = -1; float x0 = 0, y0 = 0; double f0 = 0, g0 = 0, f = 0, g = 0; } node;
+    float meterL = 0, meterPk = 0;
+    void keyBase (Canvas& c, float x, float y, float w, float h, bool on, unsigned col)
+    {
+        const auto a = P (x - 2, y - 2, 0.03f);
+        if (on)
+        {
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (col).withAlpha (0.25f)); c.roundedRectangleBorder (a.x - S (2), a.y - S (2), S (w + 8), S (h + 8), S (8), S (5));
+            c.setColor (col); c.roundedRectangleBorder (a.x, a.y, S (w + 4), S (h + 4), S (6), S (2.4f));
+            c.setBlendMode (visage::BlendMode::Alpha);
+        }
+        else { c.setColor (Color (col).withAlpha (0.3f)); c.roundedRectangleBorder (a.x, a.y, S (w + 4), S (h + 4), S (6), S (1.4f)); }
+    }
+    void icon (Canvas& c, const std::string& kind, float cx, float cy, unsigned col, bool on)
+    {
+        const float z = 0.09f;
+        auto Q = [&] (float dx, float dy) { return P (cx + dx, cy + dy, z); };
+        const unsigned ink = on ? 0xffffffffu : 0xd914161au;
+        auto curve = [&] (auto f)
+        {
+            visage::Path pth;
+            for (int i = 0; i <= 24; ++i) { const float t = i / 24.0f; const auto q = Q (-14 + 28 * t, f (t)); if (i == 0) pth.moveTo (q.x, q.y); else pth.lineTo (q.x, q.y); }
+            if (on) { c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (col).withAlpha (0.5f)); c.stroke (pth, 0, 0, width(), height(), S (5)); c.setBlendMode (visage::BlendMode::Alpha); }
+            c.setColor (ink); c.stroke (pth, 0, 0, width(), height(), S (2));
+        };
+        auto seg = [&] (float x0, float y0, float x1, float y1) { const auto a = Q (x0, y0), b = Q (x1, y1); c.setColor (ink); c.segment (a.x, a.y, b.x, b.y, S (2), true); };
+        if (kind == "bell") curve ([] (float t) { return 4 - 9 * std::exp (-std::pow ((t - 0.5f) * 4.2f, 2.0f)); });
+        else if (kind == "lowshelf") curve ([] (float t) { return -4 + 8 / (1 + std::exp (-(t - 0.5f) * 14)); });
+        else if (kind == "highshelf") curve ([] (float t) { return 4 - 8 / (1 + std::exp (-(t - 0.5f) * 14)); });
+        else if (kind == "lowcut") curve ([] (float t) { return t < 0.45f ? 9 - (t / 0.45f) * 12 : -3.0f; });
+        else if (kind == "highcut") curve ([] (float t) { return t > 0.55f ? -3 + ((t - 0.55f) / 0.45f) * 12 : -3.0f; });
+        else if (kind == "notch") curve ([] (float t) { return -3 + 11 * std::exp (-std::pow ((t - 0.5f) * 14, 2.0f)); });
+        else if (kind == "dyn") curve ([] (float t) { return std::sin (t * 3.14159265f * 3) * 5 * (1 - t * 0.6f); });
+        else if (kind == "power")
+        {
+            const auto o = Q (0, 1); c.setColor (ink); c.arc (o.x - S (8), o.y - S (8), S (16), S (2), 0, 3.14159265f * 0.78f, true);
+            seg (0, -9, 0, 0);
+        }
+        else if (kind == "solo")
+        {
+            const auto o = Q (0, 2); c.setColor (ink); c.arc (o.x - S (9), o.y - S (9), S (18), S (2), 0, 3.14159265f / 2, true);
+            const auto l = Q (-11, 1), r = Q (6, 1); c.fill (l.x, l.y, S (5), S (8)); c.fill (r.x, r.y, S (5), S (8));
+        }
+        else if (kind == "delete") { seg (-8, -6, 8, -6); seg (-3, -9, 3, -9); seg (-6, -4, -5, 9); seg (-5, 9, 5, 9); seg (5, 9, 6, -4); }
+    }
+    void ringKnob (Canvas& c, float px, float py, float r, float pos, unsigned col, bool bip, bool en)
+    {
+        const float pi = 3.14159265f, rr = r * 1.24f;
+        const auto o = P (px, py, 0.016f);
+        c.setColor (0x0fffffff); c.arc (o.x - S (rr), o.y - S (rr), S (2 * rr), S (3), 0, 0.75f * pi, true);
+        if (en)
+        {
+            float s0 = bip ? 0.0f : -0.75f * pi, s1 = -0.75f * pi + 1.5f * pi * pos;
+            if (s1 < s0) std::swap (s0, s1);
+            if (s1 - s0 > 0.01f)
+            {
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (Color (col).withAlpha (0.3f)); c.arc (o.x - S (rr + 3), o.y - S (rr + 3), S (2 * rr + 6), S (8), (s0 + s1) / 2, (s1 - s0) / 2, true);
+                c.setColor (col); c.arc (o.x - S (rr + 0.5f), o.y - S (rr + 0.5f), S (2 * rr + 1), S (3.2f), (s0 + s1) / 2, (s1 - s0) / 2, true);
+                c.setBlendMode (visage::BlendMode::Alpha);
+            }
+        }
+        const auto t = P (px, py, 0.195f); const float a = 0.75f * pi + 1.5f * pi * pos;
+        c.setColor (en ? 0xe614161au : 0x7314161au);
+        c.segment (t.x + std::cos (a) * S (r) * 0.2f, t.y + std::sin (a) * S (r) * 0.2f, t.x + std::cos (a) * S (r) * 0.72f, t.y + std::sin (a) * S (r) * 0.72f, S (2.4f), true);
+    }
+    void pnix (Canvas& c, float px, float py, const std::string& t, float w, unsigned col)
+    {
+        const auto p = P (px, py);
+        c.setColor (0xff05070a); c.roundedRectangle (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3));
+        c.setColor (Color (col).withAlpha (0.25f)); c.roundedRectangleBorder (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3), S (1));
+        glowLabel (c, t, px, py, 0, monoBold (S (10.5f)), col, w);
+    }
+    void drawPrism (Canvas& c)
+    {
+        const float fw = S (FW), fh = S (FH), bx = BX(), by = BY();
+        const int nb = nBands();
+        if (selBand > nb) selBand = nb;
+        const unsigned sc = BANDCOL[std::min (selBand, 5)];
+        const Font f9 = uiFont (S (9)), f10 = uiFont (S (10));
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (prism_plate_jpg), bx, by, fw, fh);
+        // ---- the graph
+        {
+            const auto a = P (DX, DY, ZD), b = P (DX + DW, DY + DH, ZD);
+            c.saveState(); c.trimClampBounds (a.x, a.y, b.x - a.x, b.y - a.y);
+            c.setColor (0xd1020306); c.fill (a.x, a.y, b.x - a.x, b.y - a.y);
+            for (double f : { 30.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0 })
+            {
+                const auto q = P (FX (f), DY, ZD); c.setColor (0x12b4cdf0); c.fill (q.x, a.y, 1, b.y - a.y);
+                label (c, f >= 1000 ? draw::fmt ("%.0fk", f / 1000) : draw::fmt ("%.0f", f), FX (f), DY + DH - 12, ZD, f9, 0x73aabedc, 40);
+            }
+            for (int d : { -18, -12, -6, 0, 6, 12, 18 })
+            {
+                const auto q = P (DX, GY (d), ZD); c.setColor (d == 0 ? 0x29c8dcffu : 0x0d96b4dcu); c.fill (a.x, q.y, b.x - a.x, 1);
+                if (d) label (c, draw::fmt (d > 0 ? "+%.0f" : "%.0f", (double) d), DX + DW - 16, GY (d) - 7, ZD, f9, 0x66aabedc, 30);
+            }
+            // the beams from the prism's side to each band's node
+            for (int k = 0; k < nb; ++k)
+            {
+                const auto p0 = P (DX, DY + 40 + k * 14, ZD), p1 = P (FX (v.get (bandPath ("f", k), 1000)), nodeY (k), ZD);
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (Brush::linear (Color (BANDCOL[k]).withAlpha (0.0f), Color (BANDCOL[k]).withAlpha (k == selBand ? 0.3f : 0.14f), Point (p0.x, 0), Point (p1.x, 0)));
+                c.segment (p0.x, p0.y, p1.x, p1.y, S (k == selBand ? 6 : 3.5f), true);
+                c.setBlendMode (visage::BlendMode::Alpha);
+            }
+            // the live spectrum, as faint white light
+            {
+                const float base = DY + DH - 14;
+                visage::Path sp; { const auto q = P (DX, DY + DH, ZD); sp.moveTo (q.x, q.y); }
+                for (int i = 0; i <= SPEC_N; ++i)
+                {
+                    const float d = spec[(size_t) std::min (i, SPEC_N - 1)];
+                    const float y = std::clamp (base - (d + 72) / 72 * (DH - 24), DY, DY + DH);
+                    const auto q = P (DX + DW * i / SPEC_N, y, ZD); sp.lineTo (q.x, q.y);
+                }
+                { const auto q = P (DX + DW, DY + DH, ZD); sp.lineTo (q.x, q.y); } sp.close();
+                c.setColor (Brush::linear (Color (0x38dce6ff), Color (0x05dce6ff), Point (0, a.y), Point (0, b.y)));
+                c.fill (sp);
+            }
+            // each band's own shape as coloured light
+            for (int k = 0; k < nb && k < (int) v.bandCurves.size(); ++k)
+            {
+                const auto t = bandType (k);
+                if (t == "lowcut" || t == "highcut") continue;
+                visage::Path bp; { const auto q = P (DX, GY (0), ZD); bp.moveTo (q.x, q.y); }
+                const auto& cv = v.bandCurves[(size_t) k];
+                for (int i = 0; i < PluginView::CURVE_N; ++i) { const auto q = P (DX + DW * i / (PluginView::CURVE_N - 1), std::clamp (GY (cv[(size_t) i]), DY, DY + DH), ZD); bp.lineTo (q.x, q.y); }
+                { const auto q = P (DX + DW, GY (0), ZD); bp.lineTo (q.x, q.y); } bp.close();
+                c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (BANDCOL[k]).withAlpha (k == selBand ? 0.3f : 0.15f)); c.fill (bp); c.setBlendMode (visage::BlendMode::Alpha);
+            }
+            // the curve: white light
+            if (! v.curve.empty())
+            {
+                visage::Path cv;
+                for (int i = 0; i < PluginView::CURVE_N; ++i)
+                {
+                    const auto q = P (DX + DW * i / (PluginView::CURVE_N - 1), std::min (DY + DH + 4, GY (v.curve[(size_t) i])), ZD);
+                    if (i == 0) cv.moveTo (q.x, q.y); else cv.lineTo (q.x, q.y);
+                }
+                c.setBlendMode (visage::BlendMode::Add); c.setColor (0x4dffffff); c.stroke (cv, 0, 0, width(), height(), S (7)); c.setBlendMode (visage::BlendMode::Alpha);
+                c.setColor (0xfff4f8ff); c.stroke (cv, 0, 0, width(), height(), S (2.4f));
+            }
+            // the nodes
+            for (int k = 0; k < nb; ++k)
+            {
+                const auto q = P (FX (v.get (bandPath ("f", k), 1000)), nodeY (k), ZD);
+                const bool on = v.get (bandPath ("on", k), 1) > 0.5;
+                const float r = k == selBand ? 22 : 14;
+                c.setBlendMode (visage::BlendMode::Add);
+                for (int j = 3; j >= 1; --j) { c.setColor (Color (BANDCOL[k]).withAlpha ((on ? 0.22f : 0.08f) * (4 - j) / 3)); c.circle (q.x - S (r * j / 3), q.y - S (r * j / 3), S (2 * r * j / 3)); }
+                c.setBlendMode (visage::BlendMode::Alpha);
+                const float d = k == selBand ? 5 : 3.6f;
+                c.setColor (on ? 0xffffffffu : 0x80ffffffu); c.circle (q.x - S (d), q.y - S (d), S (2 * d));
+            }
+            if (selBand < nb)
+            {
+                const double f = v.get (bandPath ("f"), 1000), g = v.get (bandPath ("g"), 0);
+                const std::string t = (f >= 1000 ? draw::fmt ("%.2f kHz", f / 1000) : draw::fmt ("%.0f Hz", f)) + "  " + draw::fmt ("%+.1f dB", g);
+                float nx = FX (f) + 18, ny = nodeY (selBand) - 34;
+                if (nx + 120 > DX + DW) nx = FX (f) - 130;
+                if (ny < DY + 4) ny = nodeY (selBand) + 14;
+                const auto q = P (nx, ny, ZD);
+                c.setColor (0xeb04060a); c.roundedRectangle (q.x, q.y, S (112), S (22), S (5));
+                c.setColor (Color (sc).withAlpha (0.4f)); c.roundedRectangleBorder (q.x, q.y, S (112), S (22), S (5), S (1));
+                glowLabel (c, t, nx + 56, ny + 11, ZD, uiFont (S (10)), sc, 112);
+            }
+            if (nb == 0) label (c, "Press a BAND key to add a band", DX + DW / 2, DY + DH * 0.46f - 24, ZD, uiFont (S (12)), 0x99c8d2e6, 400);
+            c.restoreState();
+        }
+        // ---- the beam: white in from the left, through the prism, out as six colours
+        {
+            const float px = 66, py = 160, side = 82, h = side * 0.8660254f, inY = py - h / 6, lx = px - side / 4, rx = px + side / 4;
+            c.setBlendMode (visage::BlendMode::Add);
+            auto wb = [&] (float x0, float y0, float x1, float y1, unsigned col, float w, float al)
+            { const auto a = P (x0, y0, 0.25f), b = P (x1, y1, 0.25f); c.setColor (Color (col).withAlpha (al)); c.segment (a.x, a.y, b.x, b.y, S (w), true); };
+            wb (-10, inY + 6, lx, inY, 0xffffffff, 8, 0.25f); wb (-10, inY + 6, lx, inY, 0xffffffff, 2, 0.95f);
+            const auto ig = P (px, inY, 0.25f);
+            for (int j = 3; j >= 1; --j) { c.setColor (Color (0xffffffff).withAlpha (0.12f * (4 - j))); c.circle (ig.x - S (10 * j), ig.y - S (10 * j), S (20 * j)); }
+            for (int k = 0; k < 6; ++k)
+            {
+                const bool live = k < nb;
+                wb (rx, inY + k * 1.2f, DX + 2, DY + 40 + k * 14, BANDCOL[k], 6, live ? 0.25f : 0.07f);
+                wb (rx, inY + k * 1.2f, DX + 2, DY + 40 + k * 14, BANDCOL[k], 1.6f, live ? 0.95f : 0.25f);
+            }
+            c.setBlendMode (visage::BlendMode::Alpha);
+        }
+        glowLabel (c, "P R I S M", 66, 22, 0, boldFont (S (15)), 0xffffffff, 120);
+        // ---- the meter: two segmented bars and a peak line
+        {
+            const float mx = 840, my = 40, mw = 56, mh = 206, zz = -0.06f; const int segs = 34; const float bw = 16;
+            const float lvDb = meterL > 1e-6f ? 20 * std::log10 (meterL) : -120, pkDb = meterPk > 1e-6f ? 20 * std::log10 (meterPk) : -120;
+            auto tOf = [] (float db) { return std::clamp ((db + 60) / 60, 0.0f, 1.0f); };
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const float x = mx + 10 + ch * (bw + 4);
+                for (int k = 0; k < segs; ++k)
+                {
+                    const float t = (float) k / segs, yy = my + mh - 8 - (k + 1) * (mh - 16) / segs;
+                    const bool lit = t < tOf (lvDb);
+                    const unsigned col = t > 0.92f ? 0xffff5a5a : t > 0.82f ? 0xffffe45a : 0xffe8f4ff;
+                    const auto q = P (x, yy + 1, zz);
+                    c.setColor (lit ? col : 0x0dffffffu); c.fill (q.x, q.y, S (bw), S ((mh - 16) / segs - 2));
+                }
+                const auto q = P (x, my + mh - 8 - tOf (pkDb) * (mh - 16), zz);
+                if (pkDb > -60) { c.setColor (0xffffffff); c.fill (q.x, q.y, S (bw), S (1.6f)); }
+            }
+            const float marks[5][2] = { { 0, 1 }, { -6, 0.9f }, { -12, 0.8f }, { -24, 0.6f }, { -48, 0.2f } };
+            for (auto& m : marks) label (c, draw::fmt ("%.0f", m[0]), mx + mw + 16, my + mh - 8 - m[1] * (mh - 16), 0, f9, 0x99e1e6f0, 30);
+            labelLS (c, "OUT", mx + mw / 2, my + mh + 13, 0, f10, 0xbfe1e6f0, 2);
+            pnix (c, mx + mw / 2, my + mh + 32, pkDb > -100 ? draw::fmt ("%.1f dB", pkDb) : std::string ("-inf"), 62, 0xffffffff);
+        }
+        // ---- keys
+        for (int k = 0; k < 6; ++k)
+        {
+            const float x = 130 + k * 52, y = 324; const bool on = k == selBand && k < nb, exists = k < nb, addable = k == nb;
+            keyBase (c, x, y, 40, 36, on, exists || addable ? BANDCOL[k] : 0x40ffffffu);
+            label (c, exists ? std::to_string (k + 1) : addable ? std::string ("+") : std::to_string (k + 1), x + 20, y + 18, 0.09f, uiFont (S (15)),
+                   on ? 0xffffffffu : exists ? BANDCOL[k] : addable ? Color (BANDCOL[k]).withAlpha (0.6f).toARGB() : 0x33ffffffu, 40);
+        }
+        static const char* SH[6] = { "bell", "lowshelf", "highshelf", "lowcut", "highcut", "notch" };
+        const bool has = selBand < nb;
+        for (int i = 0; i < 6; ++i)
+        {
+            const float x = 470 + i * 52, y = 324; const bool on = has && bandType (selBand) == SH[i];
+            keyBase (c, x, y, 40, 36, on, has ? sc : 0x40ffffffu);
+            icon (c, SH[i], x + 20, y + 18, sc, on);
+        }
+        labelLS (c, "BAND", 130 + (5 * 52 + 40) / 2.0f, 312, 0, uiFont (S (9.5f)), 0x8ce1e6f0, 2.5f);
+        labelLS (c, "SHAPE", 470 + (5 * 52 + 40) / 2.0f, 312, 0, uiFont (S (9.5f)), 0x8ce1e6f0, 2.5f);
+        const char* LK[3] = { "power", "solo", "delete" };
+        for (int i = 0; i < 3; ++i)
+        {
+            const float x = 46, y = 390 + i * 48.0f;
+            const bool on = has && i == 0 && v.get (bandPath ("on"), 1) > 0.5;
+            keyBase (c, x, y, 40, 36, on, has && i != 1 ? sc : 0x30ffffffu);
+            icon (c, LK[i], x + 20, y + 18, sc, on);
+        }
+        {
+            const bool dyn = has && v.get (bandPath ("dyn.on"), 0) > 0.5;
+            keyBase (c, 480, 448, 40, 36, dyn, has ? sc : 0x40ffffffu); icon (c, "dyn", 500, 466, sc, dyn);
+            labelLS (c, "DYNAMIC", 500, 420, 0, f10, 0xcce1e6f0, 1.6f);
+        }
+        {
+            const bool lin = v.gets ("phase", "min") == "lin";
+            keyBase (c, 822, 316, 92, 36, true, 0xffffffff);
+            glowLabel (c, lin ? "LINEAR" : "NATURAL", 868, 334, 0.09f, uiFont (S (10.5f)), 0xffffffff, 92);
+            labelLS (c, "PHASE", 868, 302, 0, f10, 0xbfe1e6f0, 2);
+        }
+        {
+            const float x = 28, y = 326, w = 80;
+            labelLS (c, "BAND", x + w / 2, y + 11, -0.05f, uiFont (S (8.5f)), 0x99dce1eb, 1.5f);
+            glowLabel (c, has ? std::to_string (selBand + 1) : std::string ("-"), x + w / 2, y + 32, -0.05f, boldFont (S (24)), sc, 60);
+        }
+        // ---- knobs
+        const char* kk[5] = { "freq", "gain", "q", "dthr", "drange" };
+        const char* kl[5] = { "FREQ", "GAIN", "Q", "DYN THRESH", "DYN RANGE" };
+        const float kx[5] = { 180, 290, 400, 600, 710 };
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto R = rangeOf (kk[i]); const float pos = posOf (kk[i]);
+            ringKnob (c, kx[i], 466, 22, pos, sc, i == 1 || i == 4, R.on);
+            labelLS (c, kl[i], kx[i], 420, 0, f10, 0xcce1e6f0, 1.6f);
+            pnix (c, kx[i], 512, R.on ? text (kk[i], pos) : std::string (has ? "--" : ""), 82, sc);
+        }
+        {
+            const float pos = posOf ("out");
+            ringKnob (c, 868, 466, 24, pos, 0xffffffff, true, true);
+            labelLS (c, "OUTPUT", 868, 418, 0, f10, 0xcce1e6f0, 1.6f);
+            pnix (c, 868, 516, text ("out", pos), 72, 0xffffffff);
+        }
+        if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffe8eef8); draw::text (c, "BYPASSED", boldFont (S (28)), Font::kCenter, bx, by, fw, fh); }
+    }
+    std::string prismAt (Point q)
+    {
+        auto in = [&] (float x, float y, float w, float h, float z = 0.05f) { const auto a = P (x, y, z); return q.x >= a.x && q.x < a.x + S (w) && q.y >= a.y && q.y < a.y + S (h); };
+        for (int k = 0; k < 6; ++k) if (in (130 + k * 52, 324, 40, 36)) return "band:" + std::to_string (k);
+        for (int i = 0; i < 6; ++i) if (in (470 + i * 52, 324, 40, 36)) return "shape:" + std::to_string (i);
+        for (int i = 0; i < 3; ++i) if (in (46, 390 + i * 48.0f, 40, 36)) return std::string (i == 0 ? "bandon" : i == 1 ? "solo" : "delete");
+        if (in (480, 448, 40, 36)) return "dyn";
+        if (in (822, 316, 92, 36)) return "phase";
+        const char* kk[5] = { "freq", "gain", "q", "dthr", "drange" }; const float kx[5] = { 180, 290, 400, 600, 710 };
+        for (int i = 0; i < 5; ++i) { const auto p = P (kx[i], 466, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (28)) return kk[i]; }
+        { const auto p = P (868, 466, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (30)) return "out"; }
+        // a node on the graph
+        for (int k = nBands() - 1; k >= 0; --k)
+        {
+            const auto p = P (FX (v.get (bandPath ("f", k), 1000)), nodeY (k), ZD);
+            if (std::hypot (q.x - p.x, q.y - p.y) < S (14)) return "node:" + std::to_string (k);
+        }
+        return {};
+    }
+
     void draw (Canvas& c) override
     {
         // shadow, chrome, title bar
@@ -3925,7 +4264,7 @@ struct Studio::PluginWindow : visage::Frame
         c.roundedRectangle (0, 0, width(), S (38), S (10));
         c.setColor (0xff1a1a1e); c.fill (0, S (20), width(), S (18));
         c.setColor (0x99000000); c.fill (0, S (37), width(), 1);
-        const unsigned col = v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : v.type == "pultec" ? 0xffffb35a : 0xffff6a2a;
+        const unsigned col = v.type == "eq" ? BANDCOL[std::min (selBand, 5)] : v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : v.type == "pultec" ? 0xffffb35a : 0xffff6a2a;
         // bypass power
         {
             const float px = S (22), py = S (19), r = S (6.5f);
@@ -3944,6 +4283,7 @@ struct Studio::PluginWindow : visage::Frame
         else if (v.type == "comp") drawVise (c);
         else if (v.type == "gate") drawPort (c);
         else if (v.type == "pultec") drawEmber (c);
+        else if (v.type == "eq") drawPrism (c);
         else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
     }
 
@@ -3956,6 +4296,7 @@ struct Studio::PluginWindow : visage::Frame
             for (auto& ct : viseCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
             return {};
         }
+        if (v.type == "eq") return const_cast<PluginWindow*> (this)->prismAt (q);
         if (v.type == "pultec")
         {
             for (auto& ct : emberCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
@@ -4019,6 +4360,42 @@ struct Studio::PluginWindow : visage::Frame
                 return;
             }
         }
+        if (v.type == "eq")
+        {
+            const int nb = nBands();
+            auto plug = [&] (const std::string& a) { if (studio.onMix) studio.onMix (a, 0); };
+            if (key.rfind ("band:", 0) == 0)
+            {
+                const int k = std::stoi (key.substr (5));
+                if (k < nb) { selBand = k; redraw(); return; }
+                if (k == nb)
+                {
+                    // a new band where it's most likely wanted: the ends cut, the middle bells
+                    static const double F[6] = { 30, 100, 400, 2000, 6000, 16000 };
+                    static const char* T[6] = { "lowcut", "bell", "bell", "bell", "highshelf", "highcut" };
+                    selBand = k;
+                    plug ("plugband:add:" + std::string (T[k]) + ":" + draw::fmt ("%.0f", F[k]));
+                }
+                return;
+            }
+            if (key == "phase") { plug (std::string ("plugstr:phase:") + (v.gets ("phase", "min") == "lin" ? "min" : "lin")); return; }
+            if (selBand >= nb && key != "out") return;
+            if (key.rfind ("shape:", 0) == 0)
+            {
+                static const char* SH[6] = { "bell", "lowshelf", "highshelf", "lowcut", "highcut", "notch" };
+                plug ("plugstr:" + bandPath ("type") + ":" + SH[std::stoi (key.substr (6))]); return;
+            }
+            if (key == "bandon") { send ("set:" + bandPath ("on"), v.get (bandPath ("on"), 1) > 0.5 ? 0 : 1); return; }
+            if (key == "solo") return;
+            if (key == "delete") { plug ("plugband:del:" + std::to_string (selBand)); selBand = std::max (0, selBand - 1); return; }
+            if (key == "dyn") { send ("set:" + bandPath ("dyn.on"), v.get (bandPath ("dyn.on"), 0) > 0.5 ? 0 : 1); return; }
+            if (key.rfind ("node:", 0) == 0)
+            {
+                const int k = std::stoi (key.substr (5)); selBand = k;
+                node = {}; node.band = k; node.x0 = q.x; node.y0 = q.y; node.f0 = node.f = v.get (bandPath ("f", k), 1000); node.g0 = node.g = v.get (bandPath ("g", k), 0);
+                redraw(); return;
+            }
+        }
         if (v.type == "pultec")
         {
             if (key == "eqp" || key == "meq" || key == "tube") { send ("set:" + key, v.get (key, key == "meq" ? 0 : 1) > 0.5 ? 0 : 1); return; }
@@ -4073,6 +4450,17 @@ struct Studio::PluginWindow : visage::Frame
             studio.redrawAll();
             return;
         }
+        if (node.band >= 0)
+        {
+            // drag a node: across is frequency, up and down is gain (cuts and notches only move across)
+            const float ppx = S (DW / 1.01f), ppy = S (DH * 0.42f * 0.972f / 24);
+            node.f = std::clamp (node.f0 * std::pow (1000.0, (e.position.x - node.x0) / ppx), 20.0, 20000.0);
+            const auto t = bandType (node.band);
+            if (t != "lowcut" && t != "highcut" && t != "notch") node.g = std::clamp (node.g0 - (e.position.y - node.y0) / ppy, -24.0, 24.0);
+            v.num[bandPath ("f", node.band)] = node.f; v.num[bandPath ("g", node.band)] = node.g;
+            redraw();
+            return;
+        }
         if (dragKey.empty()) return;
         liveV = std::clamp (dragV0 + (dragY0 - e.position.y) / S (220), 0.0f, 1.0f);
         redraw();
@@ -4088,6 +4476,12 @@ struct Studio::PluginWindow : visage::Frame
             if (R.path == "scHpf" || R.path == "chan.release" || (R.path == "chan.attack" && val >= 10)) val = std::round (val);
             send ("set:" + R.path, val);
         }
+        if (node.band >= 0)
+        {
+            if (std::abs (node.f - node.f0) > 0.01) send ("set:" + bandPath ("f", node.band), std::round (node.f * (node.f < 1000 ? 1 : 0.1)) / (node.f < 1000 ? 1 : 0.1));
+            if (std::abs (node.g - node.g0) > 0.01) send ("set:" + bandPath ("g", node.band), std::round (node.g * 10) / 10);
+            node.band = -1;
+        }
         moving = false; dragKey.clear(); liveV = NAN;
     }
 
@@ -4097,6 +4491,12 @@ struct Studio::PluginWindow : visage::Frame
         if (v.type == "pultec" || v.type == "eq")
         {
             updateSpectrum (dt);
+            if (v.type == "eq")
+            {
+                const float lv = studio.pluginLevel (v.who) * (float) std::pow (10.0, v.get ("out", 0) / 20);
+                meterL = std::max (lv, meterL * (float) std::pow (0.02, dt));
+                meterPk = std::max (lv, meterPk - (float) dt * 0.15f * meterPk);
+            }
             if (v.type == "pultec")
             {
                 const float tgt = v.on && v.get ("tube", 1) > 0.5 ? std::min (1.0f, 0.25f + 0.75f * (float) v.get ("drive", 1) / 10) : 0.0f;

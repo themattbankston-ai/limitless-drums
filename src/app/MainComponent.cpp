@@ -1641,7 +1641,18 @@ void MainComponent::refreshPlugin()
                     {
                         const auto key = pre + kv.name.toString().toStdString();
                         const auto& x = kv.value;
-                        if (x.isObject()) flat (x, key + ".");
+                        if (auto* arr = x.getArray())   // first: in JUCE an array also says isObject()
+                        {
+                            pv.num[key + ".count"] = arr->size();
+                            for (int i = 0; i < arr->size(); ++i)
+                            {
+                                const auto& el = (*arr)[i]; const auto k2 = key + "." + std::to_string (i);
+                                if (el.isObject()) flat (el, k2 + ".");
+                                else if (el.isString()) pv.str[k2] = el.toString().toStdString();
+                                else pv.num[k2] = (double) el;
+                            }
+                        }
+                        else if (x.isObject()) flat (x, key + ".");
                         else if (x.isBool()) pv.num[key] = (bool) x ? 1.0 : 0.0;
                         else if (x.isInt() || x.isInt64() || x.isDouble()) pv.num[key] = (double) x;
                         else if (x.isString()) pv.str[key] = x.toString().toStdString();
@@ -1806,6 +1817,34 @@ void MainComponent::onMixAction (const std::string& a, double v)
         change ([v] (hl::Session& s) { s.busMute = v > 0.5; }, v > 0.5 ? "Drum bus muted." : "Drum bus on.");
         return;
     }
+    if (a.rfind ("plugband:", 0) == 0)
+    {
+        // Prism's bands: add ("plugband:add:<type>:<freq>") or delete ("plugband:del:<n>")
+        if (plugT < -1) return;
+        const int t = plugT, k = plugK;
+        juce::StringArray parts; parts.addTokens (juce::String (a), ":", "");
+        const bool add = parts[1] == "add";
+        const juce::String type = parts[2]; const double f = parts[3].getDoubleValue(); const int del = parts[2].getIntValue();
+        change ([t, k, add, type, f, del] (hl::Session& s)
+        {
+            juce::var& ii = t < 0 ? s.busIns : s.tracks[(size_t) t].strip.inserts;
+            if (! ii.isArray() || k >= ii.getArray()->size()) return;
+            auto* po = ii[k]["p"].getDynamicObject(); if (! po) return;
+            juce::var bands = po->getProperty ("bands");
+            if (! bands.isArray()) { bands = juce::var (juce::Array<juce::var>()); po->setProperty ("bands", bands); }
+            auto* arr = bands.getArray();
+            if (add)
+            {
+                if (arr->size() >= 6) return;
+                auto* b = new juce::DynamicObject();
+                b->setProperty ("type", type); b->setProperty ("f", f); b->setProperty ("g", 0.0); b->setProperty ("q", type == "bell" ? 1.0 : 0.71);
+                b->setProperty ("on", true); if (type == "lowcut" || type == "highcut") b->setProperty ("slope", 24);
+                arr->add (juce::var (b));
+            }
+            else if (del >= 0 && del < arr->size()) arr->remove (del);
+        }, add ? "Prism: band added." : "Prism: band removed.");
+        return;
+    }
     if (a.rfind ("plug", 0) == 0)
     {
         // the plugin window: open / close / bypass, and setting one of its values by path ("decap.drive")
@@ -1836,6 +1875,13 @@ void MainComponent::onMixAction (const std::string& a, double v)
             juce::StringArray parts; parts.addTokens (juce::String (path), ".", "");
             for (int i = 0; i + 1 < parts.size(); ++i)
             {
+                if (node.isArray())
+                {
+                    const int idx = parts[i].getIntValue();
+                    if (idx < 0 || idx >= node.getArray()->size()) return;
+                    node = (*node.getArray())[idx];
+                    continue;
+                }
                 juce::var nx = node[juce::Identifier (parts[i])];
                 if (! nx.isObject()) { nx = juce::var (new juce::DynamicObject()); if (auto* o = node.getDynamicObject()) o->setProperty (parts[i], nx); }
                 node = nx;
@@ -1863,16 +1909,27 @@ void MainComponent::onMixAction (const std::string& a, double v)
                 // Portcullis
                 { "thr", "Threshold" }, { "range", "Range" }, { "ratio", "Ratio" }, { "hyst", "Hysteresis" }, { "atk", "Attack" }, { "hold", "Hold" },
                 { "rel", "Release" }, { "look", "Look-ahead" }, { "hpf", "Key HPF" }, { "lpf", "Key LPF" }, { "listen", "Key listen" }, { "flip", "Flip" }, { "keyT", "Key" },
+                { "phase", "Phase" }, { "out", "Output" },
                 // Ember
                 { "lf", "Low frequency" }, { "lfBoost", "Low boost" }, { "lfAtten", "Low atten" }, { "hf", "High frequency" }, { "bw", "Bandwidth" },
                 { "hfBoost", "High boost" }, { "hfa", "Atten select" }, { "hfAtten", "High atten" }, { "drive", "Drive" }, { "eqp", "EQP section" },
                 { "meq", "Mid EQ section" }, { "tube", "Tube" }, { "phase", "Phase" } };
             const auto& arr = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
             const juce::String plug (insertDisplayName (arr[k]["type"].toString()));
-            const auto n = names.count (path) ? names.at (path) : path;
+            std::string n = names.count (path) ? names.at (path) : path;
+            if (path.rfind ("bands.", 0) == 0)
+            {
+                // "bands.2.dyn.thr" -> "Band 3 dynamic threshold"
+                const auto d1 = path.find ('.', 6); const int bi = std::atoi (path.substr (6, d1 - 6).c_str());
+                const auto w = path.substr (d1 + 1);
+                static const std::map<std::string, std::string> bw { { "f", "frequency" }, { "g", "gain" }, { "q", "Q" }, { "on", "" }, { "type", "shape" },
+                    { "dyn.on", "dynamic" }, { "dyn.thr", "dynamic threshold" }, { "dyn.range", "dynamic range" } };
+                n = "Band " + std::to_string (bi + 1) + (bw.count (w) ? (bw.at (w).empty() ? "" : " " + bw.at (w)) : " " + w);
+            }
             juce::String val2;
             if (isStr) val2 = juce::String (sval).toUpperCase();
-            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip" || path == "eqp" || path == "meq" || path == "tube") val2 = val > 0.5 ? "on" : "off";
+            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip" || path == "eqp" || path == "meq" || path == "tube"
+                     || (path.rfind ("bands.", 0) == 0 && (path.size() > 3 && (path.substr (path.size() - 3) == ".on")))) val2 = val > 0.5 ? "on" : "off";
             else if (path == "keyT") val2 = val < 0 ? juce::String ("self") : juce::String (S.tracks[(size_t) (int) val].mic);
             else if ((path == "decap.lowcut" || path == "decap.highcut") && val == 0) val2 = "off";
             else if (path == "mix") val2 = juce::String (juce::roundToInt (val * 100)) + " %";

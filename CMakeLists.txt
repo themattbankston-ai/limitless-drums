@@ -139,6 +139,7 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_eyes.jpg
         assets/ui/plugins/skull_plate.jpg
         assets/ui/plugins/vise_plate.jpg
+        assets/ui/plugins/prism_plate.jpg
         assets/ui/plugins/ember_plate.jpg
         assets/ui/plugins/ember_hot.jpg
         assets/ui/plugins/port_plate.jpg
