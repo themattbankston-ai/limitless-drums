@@ -178,6 +178,32 @@ TEST_CASE ("Song mode: a whole session, tightened and exported")
     S.exp.verbs = "print";
     names.clear();
     CHECK (ld::hl::writeKit (S, M, [&] (const std::string& p, const juce::MemoryBlock&) { names.push_back (p); }) == (int) S.tracks.size() + 1);
+
+    // LD-06: at another sample rate every requested file is still written (the bus and returns were silently dropped),
+    // at that rate and the same length in time as the mics
+    S.exp.verbs = "send";
+    const double other = S.sr == 96000 ? 48000 : 96000;
+    S.exp.rate = juce::String (other).toStdString();
+    const auto tmp = juce::File::createTempFile ("ld-rate");
+    tmp.createDirectory();
+    names.clear();
+    const int n2 = ld::hl::writeKit (S, M, [&] (const std::string& p, const juce::MemoryBlock& b)
+    {
+        names.push_back (p);
+        auto f = tmp.getChildFile (juce::String (p).replaceCharacter ('/', '_'));
+        f.replaceWithData (b.getData(), b.getSize());
+    });
+    CHECK (n2 == (int) S.tracks.size() + 2);
+    long micFrames = -1, busFrames = -2;
+    for (auto& nm : names)
+    {
+        const auto w = readWav (tmp.getChildFile (juce::String (nm).replaceCharacter ('/', '_')));
+        CHECK (w.sampleRate == other);
+        if (nm.find ("Drum Bus.wav") != std::string::npos) busFrames = (long) w.channels[0].size();
+        else if (micFrames < 0 && nm.find ("Return") == std::string::npos) micFrames = (long) w.channels[0].size();
+    }
+    CHECK (busFrames == micFrames);
+    tmp.deleteRecursively();
 }
 
 TEST_CASE ("Song mode: mics with names that say nothing still give hits and a tempo")

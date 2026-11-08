@@ -169,6 +169,8 @@ Chs satRender (const Chs& chs, double sr, const juce::var& P)
                 for (size_t q = 0; q < n; ++q) hi[q] = (float) ((double) x[q] - lo[q]);
                 const auto yl = os4 (lo, curveFn (g * 2.2, st.b, "tanh"));
                 for (size_t q = 0; q < n; ++q) hi[q] = (float) (hi[q] + (double) yl[q]);
+                // Tone applies here too (Hitline skipped it for Transformer, so the knob did nothing)
+                if (tone != 0) hi = eqMin (hi, sr, [&] (double q) { return bandMag (tilt, q); });
                 wet.push_back (std::move (hi));
                 continue;
             }
@@ -233,14 +235,19 @@ Chs satRender (const Chs& chs, double sr, const juce::var& P)
 namespace
 {
     juce::var irLibrary;
-    uint32_t rngS = 1;
-    double rnd() { rngS = (uint32_t) (((uint64_t) rngS * 1664525u + 1013904223u) & 0xffffffffu); return rngS / 4294967296.0; }
-    double gau() { double u = 0; while (u == 0) u = rnd(); return std::sqrt (-2 * std::log (u)) * std::cos (2 * M_PI * rnd()); }
+    // Hitline's LCG, one per reverb being built (it was shared, so two reverbs built at once on different threads
+    // could interleave draws and come out different from render to render)
+    struct Rng
+    {
+        uint32_t s = 1;
+        double rnd() { s = (uint32_t) (((uint64_t) s * 1664525u + 1013904223u) & 0xffffffffu); return s / 4294967296.0; }
+        double gau() { double u = 0; while (u == 0) u = rnd(); return std::sqrt (-2 * std::log (u)) * std::cos (2 * M_PI * rnd()); }
+    };
     const double IRB[9] = { 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
 
     F32 synthTail (long n, double sr, const std::vector<std::pair<double, double>>& bands, uint32_t seed, double gateS)
     {
-        rngS = seed;
+        Rng rng { seed };
         const int N = 2048, H = 512;
         F32 out ((size_t) (n + N), 0.0f);
         F64 re (N), im (N), win (N);
@@ -269,7 +276,7 @@ namespace
                 const double f = binB[(size_t) k];
                 const int j = (int) std::floor (f);
                 const double u = f - j, p = pw[(size_t) j] * (1 - u) + pw[(size_t) std::min (j + 1, (int) pw.size() - 1)] * u, a = std::sqrt (p);
-                re[(size_t) k] = a * gau(); im[(size_t) k] = a * gau();
+                re[(size_t) k] = a * rng.gau(); im[(size_t) k] = a * rng.gau();
                 re[(size_t) (N - k)] = re[(size_t) k]; im[(size_t) (N - k)] = -im[(size_t) k];
             }
             fft (re, im, true);
@@ -326,6 +333,7 @@ namespace
 }
 
 void setReverbLibrary (const juce::var& irlib) { irLibrary = irlib; }
+void clearReverbCache() { std::lock_guard<std::mutex> lock (irMutex); irCache.clear(); }
 
 std::pair<F32, F32> verbIR (const juce::var& p, double sr)
 {
@@ -352,16 +360,16 @@ std::pair<F32, F32> verbIR (const juce::var& p, double sr)
         const auto era = str (p, "era", "Now");
         const double eraLp = era == "1970s" ? 8000 : era == "1980s" ? 14000 : 0;
         lofi = v.lf != 0 ? v.lf : eraLp;
-        rngS = (uint32_t) (7 + prog.length());
+        Rng rng { (uint32_t) (7 + prog.length()) };
         early.assign ((size_t) jsRound (0.08 * sr), 0.0f);
         const int taps = v.er < 6 ? 0 : 24;
         for (int k = 0; k < taps; ++k)
         {
-            const long at = jsRoundI ((v.pd + rnd() * v.er) * sr / 1000);
+            const long at = jsRoundI ((v.pd + rng.rnd() * v.er) * sr / 1000);
             if (at < (long) early.size())
             {
-                const double sign = rnd() < 0.5 ? -1 : 1;   // evaluated only when the tap lands, as in Hitline
-                const double amp = std::pow (0.8, k / 3.0) * (0.5 + rnd());
+                const double sign = rng.rnd() < 0.5 ? -1 : 1;   // evaluated only when the tap lands, as in Hitline
+                const double amp = std::pow (0.8, k / 3.0) * (0.5 + rng.rnd());
                 early[(size_t) at] = (float) (early[(size_t) at] + sign * amp);
             }
         }

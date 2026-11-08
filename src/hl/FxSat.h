@@ -11,6 +11,8 @@ Chs satRender (const Chs& chs, double sr, const juce::var& P);
 
 /** The reverb library: Hitline's measured programs (assets/irlib.json). Call once at startup. */
 void setReverbLibrary (const juce::var& irlib);
+/** Forget every reverb impulse built so far (tests; the next render builds them again). */
+void clearReverbCache();
 std::pair<F32, F32> verbIR (const juce::var& p, double sr);
 Chs verbWet (const Chs& chs, double sr, const juce::var& p);
 Chs verbRender (const Chs& chs, double sr, const juce::var& p);

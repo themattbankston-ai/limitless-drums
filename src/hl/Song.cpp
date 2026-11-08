@@ -648,11 +648,13 @@ F32 applyEdits (const F32& x, const std::vector<SongEdit>& E, double sr)
     for (long t = 0; t < n; ++t)
     {
         while (k < bnd.size() && t >= bnd[k] + xf / 2) ++k;
-        // inside a crossfade around bnd[k]?
-        if (k < bnd.size() && t >= bnd[k] - xf / 2)
+        // inside a crossfade around bnd[k]? (none where both sides have the same shift: nothing moves there)
+        if (k < bnd.size() && t >= bnd[k] - xf / 2 && sh[k] != sh[k + 1])
         {
+            // equal-gain: the two sides are the same drums a few ms apart, so they're correlated and the gains must
+            // sum to 1 (equal-power fades would swell them by up to 3 dB)
             const double a = (double) (t - (bnd[k] - xf / 2)) / (double) xf;   // 0..1
-            const double ga = std::cos (a * M_PI / 2), gb = std::sin (a * M_PI / 2);
+            const double gb = 0.5 - 0.5 * std::cos (a * M_PI), ga = 1 - gb;
             y[(size_t) t] = (float) (ga * src (t, sh[k]) + gb * src (t, sh[k + 1]));
         }
         else y[(size_t) t] = src (t, sh[k]);

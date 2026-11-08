@@ -1,6 +1,7 @@
 #include "ExtPlugins.h"
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <thread>
 
 namespace ld::ext
@@ -23,11 +24,34 @@ std::unique_ptr<juce::AudioPluginInstance> instantiate (const juce::PluginDescri
     auto make = [&] { return formats().createPluginInstance (d, sr, block, err); };
     auto* mm = juce::MessageManager::getInstanceWithoutCreating();
     if (mm == nullptr || mm->isThisTheMessageThread()) return make();
-    std::unique_ptr<juce::AudioPluginInstance> p;
-    juce::WaitableEvent done;
-    juce::MessageManager::callAsync ([&] { p = make(); done.signal(); });
-    if (! done.wait (20000)) { err = "timed out"; return nullptr; }
-    return p;
+    // Everything the message-thread job touches lives in shared state it co-owns, so if we give up waiting it still
+    // has somewhere valid to write (and the late instance is destroyed there, on the message thread, when it lets go).
+    struct Job
+    {
+        std::unique_ptr<juce::AudioPluginInstance> p;
+        juce::String err;
+        juce::WaitableEvent done;
+        std::mutex lock;
+        bool abandoned = false;
+    };
+    auto job = std::make_shared<Job>();
+    juce::MessageManager::callAsync ([job, d, sr, block]
+    {
+        { std::lock_guard<std::mutex> g (job->lock); if (job->abandoned) return; }
+        juce::String e;
+        auto inst = formats().createPluginInstance (d, sr, block, e);
+        std::lock_guard<std::mutex> g (job->lock);
+        job->p = std::move (inst); job->err = e;
+        job->done.signal();
+    });
+    if (! job->done.wait (20000))
+    {
+        std::lock_guard<std::mutex> g (job->lock);
+        if (! job->done.wait (0)) { job->abandoned = true; err = "timed out"; return nullptr; }
+    }
+    std::lock_guard<std::mutex> g (job->lock);
+    err = job->err;
+    return std::move (job->p);
 }
 
 bool descOf (const juce::var& insert, juce::PluginDescription& d)

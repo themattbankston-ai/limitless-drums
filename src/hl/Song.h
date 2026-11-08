@@ -66,7 +66,7 @@ std::vector<double> gridLines (const std::vector<double>& beats, int division);
 struct SongEdit { long cut = 0, shift = 0; };
 std::vector<SongEdit> planEdits (const SongAnalysis&, const SongSettings&);
 /** The same edits on every channel: segments moved, the boundaries placed where neither side has a transient, short
-    equal-power crossfades. Length unchanged. */
+    equal-gain crossfades (none where nothing moves). Length unchanged. */
 Chs applyEdits (const Chs& chs, const std::vector<SongEdit>& edits, double sr);
 F32 applyEdits (const F32& x, const std::vector<SongEdit>& edits, double sr);
 /** Consistency: on each drum's own close mics, every hit's level pulled toward the level of the hits around it by

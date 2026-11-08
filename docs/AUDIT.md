@@ -38,7 +38,7 @@ All pinned and fetched by CMake (FetchContent). None are vendored in this archiv
 Bundled fonts and their licences are listed in `assets/fonts/LICENSES.md`.
 
 ## Tests
-`tests/` is a Catch2 suite: 53 cases at the time of export, all passing. The suite covers:
+`tests/` is a Catch2 suite: 60 cases, all passing with the parity reference data present (`LD_PARITY_SESSIONS` set); without it the parity cases skip with a warning and still count as passed. The suite covers:
 - **Engine parity:** against Hitline 4.8's outputs.
 - **Per-processor behaviour:** compressor gain reduction, gate, width split and correlation, EQ curves.
 - **Song mode on synthetic songs with known answers:** hit and tempo accuracy, tightening, consistency, the problem
@@ -113,3 +113,30 @@ latency removed.
   kick on note 35 and toms on notes 48/47/45/43/41. (Added after the archived build `8d55461`.)
 - **Drum-bus inserts:** everything except the compressor runs on each mic separately, not on the summed bus. This
   is by design, because the export is one file per mic.
+
+## Status of the independent audit's findings (baseline `e365e61`)
+Fixed, each with a regression test in `tests/AuditFixTests.cpp` (LD-06 in `tests/SongTests.cpp`) that fails on the
+baseline and passes now:
+
+| ID | Fix |
+| --- | --- |
+| LD-01 | Song edit boundaries: no crossfade where nothing moves; equal-gain fades where something does (the two sides are the same drums a few ms apart, so equal-power fades swelled them by up to 3 dB: measured +3.01 dB on the baseline). |
+| LD-02 | Prism dynamic band: range 0 means no dynamic change; unset still defaults to −6 dB. |
+| LD-03 | The Vise VCA (RMS) detector: each channel's sidechain filtered on its own, then their power averaged, so a polarity-flipped pair no longer cancels. |
+| LD-04 | Portcullis key: each channel through the key filters on its own, then the loudest of them, so a flipped pair no longer keeps the gate shut. Listen plays each channel's own key. |
+| LD-05 | Plugin loading: the message-thread job owns its state, so a load that finishes after the 20 s timeout writes somewhere valid. (No automated test: needs a stalled message thread.) |
+| LD-06 | Song export at another sample rate: the drum bus and reverb returns are resampled like the mics instead of being left out. |
+| LD-14 | Skull Cutter MULTI Transformer: Tone now applies. |
+| LD-15 | Reverb impulses: each build has its own random generator (it was shared between threads). |
+
+**Departures from Hitline.** LD-02, 03, 04 and 14 are behaviours ported faithfully from Hitline 4.8; they're fixed
+anyway, by decision. For identical channels (mono, or any ordinary stereo pair fed the same) LD-03 and LD-04 give
+bit-identical results to before, so the parity cases still match.
+
+Open, by design or needing a decision: LD-07 (1176-style attack range; needs a measured reference), LD-08 (octave
+choice on drums with a weak fundamental), LD-09 (aliasing in PANIC's coloration), LD-10 (bus inserts per mic),
+LD-11 (parity cases skip without `LD_PARITY_SESSIONS`; run them with it set), LD-12 (drum voices now split toms and
+kicks; mic groups and stereo pairs aren't separate identities yet), LD-13 (4/4 only).
+
+Also noticed while fixing LD-03: in peak mode the compressor's sidechain high-pass runs on the rectified detector,
+not on the audio. Inherited from Hitline; not changed yet.

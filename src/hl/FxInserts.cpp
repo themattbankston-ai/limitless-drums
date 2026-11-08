@@ -33,7 +33,9 @@ Chs eqRender (const Chs& chs, double sr, const juce::var& p)
         for (auto& b : dyn)
         {
             const auto d = b.getProperty ("dyn", juce::var());
-            const double range = orr (d, "range", -6), g = orr (b, "g", 0), g0 = dbl (g), gr = std::abs (g) > 0.5 ? g : range;
+            // range 0 means no dynamic change (Hitline's `range || -6` turned it into -6 dB); unset still means -6
+            const double range = nn (d, "range", -6), g = orr (b, "g", 0), g0 = dbl (g), gr = std::abs (g) > 0.5 ? g : range;
+            if (range == 0) continue;
             auto* refObj = new juce::DynamicObject();
             for (auto& prop : b.getDynamicObject()->getProperties()) refObj->setProperty (prop.name, prop.value);
             const auto t = str (b, "type");
@@ -229,15 +231,24 @@ Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs
 {
     const Chs& kc = keyChs ? *keyChs : chs;
     const size_t n = chs[0].size();
-    F32 key (n, 0.0f);
-    for (auto& x : kc) for (size_t q = 0; q < n; ++q) key[q] = (float) (key[q] + (double) x[q] / kc.size());
+    // the key: each channel through the key filters on its own, then the loudest of them at each sample. (Hitline
+    // averaged the signed channels first, so a polarity-flipped side cancelled and the gate never opened.) Identical
+    // channels give exactly what they did.
     const double hpf = orr (p, "hpf", 0), lpf = orr (p, "lpf", 0);
-    if (hpf > 20) biquadInPlace (key, hpf, true, sr);
-    if (lpf != 0 && lpf < sr / 2.2) biquadInPlace (key, lpf, false, sr);
+    Chs keyed;
+    for (auto& x : kc)
+    {
+        F32 y (x.begin(), x.begin() + (long) n);
+        if (hpf > 20) biquadInPlace (y, hpf, true, sr);
+        if (lpf != 0 && lpf < sr / 2.2) biquadInPlace (y, lpf, false, sr);
+        keyed.push_back (std::move (y));
+    }
+    F32 key (n, 0.0f);
+    for (auto& y : keyed) for (size_t q = 0; q < n; ++q) if (std::abs (y[q]) > std::abs (key[q])) key[q] = y[q];
     if (truthy (p, "listen"))
     {
-        // the key as the gate hears it, on every channel
-        Chs res; for (size_t c = 0; c < chs.size(); ++c) res.push_back (key);
+        // the key as the gate hears it, each channel its own filtered key
+        Chs res; for (size_t c = 0; c < chs.size(); ++c) res.push_back (keyed[std::min (c, keyed.size() - 1)]);
         if (grCurve) grCurve->assign ((size_t) std::ceil ((double) n * GR_RATE / sr), 0.0f);
         return res;
     }
@@ -386,12 +397,23 @@ Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector
     const double gin = dbl (o.inDb);
     F32 det (n, 0.0f);
     for (auto& x : chs) for (size_t q = 0; q < n; ++q) { const double v = std::abs ((double) x[q] * gin); if (v > det[q]) det[q] = (float) v; }
+    double scHpf = std::max (orr (p, "scHpf", 0), o.hp);
     if (o.rms != 0)
     {
-        std::fill (det.begin(), det.end(), 0.0f);
-        for (auto& x : chs) for (size_t q = 0; q < n; ++q) det[q] = (float) (det[q] + (double) x[q] * gin / chs.size());
+        // RMS detector: each channel's sidechain filtered on its own, then their power averaged. (Hitline averaged the
+        // signed channels, so a polarity-flipped side cancelled and the compressor stopped.) Identical channels give
+        // exactly what they did.
+        std::vector<double> pw (n, 0.0);
+        for (auto& x : chs)
+        {
+            F32 y (n); for (size_t q = 0; q < n; ++q) y[q] = (float) ((double) x[q] * gin);
+            if (scHpf > 20) biquadInPlace (y, scHpf, true, sr);
+            for (size_t q = 0; q < n; ++q) pw[q] += (double) y[q] * y[q] / (double) chs.size();
+        }
+        for (size_t q = 0; q < n; ++q) det[q] = (float) std::sqrt (pw[q]);
+        scHpf = 0;   // already applied
     }
-    const auto gdb = compGainCurve (det, sr, o, std::max (orr (p, "scHpf", 0), o.hp));
+    const auto gdb = compGainCurve (det, sr, o, scHpf);
     if (grCurve) *grCurve = grBlocks (gdb, sr);
     const double mix = clampD (nn (p, "mix", 1), 0, 1), out = dbl (o.out);
     const double a2 = o.h2 > -150 ? 2 * dbl (o.h2) / 0.25 : 0, a3 = o.h3 > -150 ? 4 * dbl (o.h3) / 0.0625 : 0, hpA = std::exp (-2 * M_PI * 8 / sr);

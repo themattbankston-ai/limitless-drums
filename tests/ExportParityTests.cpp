@@ -70,7 +70,7 @@ void runCase (const juce::String& keyName, const juce::String& folder)
     std::map<std::string, const juce::var*> gold;
     for (auto& f : *key["files"].getArray()) gold[f["path"].toString().toStdString()] = &f;
 
-    int n = 0, identical = 0, missing = 0;
+    int n = 0, identical = 0, missing = 0, ours = 0;
     double worstRel = 0, worstAbs = 0; std::string worstAt;
     std::vector<std::string> order;
     auto onFile = [&] (const std::string& path, const juce::MemoryBlock& bytes)
@@ -78,7 +78,14 @@ void runCase (const juce::String& keyName, const juce::String& folder)
         order.push_back (path);
         ++n;
         auto it = gold.find (path);
-        if (it == gold.end()) { ++missing; UNSCOPED_INFO ("not in Hitline's export: " << path); return; }
+        if (it == gold.end())
+        {
+            // a deliberate departure (audit LD-06): Hitline left the drum bus and reverb returns out of a kit export
+            // at another sample rate; we write them
+            const juce::String ps (path);
+            if (kit && S.exp.rate != "same" && std::stod (S.exp.rate) != S.sr && (ps.endsWith ("Drum Bus.wav") || ps.endsWith ("Return.wav"))) { ++ours; return; }
+            ++missing; UNSCOPED_INFO ("not in Hitline's export: " << path); return;
+        }
         const auto& g = *it->second;
         CHECK ((int64_t) bytes.getSize() == (int64_t) (double) g["bytes"]);
         if (crc32 (static_cast<const uint8_t*> (bytes.getData()), bytes.getSize()) == (uint32_t) (juce::int64) g["crc"]) { ++identical; return; }
@@ -115,7 +122,7 @@ void runCase (const juce::String& keyName, const juce::String& folder)
                   << " (" << worstAt << "), worst sample difference " << worstAbs << "; worst level gain difference " << worstGain
                   << " dB; mix " << juce::roundToInt (t1 - t0) << " ms, export " << juce::roundToInt (t2 - t1) << " ms");
     CHECK (missing == 0);
-    CHECK (n == goldAudio);
+    CHECK (n - ours == goldAudio);
     // same files in the same order as Hitline wrote them
     int k = 0;
     for (auto& f : *key["files"].getArray())

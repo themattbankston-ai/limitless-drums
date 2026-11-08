@@ -1253,9 +1253,15 @@ int writeKit (const Session& S, const MixRender& M, const std::function<void (co
         sink (path, encodeWav (chs, srOut, S.exp.bits));
         ++n;
     }
-    // the drum bus and the reverb returns, full length, on the same timeline as the mics
-    if (S.exp.kitBus && std::abs (k - 1) < 1e-9)
+    // the drum bus and the reverb returns, full length, on the same timeline as the mics: mixed at the session's
+    // rate, then resampled the same way as the mics when exporting at another rate (they used to be left out then)
+    if (S.exp.kitBus)
     {
+        auto atRate = [k] (const F32& x)
+        {
+            if (std::abs (k - 1) < 1e-9) return x;
+            return renderTuned (x, 0, 0, (long) jsRound ((double) x.size() * k), 0, 1, 1, 1 / k, 0, (long) x.size(), 0);
+        };
         HitStems h;
         long len = 0;
         for (int t = 0; t < (int) S.tracks.size(); ++t)
@@ -1272,7 +1278,7 @@ int writeKit (const Session& S, const MixRender& M, const std::function<void (co
         if (print) for (int r = 0; r < 2; ++r) if (! M.rev[(size_t) r].empty()) h.rev[(size_t) r] = fit (M.rev[(size_t) r]);
         const auto lr = mixToStereo (S, h);
         const auto dir = fillTokens (S, "{ARTIC}/", 0, std::nullopt);
-        sink (dir + "Drum Bus.wav", encodeWav ({ lr.first, lr.second }, srOut, S.exp.bits)); ++n;
+        sink (dir + "Drum Bus.wav", encodeWav ({ atRate (lr.first), atRate (lr.second) }, srOut, S.exp.bits)); ++n;
         if (! print)
         {
             const double bus = S.busMute ? 0 : S.busFader <= -60 ? 0 : std::pow (10.0, S.busFader / 20);
@@ -1280,7 +1286,7 @@ int writeKit (const Session& S, const MixRender& M, const std::function<void (co
             {
                 if (M.rev[(size_t) r].size() != 2) continue;
                 Chs rv = fit (M.rev[(size_t) r]);
-                for (auto& x : rv) for (auto& v : x) v = (float) ((double) v * bus);
+                for (auto& x : rv) { for (auto& v : x) v = (float) ((double) v * bus); x = atRate (x); }
                 sink (dir + (r ? "R2 Return.wav" : "R1 Return.wav"), encodeWav (rv, srOut, S.exp.bits)); ++n;
             }
         }
