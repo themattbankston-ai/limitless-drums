@@ -138,6 +138,9 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_cracks.jpg
         assets/ui/plugins/skull_eyes.jpg
         assets/ui/plugins/skull_plate.jpg
+        assets/ui/plugins/vise_plate.jpg
+        assets/ui/plugins/vise_beacon.jpg
+        assets/ui/plugins/vise_ram.png
         assets/ui/plugins/skull_saw_0.jpg
         assets/ui/plugins/skull_saw_1.jpg
         assets/ui/plugins/skull_saw_2.jpg
@@ -204,6 +207,7 @@ if(LD_BUILD_TESTS)
         tests/AlignOpsTests.cpp
     tests/VerbSendTests.cpp
     tests/StandardTests.cpp
+    tests/CompMeterTests.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp

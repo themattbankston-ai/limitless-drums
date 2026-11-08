@@ -22,5 +22,8 @@ double compCurve (const CompModel&, double L);
 /** The compressor's gain in dB per sample for a detector signal (the bus compressor drives every channel with it). */
 F32 compGainCurve (const F32& det, double sr, const CompModel&, double scHpf);
 /** Per-hit gain reduction (dB, positive) reported for the meters, when onsets are given. */
-Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector<long>* ons = nullptr, std::vector<F64>* grOut = nullptr);
+constexpr double GR_RATE = 1000;   ///< gain-reduction curves: one value per millisecond (the most reduction in it)
+/** A gain curve in dB (<= 0) as reduction per GR_RATE block. */
+F32 grBlocks (const F32& gdb, double sr);
+Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector<long>* ons = nullptr, std::vector<F64>* grOut = nullptr, F32* grCurve = nullptr);
 } // namespace ld::hl

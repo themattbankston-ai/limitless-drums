@@ -147,6 +147,7 @@ struct PluginView
     bool on = true;
     std::map<std::string, double> num;      ///< numbers and switches (1 / 0)
     std::map<std::string, std::string> str; ///< choices ("model", "decap.style")
+    std::shared_ptr<const std::vector<float>> gr;   ///< a compressor's gain reduction, dB per millisecond of the timeline
     double get (const std::string& k, double d) const { auto i = num.find (k); return i == num.end() ? d : i->second; }
     std::string gets (const std::string& k, const std::string& d) const { auto i = str.find (k); return i == str.end() ? d : i->second; }
 };

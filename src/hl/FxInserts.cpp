@@ -315,7 +315,15 @@ F32 compGainCurve (const F32& det, double sr, const CompModel& o, double scHpf)
     return g;
 }
 
-Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector<long>* ons, std::vector<F64>* grOut)
+F32 grBlocks (const F32& gdb, double sr)
+{
+    const size_t B = std::max<size_t> (1, (size_t) std::lround (sr / GR_RATE));
+    F32 r ((gdb.size() + B - 1) / B, 0.0f);
+    for (size_t q = 0; q < gdb.size(); ++q) r[q / B] = std::max (r[q / B], -gdb[q]);
+    return r;
+}
+
+Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector<long>* ons, std::vector<F64>* grOut, F32* grCurve)
 {
     const auto o = compModel (p);
     const size_t n = chs[0].size();
@@ -328,6 +336,7 @@ Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector
         for (auto& x : chs) for (size_t q = 0; q < n; ++q) det[q] = (float) (det[q] + (double) x[q] * gin / chs.size());
     }
     const auto gdb = compGainCurve (det, sr, o, std::max (orr (p, "scHpf", 0), o.hp));
+    if (grCurve) *grCurve = grBlocks (gdb, sr);
     const double mix = clampD (nn (p, "mix", 1), 0, 1), out = dbl (o.out);
     const double a2 = o.h2 > -150 ? 2 * dbl (o.h2) / 0.25 : 0, a3 = o.h3 > -150 ? 4 * dbl (o.h3) / 0.0625 : 0, hpA = std::exp (-2 * M_PI * 8 / sr);
     std::optional<Kernel> shelf;

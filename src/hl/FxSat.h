@@ -20,6 +20,8 @@ struct InsertOptions
     double trim = 0;
     std::map<int, Chs> keys;          ///< gate side-chains by track index
     std::vector<long> ons;            ///< hits, for the comp's gain-reduction meter
+    /** When set, each compressor adds its gain reduction (dB, >= 0) at GR_RATE per second, keyed by its slot. */
+    std::map<int, F32>* grCurves = nullptr;
 };
 /** Hitline's insRender: trim, then every insert that is switched on, in slot order. */
 Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const InsertOptions& = {}, std::vector<F64>* compGr = nullptr);

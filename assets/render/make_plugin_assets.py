@@ -66,3 +66,17 @@ if os.path.isdir(sk):
     with open(os.path.join(dst, 'skull_saw_box.txt'), 'w') as fh: fh.write('%d %d %d %d %d %d\n' % (*box, W, H))
     print('saw box', box)
     src = src0
+
+# ---------------------------------------------------------------- The Vise
+vd = os.path.join(src, 'vise')
+if os.path.isdir(vd):
+    src0 = src; src = vd
+    plate, ram = load('vise_plate.png'), load('vise_ram.png')
+    jpg(plate, 'vise_plate')
+    jpg(add_layer(load('vise_plate_beacon.png'), plate), 'vise_beacon')
+    # the ram: only its own box (it slides down in the app); box written beside it
+    bb = ram.split()[3].getbbox()
+    png(ram.crop(bb), 'vise_ram')
+    with open(os.path.join(dst, 'vise_ram_box.txt'), 'w') as fh: fh.write('%d %d %d %d %d %d\n' % (*bb, *ram.size))
+    print('ram box', bb)
+    src = src0

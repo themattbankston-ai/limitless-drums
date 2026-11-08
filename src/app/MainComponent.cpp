@@ -496,6 +496,7 @@ void MainComponent::rerender()
             st->levels = std::move (*lv);
             if (sp->audition) sp->audition->setEngine (st);
             sp->refreshModel();
+            sp->refreshPlugin();
             sp->updateHeader();
         });
     }).detach();
@@ -672,6 +673,7 @@ void MainComponent::startPrep()
             sp->prepping = false;
             if (sp->audition) sp->audition->setEngine (st);
             sp->refreshModel();
+            sp->refreshPlugin();
             sp->updateHeader();
             sp->setNotice ("Ready. Every hit is on the level standard. File > Export writes the samples.");
             sp->storeInLibrary();
@@ -1645,6 +1647,12 @@ void MainComponent::refreshPlugin()
                     }
             };
             flat (it["p"], "");
+            if (engineState->mix)
+            {
+                const auto key = (plugT < 0 ? std::string ("bus") : std::to_string (plugT)) + ":" + std::to_string (plugK);
+                const auto g = engineState->mix->gr.find (key);
+                if (g != engineState->mix->gr.end()) pv.gr = std::make_shared<const std::vector<float>> (g->second);
+            }
         }
         else plugT = -2;
     }

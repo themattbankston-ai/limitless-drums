@@ -1,3 +1,4 @@
+#include <mutex>
 #include "Session.h"
 #include "Detect.h"
 #include "FxInserts.h"
@@ -758,6 +759,7 @@ MixRender renderMix (const Session& S)
     }
     // channel inserts
     M.ins = M.tone;
+    std::mutex grLock;
     parallelFor ((size_t) nT, [&] (size_t ti)
     {
         const int t = (int) ti;
@@ -773,15 +775,20 @@ MixRender renderMix (const Session& S)
                     if (! k.isVoid() && ! k.isUndefined() && (int) k >= 0 && (int) k < nT) o.keys[(int) k] = M.tone[(size_t) (int) k];
                 }
         for (auto v : S.onsets) o.ons.push_back (std::max (0L, (long) jsRound ((double) v + lagOf (S, t))));
+        std::map<int, F32> grs; o.grCurves = &grs;
         M.ins[(size_t) t] = insRender (M.tone[(size_t) t], sr, st.inserts, o);
+        const std::lock_guard<std::mutex> lk (grLock);
+        for (auto& [k, c] : grs) M.gr[std::to_string (t) + ":" + std::to_string (k)] = std::move (c);
     });
     // the bus: its EQs on every channel; its compressor driven by the whole sum, one gain curve on every channel
     M.bus = M.ins;
     if (busLive (S))
     {
         auto& cur = M.bus;
+        int slot = -1;
         for (auto& s : *S.busIns.getArray())
         {
+            ++slot;
             if (! insLive (s)) continue;
             if (s["type"].toString() == "comp")
             {
@@ -800,6 +807,7 @@ MixRender renderMix (const Session& S)
                             for (size_t q = 0; q < n; ++q) { const long m2 = (long) q + l; if (m2 >= 0 && m2 < (long) x.size()) det[q] = (float) ((double) det[q] + (double) x[(size_t) m2] * g); }
                 }
                 const auto gdb = compGainCurve (det, sr, o, std::max (orr (s["p"], "scHpf", 0), o.hp));
+                M.gr["bus:" + std::to_string (slot)] = grBlocks (gdb, sr);
                 const double mix = clampD (nn (s["p"], "mix", 1), 0, 1), out = std::pow (10.0, o.out / 20);
                 F32 G (n);
                 for (size_t q = 0; q < n; ++q) G[q] = (float) (gin * ((1 - mix) + mix * std::pow (10.0, (double) gdb[q] / 20)) * out);

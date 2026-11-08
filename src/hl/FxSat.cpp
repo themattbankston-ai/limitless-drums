@@ -499,9 +499,11 @@ Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const Insert
     Chs y = chs;
     const double tr = dbl (o.trim);
     if (tr != 1) for (auto& x : y) x = scale (x, tr);
+    int slot = -1;
     if (auto* list = inserts.getArray())
         for (auto& s : *list)
         {
+            ++slot;
             if (! s.isObject() || isFalse (s, "on")) continue;
             const auto pv = s.getProperty ("p", juce::var());
             const juce::var p = pv.isObject() ? pv : juce::var (new juce::DynamicObject());
@@ -516,7 +518,7 @@ Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const Insert
                 if (! kt.isVoid() && o.keys.count ((int) kt)) key = &o.keys.at ((int) kt);
                 y = gateRender (y, sr, p, key);
             }
-            else if (type == "comp") y = compRender (y, sr, p, o.ons.empty() ? nullptr : &o.ons, compGr);
+            else if (type == "comp") y = compRender (y, sr, p, o.ons.empty() ? nullptr : &o.ons, compGr, o.grCurves ? &(*o.grCurves)[slot] : nullptr);
             else if (type == "sat") y = satRender (y, sr, p);
             else if (type == "verb") y = verbRender (y, sr, p);
         }

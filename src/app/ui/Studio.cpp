@@ -2833,6 +2833,8 @@ namespace pw
     struct Img { const unsigned char* d; int n; };
     static const Img sawSharp[8] = { { LD_IMG (skull_saw_0_jpg) }, { LD_IMG (skull_saw_1_jpg) }, { LD_IMG (skull_saw_2_jpg) }, { LD_IMG (skull_saw_3_jpg) },
                                      { LD_IMG (skull_saw_4_jpg) }, { LD_IMG (skull_saw_5_jpg) }, { LD_IMG (skull_saw_6_jpg) }, { LD_IMG (skull_saw_7_jpg) } };
+    static const Img viseRam { LD_IMG (vise_ram_png) };
+    static const float viseRamBox[4] = { 729, 54, 1231, 313 };   // in the 1960 x 1088 render
     static const Img sawBlur[8] = { { LD_IMG (skull_sawb_0_jpg) }, { LD_IMG (skull_sawb_1_jpg) }, { LD_IMG (skull_sawb_2_jpg) }, { LD_IMG (skull_sawb_3_jpg) },
                                     { LD_IMG (skull_sawb_4_jpg) }, { LD_IMG (skull_sawb_5_jpg) }, { LD_IMG (skull_sawb_6_jpg) }, { LD_IMG (skull_sawb_7_jpg) } };
 }
@@ -2894,6 +2896,7 @@ struct Studio::PluginWindow : visage::Frame
     struct Range { std::string path; double lo, hi; bool log; bool on; };
     Range rangeOf (const std::string& key) const
     {
+        if (v.type == "comp") return viseRange (key);
         const auto m = model();
         if (key == "mix") return { "mix", 0, 1, false, true };
         if (key == "out") return { "out", -24, 24, false, true };
@@ -2917,7 +2920,9 @@ struct Studio::PluginWindow : visage::Frame
     }
     double defOf (const std::string& path) const
     {
-        static const std::map<std::string, double> d { { "decap.drive", 3 }, { "devil.crush", 4 }, { "devil.darkness", 2 }, { "decap.lowcut", 20 }, { "decap.highcut", 20000 }, { "mix", 1 } };
+        static const std::map<std::string, double> d { { "decap.drive", 3 }, { "devil.crush", 4 }, { "devil.darkness", 2 }, { "decap.lowcut", 20 }, { "decap.highcut", 20000 }, { "mix", 1 },
+            { "dist.input", 5 }, { "dist.attack", 5 }, { "dist.release", 5 }, { "76.input", 6.2 }, { "76.attack", 3 }, { "76.release", 3 },
+            { "fair.thresh", 5 }, { "fair.tc", 2 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
         auto i = d.find (path); return i == d.end() ? 0.0 : i->second;
     }
     float posOf (const std::string& key) const
@@ -2938,6 +2943,15 @@ struct Studio::PluginWindow : visage::Frame
     {
         const auto R = rangeOf (key); const double x = valueAt (key, pos);
         if (! R.on) return "off";
+        if (v.type == "comp")
+        {
+            if (R.path == "scHpf") return x <= 20.5 ? std::string ("off") : draw::fmt ("%.0f Hz", x);
+            if (R.path == "76.input" || R.path == "fair.input") return draw::fmt ("%+.1f dB", x);
+            if (R.path == "160.thresh" || R.path == "chan.thresh") return draw::fmt ("%.1f dB", x);
+            if (R.path == "chan.attack") return draw::fmt (x < 10 ? "%.1f ms" : "%.0f ms", x);
+            if (R.path == "chan.release") return draw::fmt ("%.0f ms", x);
+            if (R.path == "fair.tc") return draw::fmt ("%.0f", std::round (x));
+        }
         if (R.path == "mix") return draw::fmt ("%.0f %%", x * 100);
         if (R.path == "out" || R.path == "saturn.drive" || R.path == "fatso.input") return draw::fmt ("%+.1f dB", x);
         if (R.path == "decap.lowcut") return x <= 20.5 ? std::string ("off") : draw::fmt ("%.0f Hz", x);
@@ -3100,6 +3114,333 @@ struct Studio::PluginWindow : visage::Frame
         if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffe9dcc0); draw::text (c, "BYPASSED", pw::stencil (S (28)), Font::kCenter, bx, by, fw, fh); }
     }
 
+
+    // ---------------------------------------------------------------- The Vise
+    // models: PANIC (dist), FET (76), VARI-MU (fair), VCA (160), CLEAN (chan)
+    std::string cmodel() const { const auto m = v.gets ("model", "dist"); return m.empty() ? std::string ("dist") : m; }
+    Range viseRange (const std::string& key) const
+    {
+        const auto m = cmodel();
+        if (key == "mix") return { "mix", 0, 1, false, true };
+        if (key == "out") return { "out", -24, 24, false, true };
+        if (key == "schpf") return { "scHpf", 20, 500, true, true };
+        if (key == "input")
+        {
+            if (m == "dist") return { "dist.input", 0, 10, false, true };
+            if (m == "76") return { "76.input", -6, 30, false, true };
+            if (m == "fair") return { "fair.input", -6, 18, false, true };
+            return { m + ".thresh", -60, 0, false, true };
+        }
+        if (key == "attack")
+        {
+            if (m == "dist") return { "dist.attack", 0, 10, false, true };
+            if (m == "76") return { "76.attack", 1, 7, false, true };
+            if (m == "fair") return { "fair.thresh", 0, 10, false, true };
+            if (m == "chan") return { "chan.attack", 0.1, 100, true, true };
+            return { "", 0, 1, false, false };
+        }
+        if (key == "release")
+        {
+            if (m == "dist") return { "dist.release", 0, 10, false, true };
+            if (m == "76") return { "76.release", 1, 7, false, true };
+            if (m == "fair") return { "fair.tc", 1, 6, false, true };
+            if (m == "chan") return { "chan.release", 10, 2000, true, true };
+            return { "", 0, 1, false, false };
+        }
+        return { "", 0, 1, false, false };
+    }
+    std::string viseName (const std::string& key) const
+    {
+        const auto m = cmodel();
+        if (key == "input") return m == "160" || m == "chan" ? "THRESH" : "INPUT";
+        if (key == "attack") return m == "fair" ? "THRESH" : "ATTACK";
+        if (key == "release") return m == "fair" ? "TIME" : "RELEASE";
+        return key;
+    }
+    struct Ratio { std::vector<std::string> vals, labels; bool str; };
+    Ratio ratios() const
+    {
+        const auto m = cmodel();
+        if (m == "dist") return { { "1", "2", "3", "4", "6", "10", "20", "nuke" }, { "1", "2", "3", "4", "6", "10", "20", "NUK" }, true };
+        if (m == "76") return { { "4", "8", "12", "20", "all" }, { "4", "8", "12", "20", "ALL" }, true };
+        if (m == "160") return { { "1.5", "2", "3", "4", "6", "10", "20", "60" }, { "1.5", "2", "3", "4", "6", "10", "20", "INF" }, false };
+        if (m == "chan") return { { "1.5", "2", "3", "4", "6", "8", "10", "20" }, { "1.5", "2", "3", "4", "6", "8", "10", "20" }, false };
+        return { {}, {}, false };
+    }
+    int ratioIndex() const
+    {
+        const auto R = ratios(); if (R.vals.empty()) return -1;
+        const auto path = cmodel() + ".ratio";
+        if (R.str) { const auto cur = v.gets (path, "4"); for (size_t i = 0; i < R.vals.size(); ++i) if (R.vals[i] == cur) return (int) i; return 3 < (int) R.vals.size() ? 3 : 0; }
+        const double cur = v.get (path, cmodel() == "160" ? 4 : 3);
+        int best = 0; for (size_t i = 0; i < R.vals.size(); ++i) if (std::abs (std::stod (R.vals[i]) - cur) < std::abs (std::stod (R.vals[(size_t) best]) - cur)) best = (int) i;
+        return best;
+    }
+    double ratioValue() const
+    {
+        const int i = ratioIndex(); if (i < 0) return 3.2;
+        const auto s = ratios().vals[(size_t) i];   // a copy: ratios() is a temporary
+        return s == "nuke" ? 60 : s == "all" ? 24 : std::stod (s);
+    }
+    /** The gain reduction under the playhead (dB); stopped, the most in the 300 ms after it, so a hit under the playhead shows. */
+    float grTarget() const
+    {
+        if (! v.gr || v.gr->empty() || ! v.on) return 0;
+        const auto& g = *v.gr;
+        const long a = (long) (studio.playhead * 1000) - (studio.playing ? 15 : 0), b = a + (studio.playing ? 16 : 300);
+        float m = 0;
+        for (long q = std::max (0L, a); q < std::min ((long) g.size(), b); ++q) m = std::max (m, g[(size_t) q]);
+        return m;
+    }
+    float grNow = 0, beaconA = 0, sweep = 0;
+    /** Where the ratio dial's positions sit: the top stays clear for its name, the bottom for its readout. */
+    static float ratioAngle (int i, int n)
+    {
+        static const float five[5] = { 135, 180, 225, 315, 360 };
+        static const float eight[8] = { 135, 165, 195, 225, 315, 345, 375, 405 };
+        return (n == 5 ? five[i] : eight[std::min (i, 7)]) * 3.14159265f / 180;
+    }
+    void labelLS (Canvas& c, const std::string& t, float px, float py, float z, const Font& f, unsigned col, float ls)
+    {
+        const auto u = visage::String::convertToUtf32 (t);
+        float tw = 0; std::vector<float> w;
+        for (char32_t ch : u) { w.push_back (f.stringWidth (std::u32string (1, ch))); tw += w.back(); }
+        tw += S (ls) * (float) (u.size() - 1);
+        const auto p = P (px, py, z);
+        float x0 = p.x - tw / 2;
+        c.setColor (col);
+        for (size_t i = 0; i < u.size(); ++i)
+        {
+            c.text (visage::String (std::u32string (1, u[i])), f, Font::kLeft, x0, p.y - S (12), w[i] + S (4), S (24));
+            x0 += w[i] + S (ls);
+        }
+    }
+    void nixie (Canvas& c, float px, float py, const std::string& t, float w, bool dim = false)
+    {
+        const auto p = P (px, py);
+        c.setColor (0xff0b0803); c.roundedRectangle (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3));
+        c.setColor (0x40ffb21a); c.roundedRectangleBorder (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3), S (1));
+        if (dim) label (c, t, px, py, 0, monoBold (S (10.5f)), 0x59ffb21a, w);
+        else glowLabel (c, t, px, py, 0, monoBold (S (10.5f)), 0xffffb21a, w);
+    }
+    void amberPtr (Canvas& c, float px, float py, float z, float r, float a, bool en = true)
+    {
+        const auto cc = P (px, py, z);
+        const float x0 = cc.x + std::cos (a) * S (r) * 0.15f, y0 = cc.y + std::sin (a) * S (r) * 0.15f, x1 = cc.x + std::cos (a) * S (r) * 0.95f, y1 = cc.y + std::sin (a) * S (r) * 0.95f;
+        if (en) { c.setBlendMode (visage::BlendMode::Add); c.setColor (0x59ff8a00); c.segment (x0, y0, x1, y1, S (7), true); c.setBlendMode (visage::BlendMode::Alpha); }
+        c.setColor (en ? 0xffffb21a : 0x80b8a070); c.segment (x0, y0, x1, y1, S (3), true);
+    }
+    void ticks (Canvas& c, float px, float py, float r0, float r1, int n, unsigned col, float w)
+    {
+        const float pi = 3.14159265f; const auto o = P (px, py);
+        c.setColor (col);
+        for (int i = 0; i < n; ++i)
+        {
+            const float a = 0.75f * pi + 1.5f * pi * i / (n - 1);
+            c.segment (o.x + std::cos (a) * S (r0) / 1.01f, o.y + std::sin (a) * S (r0) * 0.972f, o.x + std::cos (a) * S (r1) / 1.01f, o.y + std::sin (a) * S (r1) * 0.972f, S (w), false);
+        }
+    }
+    static const std::vector<Ctl>& viseCtls()
+    {
+        static const std::vector<Ctl> c = {
+            { "input", 845, 296, 44, 0 }, { "model", 845, 112, 30, 4 }, { "ratio", 82, 452, 23, 4 }, { "attack", 194, 452, 23, 0 }, { "release", 306, 452, 23, 0 },
+            { "schpf", 676, 452, 23, 0 }, { "mix", 788, 452, 23, 0 }, { "out", 904, 452, 23, 0 } };
+        return c;
+    }
+    static Point modelPos (int i) { const float a = (-180 + 45 * i) * 3.14159265f / 180; return { 845 + std::cos (a) * 84, 112 + std::sin (a) * 66 }; }
+
+    void drawVise (Canvas& c)
+    {
+        const float fw = S (FW), fh = S (FH), bx = BX(), by = BY(), pi = 3.14159265f;
+        const unsigned AMB = 0xffffb21a, INK = 0xff16130e;
+        const auto m = cmodel();
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (vise_plate_jpg), bx, by, fw, fh);
+        // the beacon: lit and sweeping when it's working hard
+        if (beaconA > 0.01f)
+        {
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (Color (0xffffffff).withAlpha (beaconA)); c.image (LD_IMG (vise_beacon_jpg), bx, by, fw, fh);
+            const auto b = P (348, 40, 0.34f);
+            // two soft beams: nested wedges, faint, so the light falls off at the edges and with distance
+            c.saveState(); c.trimClampBounds (bx, by, fw, fh);
+            for (int k = 0; k < 2; ++k)
+                for (int j = 1; j <= 4; ++j)
+                {
+                    const float a = sweep + k * pi, hw = 0.05f * j, L = S (520 - 70 * j);
+                    c.setColor (Color (0xffff9614).withAlpha (0.022f * beaconA));
+                    c.triangle (b.x, b.y, b.x + std::cos (a - hw) * L, b.y + std::sin (a - hw) * L, b.x + std::cos (a + hw) * L, b.y + std::sin (a + hw) * L);
+                }
+            c.restoreState();
+            c.setBlendMode (visage::BlendMode::Alpha);
+        }
+        // ---- the screen: the hits under the press; whatever rises above the ram face is pressed flat against it
+        const float gr = grNow, travel = std::min (gr, 20.0f) / 20 * 58, faceY = 132 + 22 + travel;
+        {
+            const float x0 = 340, y0 = 160, w0 = 300, h0 = 196, zs = -0.07f;
+            const auto a = P (x0, y0, zs);
+            c.saveState(); c.trimClampBounds (a.x, a.y, S (w0 / 1.01f), S (h0 * 0.972f));
+            c.setColor (0x0dffb21a);
+            for (int i = 1; i < 6; ++i) { const auto q = P (x0, y0 + h0 * i / 6, zs); c.fill (q.x, q.y, S (w0), 1); }
+            for (int i = 1; i < 10; ++i) { const auto q = P (x0 + w0 * i / 10, y0, zs); c.fill (q.x, q.y, 1, S (h0)); }
+            const float base = y0 + h0 - 14, limit = faceY - 4, room = base - limit, full = (base - (132 + 22 + 4)) * 1.12f;
+            // the envelope: the input's peaks across 1.2 s (scrolling with the playhead), on a 48 dB scale
+            std::vector<float> col ((size_t) w0 + 1, 0.0f);
+            const double span = 1.2, t0 = studio.playhead - (studio.playing ? 1.0 : 0.05);
+            auto peakAt = [&] (double t0s, double t1s)
+            {
+                float pk = 0;
+                for (size_t i = 0; i < studio.data.tracks.size(); ++i)
+                {
+                    if (v.who >= 0 && (int) i != v.who) continue;
+                    const auto& tr = studio.data.tracks[i];
+                    const long b0 = (long) (t0s * tr.blocksPerSecond), b1 = std::max (b0 + 1, (long) (t1s * tr.blocksPerSecond));
+                    for (long q = std::max (0L, b0); q < std::min ((long) tr.peaks.size(), b1); ++q) pk = std::max (pk, tr.peaks[(size_t) q]);
+                }
+                return pk;
+            };
+            for (size_t i = 0; i <= (size_t) w0; ++i)
+            {
+                const double ta = t0 + span * (double) i / w0, tb = t0 + span * (double) (i + 1) / w0;
+                const float pk = peakAt (ta, tb);
+                const float db = pk > 1e-6f ? 20 * std::log10 (pk) : -120;
+                col[i] = std::clamp ((db + 48) / 48, 0.0f, 1.0f) * full;
+            }
+            auto pathTo = [&] (bool clampTop)
+            {
+                visage::Path pth; const auto s0 = P (x0, base, zs); pth.moveTo (s0.x, s0.y);
+                for (size_t i = 0; i < col.size(); ++i) { const auto q = P (x0 + (float) i, base - (clampTop ? std::min (col[i], room) : col[i]), zs); pth.lineTo (q.x, q.y); }
+                const auto e = P (x0 + w0, base, zs); pth.lineTo (e.x, e.y); pth.close();
+                return pth;
+            };
+            const auto ly = P (x0, limit, zs).y, byy = P (x0, base, zs).y;
+            c.setColor (Brush::linear (Color (0xe6bed7f0), Color (0x5978a0be), Point (0, ly), Point (0, byy)));
+            c.fill (pathTo (true));
+            // contact: amber where the hits meet the ram
+            c.saveState(); c.trimClampBounds (a.x, ly, S (w0), S (40));
+            c.setColor (Brush::linear (Color (0xffffaa1e), Color (0x00ffaa1e), Point (0, ly), Point (0, ly + S (40))));
+            c.fill (pathTo (true));
+            c.restoreState();
+            c.setBlendMode (visage::BlendMode::Add);
+            for (size_t i = 0; i < col.size(); ++i)
+                if (col[i] >= room && gr > 0.3f) { const auto q = P (x0 + (float) i, limit, zs); c.setColor (0xffffd27a); c.fill (q.x, q.y - S (1.5f), S (1.2f), S (3.5f)); c.setColor (0x40ff8a00); c.fill (q.x - S (2), q.y - S (5), S (5), S (10)); }
+            c.setBlendMode (visage::BlendMode::Alpha);
+            // the ram's shadow on the glass
+            c.setColor (Brush::linear (Color (0x73000000), Color (0x00000000), Point (0, ly), Point (0, ly + S (14))));
+            c.fill (a.x, ly, S (w0), S (14));
+            c.setColor (0x1fffffff); { const auto q = P (x0, base, zs); c.fill (q.x, q.y, S (w0), 1); }
+            glowLabel (c, draw::fmt (gr < 0.05f ? "%.1f dB" : "-%.1f dB", gr), x0 + w0 - 38, y0 + h0 - 28, zs, monoBold (S (11)), AMB, 90);
+            c.restoreState();
+        }
+        // ---- the ram, slid down by the gain reduction (above the crossbar it's hidden in the cylinder)
+        {
+            const auto cl = P (0, 128, 0.38f);
+            c.saveState(); c.trimClampBounds (bx, cl.y + 1, fw, fh);
+            const float sx = fw / 1960, sy = fh / 1088, dy = S (travel * 0.98163f / 1.01f);
+            const auto* bb = pw::viseRamBox;
+            c.setColor (0xffffffff);
+            c.image (pw::viseRam.d, pw::viseRam.n, bx + bb[0] * sx, by + bb[1] * sy + dy, (bb[2] - bb[0]) * sx, (bb[3] - bb[1]) * sy);
+            c.restoreState();
+        }
+        // ---- gauge needle (the dial is printed in the render)
+        {
+            const float fr = 108 * 0.99f;
+            const auto gc = P (160, 228, -0.03f);
+            const float ga = (135 + 270 * std::min (gr, 20.0f) / 20) * pi / 180, len = S (0.8f * fr * 0.98f), tail = S (16);
+            const float nx = std::cos (ga), ny = std::sin (ga), px2 = -ny, py2 = nx;
+            auto tri = [&] (float ox, float oy, unsigned colr)
+            {
+                c.setColor (colr);
+                c.triangle (gc.x - nx * tail + px2 * S (4) + ox, gc.y - ny * tail + py2 * S (4) + oy, gc.x + nx * len + ox, gc.y + ny * len + oy, gc.x - nx * tail - px2 * S (4) + ox, gc.y - ny * tail - py2 * S (4) + oy);
+            };
+            tri (S (3), S (3), 0x59000000);
+            tri (0, 0, 0xff151515);
+            c.setColor (0xffc8201a); c.segment (gc.x + nx * len * 0.72f, gc.y + ny * len * 0.72f, gc.x + nx * len, gc.y + ny * len, S (2.4f), true);
+            c.setColor (0xff2a2a2e); c.circle (gc.x - S (10), gc.y - S (10), S (20));
+            c.setColor (0xff8a8a90); c.circle (gc.x - S (7.5f), gc.y - S (7.5f), S (15));
+            c.setColor (0xffe8e8ec); c.circle (gc.x - S (5), gc.y - S (6), S (6));
+        }
+        // ---- model selector
+        static const char* MN[5] = { "PANIC", "FET", "VARI-MU", "VCA", "CLEAN" };
+        static const char* MK[5] = { "dist", "76", "fair", "160", "chan" };
+        int mi = 0; for (int i = 0; i < 5; ++i) if (m == MK[i]) mi = i;
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto q = modelPos (i);
+            if (i == mi) glowLabel (c, MN[i], q.x, q.y, 0, pw::stencil (S (11)), AMB, 90);
+            else labelLS (c, MN[i], q.x, q.y, 0, pw::stencil (S (11)), INK, 0.5f);
+        }
+        amberPtr (c, 845, 112, 0.315f, 30 * 0.62f / 0.95f * 0.95f, (-180 + 45 * mi) * pi / 180);
+        // ---- INPUT / THRESH
+        {
+            const float pos = posOf ("input"), A0 = 0.75f * pi, ASP = 1.5f * pi;
+            ticks (c, 845, 296, 76, 84, 21, INK, 1.6f);
+            for (int i = 0; i <= 10; ++i) { const float a = A0 + ASP * i / 10; label (c, std::to_string (i), 845 + std::cos (a) * 96, 296 + std::sin (a) * 96, 0, pw::stencil (S (13)), INK, 30); }
+            const auto o = P (845, 296); const float R = S (70);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (0x4dff8a00); c.arc (o.x - R - S (4), o.y - R - S (4), 2 * R + S (8), S (8), -0.75f * pi + ASP * pos / 2, ASP * pos / 2, true);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (AMB); c.arc (o.x - R - S (1.5f), o.y - R - S (1.5f), 2 * R + S (3), S (3), -0.75f * pi + ASP * pos / 2, ASP * pos / 2, true);
+            amberPtr (c, 845, 296, 0.315f, 44 * 0.62f, A0 + ASP * pos);
+            labelLS (c, viseName ("input"), 845, 176, 0, pw::stencil (S (15)), INK, 3);
+            nixie (c, 845, 379, text ("input", pos), 72);
+        }
+        // ---- bottom row
+        const float KY = 452;
+        {
+            const auto R = ratios(); const int ri = ratioIndex(); const bool en = ri >= 0;
+            const size_t n = R.vals.size();
+            for (size_t i = 0; i < n; ++i)
+            {
+                const float a = ratioAngle ((int) i, (int) n);
+                const float px = 82 + std::cos (a) * 50, py = KY + std::sin (a) * 40;
+                if ((int) i == ri) glowLabel (c, R.labels[i], px, py, 0, pw::stencil (S (n > 5 ? 9 : 10)), AMB, 40);
+                else label (c, R.labels[i], px, py, 0, pw::stencil (S (n > 5 ? 8.5f : 9.5f)), INK, 40);
+            }
+            if (en) amberPtr (c, 82, KY, 0.315f, 23 * 0.62f, ratioAngle (ri, (int) n));
+            labelLS (c, "RATIO", 82, KY - 48, 0, pw::stencil (S (12)), en ? INK : 0x6616130eu, 1.6f);
+            nixie (c, 82, KY + 50, en ? R.labels[(size_t) ri] + (R.labels[(size_t) ri] == "ALL" || R.labels[(size_t) ri] == "NUK" || R.labels[(size_t) ri] == "INF" ? "" : " : 1") : "3 : 1", 68, ! en);
+        }
+        const char* keys[5] = { "attack", "release", "schpf", "mix", "out" };
+        const char* fixed[5] = { "ATTACK", "RELEASE", "SC HPF", "MIX", "OUTPUT" };
+        const float xs[5] = { 194, 306, 676, 788, 904 };
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto R = rangeOf (keys[i]); const float pos = posOf (keys[i]);
+            ticks (c, xs[i], KY, 36, 40, 11, R.on ? 0xa616130eu : 0x4016130eu, 1.2f);
+            amberPtr (c, xs[i], KY, 0.315f, 23 * 0.62f, 0.75f * pi + 1.5f * pi * pos, R.on);
+            labelLS (c, i < 2 ? viseName (keys[i]) : fixed[i], xs[i], KY - 48, 0, pw::stencil (S (12)), R.on ? INK : 0x6616130eu, 1.6f);
+            nixie (c, xs[i], KY + 50, R.on ? text (keys[i], pos) : std::string ("--"), 68, ! R.on);
+        }
+        // ---- the transfer curve: input level across, output up, with the hit under the playhead on it
+        {
+            const float tx = 490 - 59, ty = KY - 33, tw = 118, th = 66, z = -0.06f;
+            const auto a = P (tx, ty, z);
+            c.saveState(); c.trimClampBounds (a.x, a.y, S (tw), S (th));
+            double thr = -24, inDb = 0;
+            if (m == "dist") { thr = -14.5; inDb = (v.get ("dist.input", 5) - 5) * 4 + 6.3; }
+            else if (m == "76") { thr = -14; inDb = v.get ("76.input", 6.2); }
+            else if (m == "fair") { thr = -4 - 3 * v.get ("fair.thresh", 5); inDb = v.get ("fair.input", 0); }
+            else thr = v.get (m + ".thresh", m == "160" ? -27 : -24);
+            const double eff = thr - inDb, ratio = ratioValue();
+            auto outOf = [&] (double L) { return L < eff ? L : eff + (L - eff) / ratio; };
+            auto pt = [&] (double L, double O) { return P (tx + 4 + (float) ((L + 60) / 60) * (tw - 8), ty + th - 4 - (float) ((O + 60) / 60) * (th - 8), z); };
+            c.setColor (0x1fffb21a); { const auto p0 = pt (-60, -60), p1 = pt (0, 0); c.segment (p0.x, p0.y, p1.x, p1.y, 1, false); }
+            visage::Path cv; { const auto p0 = pt (-60, outOf (-60)); cv.moveTo (p0.x, p0.y); }
+            for (int i = 1; i <= 60; ++i) { const double L = -60 + i; const auto q = pt (L, outOf (L)); cv.lineTo (q.x, q.y); }
+            c.setBlendMode (visage::BlendMode::Add); c.setColor (0x4dff8a00); c.stroke (cv, 0, 0, width(), height(), S (5)); c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (AMB); c.stroke (cv, 0, 0, width(), height(), S (2));
+            const float lv = studio.pluginLevel (v.who);
+            const double L = std::clamp ((lv > 1e-5f ? 20 * std::log10 ((double) lv) : -60.0) + inDb, -60.0, 0.0);
+            const auto d = pt (L, outOf (L));
+            c.setColor (0x80ffb21a); c.circle (d.x - S (5), d.y - S (5), S (10));
+            c.setColor (0xffffffff); c.circle (d.x - S (3), d.y - S (3), S (6));
+            c.restoreState();
+            labelLS (c, "CURVE", 490, KY - 48, 0, pw::stencil (S (12)), INK, 1.6f);
+        }
+        if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xfff0e2b0); draw::text (c, "BYPASSED", pw::stencil (S (28)), Font::kCenter, bx, by, fw, fh); }
+    }
+
     void draw (Canvas& c) override
     {
         // shadow, chrome, title bar
@@ -3109,7 +3450,7 @@ struct Studio::PluginWindow : visage::Frame
         c.roundedRectangle (0, 0, width(), S (38), S (10));
         c.setColor (0xff1a1a1e); c.fill (0, S (20), width(), S (18));
         c.setColor (0x99000000); c.fill (0, S (37), width(), 1);
-        const unsigned col = 0xffff6a2a;
+        const unsigned col = v.type == "comp" ? 0xffffb21a : 0xffff6a2a;
         // bypass power
         {
             const float px = S (22), py = S (19), r = S (6.5f);
@@ -3125,12 +3466,19 @@ struct Studio::PluginWindow : visage::Frame
         draw::text (c, title, boldFont (S (13)), Font::kCenter, 0, S (9), width(), S (20));
         c.setColor (0x99e6e6eb); draw::text (c, "\xe2\x9c\x95", uiFont (S (12)), Font::kCenter, width() - S (40), S (9), S (26), S (20));
         if (v.type == "sat") drawSkull (c);
+        else if (v.type == "comp") drawVise (c);
         else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
     }
 
     // ---- interaction
     std::string ctlAt (Point q) const
     {
+        if (v.type == "comp")
+        {
+            for (int i = 0; i < 5; ++i) { const auto mp = modelPos (i); const auto p = P (mp.x, mp.y); if (std::abs (q.x - p.x) < S (34) && std::abs (q.y - p.y) < S (11)) return "cm:" + std::to_string (i); }
+            for (auto& ct : viseCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
+            return {};
+        }
         if (v.type != "sat") return {};
         for (auto& ct : skullCtls())
         {
@@ -3161,6 +3509,25 @@ struct Studio::PluginWindow : visage::Frame
         }
         const auto key = ctlAt (q);
         if (key.empty()) return;
+        if (v.type == "comp")
+        {
+            static const char* MK[5] = { "dist", "76", "fair", "160", "chan" };
+            auto setModel = [&] (int i) { if (studio.onMix) studio.onMix (std::string ("plugstr:model:") + MK[i], 0); };
+            if (key.rfind ("cm:", 0) == 0) { setModel (std::stoi (key.substr (3))); return; }
+            if (key == "model")
+            {
+                int mi = 0; for (int i = 0; i < 5; ++i) if (cmodel() == MK[i]) mi = i;
+                setModel ((mi + (e.isRightButton() ? 4 : 1)) % 5); return;
+            }
+            if (key == "ratio")
+            {
+                const auto R = ratios(); if (R.vals.empty()) return;
+                const int n = (int) R.vals.size(), nx = (ratioIndex() + (e.isRightButton() ? n - 1 : 1)) % n;
+                if (R.str) { if (studio.onMix) studio.onMix ("plugstr:" + cmodel() + ".ratio:" + R.vals[(size_t) nx], 0); }
+                else send ("set:" + cmodel() + ".ratio", std::stod (R.vals[(size_t) nx]));
+                return;
+            }
+        }
         if (key.rfind ("m:", 0) == 0) { if (studio.onMix) studio.onMix ("plugstr:model:" + key.substr (2), 0); return; }
         if (key == "destroy") { if (model() == "decap") send ("set:decap.punish", v.get ("decap.punish", 0) > 0.5 ? 0 : 1); return; }
         if (key == "boom" || key == "sploosh") { if (model() == "decap") { const std::string p2 = key == "boom" ? "decap.thump" : "decap.steep"; send ("set:" + p2, v.get (p2, 0) > 0.5 ? 0 : 1); } return; }
@@ -3200,6 +3567,8 @@ struct Studio::PluginWindow : visage::Frame
             const auto R = rangeOf (dragKey);
             double val = valueAt (dragKey, liveV);
             val = R.path == "mix" ? std::round (val * 100) / 100 : std::round (val * 10) / 10;
+            if (R.path == "fair.tc") val = std::round (val);
+            if (R.path == "scHpf" || R.path == "chan.release" || (R.path == "chan.attack" && val >= 10)) val = std::round (val);
             send ("set:" + R.path, val);
         }
         moving = false; dragKey.clear(); liveV = NAN;
@@ -3207,7 +3576,19 @@ struct Studio::PluginWindow : visage::Frame
 
     void advance (double dt)
     {
-        if (! isVisible() || v.type != "sat") return;
+        if (! isVisible()) return;
+        if (v.type == "comp")
+        {
+            // the needle and the ram: quick down, slower back, like a real meter
+            const float tgt = grTarget();
+            grNow += (tgt - grNow) * (float) std::min (1.0, dt * (tgt > grNow ? 30.0 : 6.0));
+            const float on = grNow > 10 ? 1.0f : grNow > 7 ? (grNow - 7) / 3 : 0.0f;
+            beaconA += (on - beaconA) * (float) std::min (1.0, dt * 8);
+            sweep += (float) dt * 5.0f * beaconA;
+            redraw();
+            return;
+        }
+        if (v.type != "sat") return;
         const float d = posOf ("drive");
         const float lv = studio.pluginLevel (v.who);
         // a slow idle turn, faster with drive, and kicked along by the signal

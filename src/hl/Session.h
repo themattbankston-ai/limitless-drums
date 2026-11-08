@@ -154,6 +154,8 @@ struct MixRender
     std::vector<Chs> dn, tone, ins, bus, proc;   ///< per track: after clean-up, tone/shape/tame, inserts, bus, phase EQ
     Chs room;                                    ///< the shared room's return (empty when off)
     std::array<Chs, 2> rev;                      ///< R1, R2 returns, stereo, on the lead's timeline (empty when nothing sends)
+    /** Each compressor's gain reduction (dB >= 0, GR_RATE blocks), keyed "<track>:<slot>" or "bus:<slot>". */
+    std::map<std::string, F32> gr;
     struct Scan { std::vector<F64> bands; std::vector<EnvStats> env; ResScanResult res; };
     std::vector<std::optional<Scan>> scan;       ///< per track, when the tone pass listened to it
 };
