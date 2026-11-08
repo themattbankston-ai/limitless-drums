@@ -1,6 +1,8 @@
 #include "MainComponent.h"
 #include "SessionModel.h"
 #include "hl/Detect.h"
+#include "hl/FxSat.h"
+#include "BinaryData.h"
 #include <thread>
 
 namespace ld
@@ -25,6 +27,9 @@ void LookAndFeel::setPalette (const theme::Palette& p)
 //==============================================================================
 MainComponent::MainComponent (te::Engine& e) : engine (e)
 {
+    // the measured reverb models and the pro-library reference the engine draws on
+    hl::setReverbLibrary (juce::JSON::parse (juce::String::fromUTF8 (BinaryData::irlib_json, BinaryData::irlib_jsonSize)));
+    hl::setLibraryReference (juce::JSON::parse (juce::String::fromUTF8 (BinaryData::libref_json, BinaryData::libref_jsonSize)));
     setLookAndFeel (&lnf);
     setOpaque (true);
 
@@ -470,6 +475,9 @@ void MainComponent::alignOp (std::function<void (hl::Session&)> op, const juce::
 void MainComponent::rerender()
 {
     if (! engineState) return;
+    // dragging a knob sends a stream of changes: render one at a time, then once more with the latest state
+    if (renderBusy) { renderPending = true; ++renderGeneration; return; }
+    renderBusy = true; renderPending = false;
     const int gen = ++renderGeneration;
     auto copy = std::make_shared<hl::Session> (engineState->session);
     std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
@@ -479,7 +487,10 @@ void MainComponent::rerender()
         if (copy->mode != "kit") *lv = hl::measureLevels (*copy, *mix);
         juce::MessageManager::callAsync ([sp, st, gen, mix, lv]
         {
-            if (sp == nullptr || sp->renderGeneration != gen || sp->engineState != st) return;
+            if (sp == nullptr) return;
+            sp->renderBusy = false;
+            if (sp->renderPending) { sp->renderPending = false; sp->rerender(); return; }
+            if (sp->renderGeneration != gen || sp->engineState != st) return;
             if (sp->audition) sp->audition->stop();
             st->mix = std::move (*mix);
             st->levels = std::move (*lv);
@@ -1663,6 +1674,54 @@ void MainComponent::onMixAction (const std::string& a, double v)
         updateHeader();
         return;
     }
+    // the mixer: select a strip, sends, the drum bus fader and mute, insert bypass
+    if (a.rfind ("sel:", 0) == 0)
+    {
+        const auto w = a.substr (4);
+        mixSel = w == "bus" ? -1 : std::stoi (w);
+        refreshMix();
+        return;
+    }
+    auto whoOf = [&] (const std::string& w) { return w == "bus" ? -1 : std::stoi (w); };
+    if (a.rfind ("send:", 0) == 0)
+    {
+        const auto rest = a.substr (5); const auto c = rest.find (':');
+        const int t = whoOf (rest.substr (0, c)), k = std::stoi (rest.substr (c + 1));
+        const double db = std::round (std::clamp (v, -60.0, 6.0) * 2) / 2;
+        change ([t, k, db] (hl::Session& s)
+        {
+            double& d = t < 0 ? (k ? s.busR2 : s.busR1) : (k ? s.tracks[(size_t) t].strip.r2 : s.tracks[(size_t) t].strip.r1);
+            d = db;
+        }, juce::String (k ? "R2" : "R1") + " send on " + (t < 0 ? juce::String ("the drum bus") : juce::String (S.tracks[(size_t) t].mic)) + ": "
+           + (db <= -59.5 ? juce::String ("off") : juce::String (db, 1) + " dB") + ".");
+        return;
+    }
+    if (a == "busfader")
+    {
+        const double db = std::round (std::clamp (v, -100.0, 6.0) * 10) / 10;
+        change ([db] (hl::Session& s) { s.busFader = db; }, "Drum bus fader: " + (db <= -99 ? juce::String ("-inf") : juce::String (db, 1) + " dB") + ".");
+        return;
+    }
+    if (a == "busmute")
+    {
+        change ([v] (hl::Session& s) { s.busMute = v > 0.5; }, v > 0.5 ? "Drum bus muted." : "Drum bus on.");
+        return;
+    }
+    if (a.rfind ("insbyp:", 0) == 0)
+    {
+        const auto rest = a.substr (7); const auto c = rest.find (':');
+        const int t = whoOf (rest.substr (0, c)), k = std::stoi (rest.substr (c + 1));
+        const juce::var& ins = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
+        auto* arr = ins.getArray();
+        if (! arr || k >= arr->size()) return;
+        const bool on = ! (bool) (*arr)[k]["on"];
+        change ([t, k, on] (hl::Session& s)
+        {
+            juce::var& ii = t < 0 ? s.busIns : s.tracks[(size_t) t].strip.inserts;
+            if (auto* o = ii[k].getDynamicObject()) o->setProperty ("on", on);
+        }, juce::String (insertDisplayName ((*arr)[k]["type"].toString())) + (on ? " on." : " bypassed."));
+        return;
+    }
     if (a == "ins")
     {
         const int k = (int) v;
@@ -1715,12 +1774,73 @@ void MainComponent::onMixAction (const std::string& a, double v)
     }
 }
 
-void MainComponent::onMixMenu (const std::string&, float x, float y, float w, float h)
+void MainComponent::onMixMenu (const std::string& what, float x, float y, float w, float h)
 {
     if (! engineState) return;
     const auto& S = engineState->session;
     const auto opts = juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (x, y, w, h).toNearestInt())).withMinimumWidth ((int) w);
     juce::PopupMenu m;
+    if (what.rfind ("ins:", 0) == 0)
+    {
+        // an insert slot: the built-in plugins (and, filled, open / bypass / remove)
+        const auto rest = what.substr (4); const auto c = rest.find (':');
+        const int t = rest.substr (0, c) == "bus" ? -1 : std::stoi (rest.substr (0, c)), k = std::stoi (rest.substr (c + 1));
+        const juce::var& ins = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
+        const int filled = ins.getArray() ? ins.getArray()->size() : 0;
+        const bool has = k < filled;
+        static const char* types[6] = { "eq", "pultec", "comp", "sat", "gate", "width" };
+        static const char* blurb[6] = { "Prism  (EQ)", "Ember  (Tube EQ)", "The Vise  (Compressor)", "Skull Cutter  (Saturation)", "Portcullis  (Gate)", "Horizon  (Stereo width)" };
+        const bool stereo = t < 0 || (t < (int) S.tracks.size() && S.tracks[(size_t) t].ch.size() > 1);
+        juce::PopupMenu add;
+        for (int i = 0; i < 6; ++i)
+            if (i != 5 || stereo) add.addItem (10 + i, blurb[i]);
+        add.addSeparator();
+        add.addItem (30, "Third Party Plugin...  (coming with plugin hosting)", false);
+        if (has)
+        {
+            const auto cur = ins[k]["type"].toString();
+            m.addSectionHeader (insertDisplayName (cur));
+            m.addItem (1, "Open", false);
+            m.addItem (2, (bool) ins[k]["on"] ? "Bypass" : "Turn on");
+            m.addSubMenu ("Replace with", add);
+            m.addSeparator();
+            m.addItem (3, "Remove");
+        }
+        else
+        {
+            m.addSectionHeader ("Insert " + juce::String (std::min (k, filled) + 1));
+            for (int i = 0; i < 6; ++i)
+                if (i != 5 || stereo) m.addItem (10 + i, blurb[i]);
+            m.addSeparator();
+            m.addItem (30, "Third Party Plugin...  (coming with plugin hosting)", false);
+        }
+        m.showMenuAsync (opts, [this, t, k, has] (int r)
+        {
+            if (r <= 0 || ! engineState) return;
+            auto& s0 = engineState->session;
+            auto mutate = [&] (std::function<void (juce::Array<juce::var>&)> op, const juce::String& what2)
+            {
+                if (audition) audition->stop();
+                juce::var& ii = t < 0 ? s0.busIns : s0.tracks[(size_t) t].strip.inserts;
+                if (! ii.isArray()) ii = juce::var (juce::Array<juce::var>());
+                op (*ii.getArray());
+                refreshModel(); refreshMix(); updateHeader(); setNotice (what2);
+                rerender();
+            };
+            if (r == 2) { onMixAction ("insbyp:" + (t < 0 ? std::string ("bus") : std::to_string (t)) + ":" + std::to_string (k), 0); return; }
+            if (r == 3) { mutate ([k] (juce::Array<juce::var>& a) { if (k < a.size()) a.remove (k); }, "Insert removed."); return; }
+            if (r >= 10 && r < 16)
+            {
+                const juce::String type (types[r - 10]);
+                mutate ([k, has, type] (juce::Array<juce::var>& a)
+                {
+                    if (has && k < a.size()) a.set (k, insertDefaults (type));
+                    else if (a.size() < 5) a.add (insertDefaults (type));
+                }, juce::String (insertDisplayName (type)) + (has ? " replaces it." : " added."));
+            }
+        });
+        return;
+    }
     m.addItem (1, "Bus (every channel)", true, mixSel < 0);
     m.addSeparator();
     for (int t = 0; t < (int) S.tracks.size(); ++t) m.addItem (t + 2, juce::String (S.tracks[(size_t) t].mic), true, mixSel == t);

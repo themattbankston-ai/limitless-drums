@@ -24,6 +24,16 @@ TEST_CASE ("Reverb sends R1 and R2")
     auto S = st->session;
     const int t = S.refIdx;
 
+    // a hit played back with a send: the returns come with it, and mix into the stereo
+    {
+        auto S1 = S; S1.tracks[(size_t) t].strip.r1 = -6; S1.busR2 = -6;
+        const auto M1 = ld::hl::renderMix (S1);
+        const auto L1 = ld::hl::measureLevels (S1, M1);
+        const auto h = ld::hl::renderHitStems (S1, M1, L1, 0);
+        REQUIRE (h.rev[0].size() == 2); REQUIRE (h.rev[1].size() == 2);
+        const auto lr = ld::hl::mixToStereo (S1, h);
+        CHECK (lr.first.size() == (size_t) h.len);
+    }
     // nothing sends: no returns
     auto M = ld::hl::renderMix (S);
     CHECK (M.rev[0].empty()); CHECK (M.rev[1].empty());

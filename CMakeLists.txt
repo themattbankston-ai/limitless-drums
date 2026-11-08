@@ -130,6 +130,12 @@ if(LD_BUILD_APP)
         assets/ui/parts/cap_big.png
         assets/ui/parts/bigfader.png
         assets/ui/parts/title.png
+        assets/ui/parts/strip_mono.png
+        assets/ui/parts/strip_stereo.png
+        assets/ui/parts/strip_bus.png
+        assets/ui/parts/divider.png
+        assets/irlib.json
+        assets/libref.json
         assets/logo/lockup-horizontal-night.svg
         assets/logo/lockup-horizontal-day.svg
         assets/fonts/InterDisplay-SemiBold.otf

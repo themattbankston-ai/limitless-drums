@@ -6,6 +6,29 @@
 
 namespace ld
 {
+std::string insertDisplayName (const juce::String& type)
+{
+    static const std::map<juce::String, std::string> names { { "gate", "PORTCULLIS" }, { "eq", "PRISM" }, { "pultec", "EMBER" }, { "comp", "THE VISE" },
+                                                             { "sat", "SKULL CUTTER" }, { "width", "HORIZON" }, { "verb", "ROOM" } };
+    return names.count (type) ? names.at (type) : type.toUpperCase().toStdString();
+}
+
+juce::var insertDefaults (const juce::String& type)
+{
+    // each built-in plugin's starting settings (Hitline's INS_TYPES defaults)
+    static const std::map<juce::String, const char*> defs {
+        { "gate", R"({"thr":-40,"range":-40,"ratio":0,"atk":0.3,"hold":40,"rel":120,"hyst":4,"look":1.5,"hpf":20,"lpf":20000})" },
+        { "eq", R"({"phase":"min","out":0,"bands":[]})" },
+        { "pultec", R"({"eqp":true,"meq":false,"lf":60,"lfBoost":0,"lfAtten":0,"hf":10,"bw":5,"hfBoost":0,"hfa":20,"hfAtten":0,"lpf":300,"lpk":0,"dipf":1000,"dip":0,"hpf":3,"hpk":0,"tube":true,"drive":1,"phase":"min","out":0})" },
+        { "comp", R"({"model":"dist","mix":1,"scHpf":20,"out":0,"dist":{"input":5,"ratio":"4","attack":5,"release":5,"dist":"","hp":false},"76":{"input":6.2,"ratio":"4","attack":3,"release":3},"fair":{"input":0,"thresh":5,"tc":2},"160":{"thresh":-27,"ratio":4,"overEasy":false},"chan":{"thresh":-24,"ratio":3,"knee":6,"attack":10,"release":120}})" },
+        { "sat", R"({"model":"decap","mix":1,"out":0,"auto":true,"decap":{"drive":3,"style":"A","tone":0,"lowcut":0,"highcut":0,"thump":false,"steep":false,"punish":false},"devil":{"crush":4,"darkness":2,"lowcut":false},"saturn":{"style":"gentle","drive":0,"tone":0},"fatso":{"input":0,"warmth":0,"tranny":true,"comp":"off"}})" },
+        { "width", R"({"width":1,"bassMono":120,"keep":true})" } };
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("type", type); o->setProperty ("on", true);
+    o->setProperty ("p", juce::JSON::parse (defs.count (type) ? juce::String (defs.at (type)) : juce::String ("{}")));
+    return juce::var (o);
+}
+
 namespace te = tracktion;
 using K = MicRole::Kind;
 
@@ -471,15 +494,22 @@ ui::StudioModel::MixView buildMixView (const EngineState& es, int sel, int hit, 
         const size_t N = 120, step = std::max<size_t> (1, r.size() / N);
         for (size_t k = 0; k + step <= r.size() && v.refWave.size() < N; k += step) { float m2 = 0; for (size_t q = k; q < k + step; ++q) m2 = std::max (m2, std::abs (r[q])); v.refWave.push_back (m2); }
     }
-    // the channel's insert slots
-    const juce::var& ins = v.sel < 0 ? S.busIns : S.tracks[(size_t) v.sel].strip.inserts;
-    if (auto* arr = ins.getArray())
-        for (auto& x : *arr)
-        {
-            static const std::map<juce::String, std::string> names { { "gate", "GATE" }, { "eq", "EQ" }, { "pultec", "TUBE EQ" }, { "comp", "COMP" }, { "sat", "SATURATE" }, { "verb", "ROOM" }, { "width", "WIDTH" } };
-            const auto t = x["type"].toString();
-            v.inserts.push_back ({ names.count (t) ? names.at (t) : t.toUpperCase().toStdString(), (bool) x["on"] });
-        }
+    // the insert slots: the selected channel's, and every strip's for the mixer (the built-in plugins by name)
+    auto slotsOf = [] (const juce::var& ins)
+    {
+        std::array<ui::StudioModel::MixView::Ins, 5> out {};
+        if (auto* arr = ins.getArray())
+            for (int k = 0; k < std::min (5, arr->size()); ++k)
+            {
+                const auto& x = arr->getReference (k);
+                out[(size_t) k] = { insertDisplayName (x["type"].toString()), ! x.hasProperty ("on") || (bool) x["on"] };
+            }
+        return out;
+    };
+    for (auto& in : slotsOf (v.sel < 0 ? S.busIns : S.tracks[(size_t) v.sel].strip.inserts)) if (! in.name.empty()) v.inserts.push_back (in);
+    for (auto& tr : S.tracks) v.chans.push_back ({ slotsOf (tr.strip.inserts), (float) tr.strip.r1, (float) tr.strip.r2 });
+    v.bus = { slotsOf (S.busIns), (float) S.busR1, (float) S.busR2 };
+    v.busFader = (float) S.busFader; v.busMute = S.busMute;
     return v;
 }
 } // namespace ld

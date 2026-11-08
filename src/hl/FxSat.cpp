@@ -382,6 +382,7 @@ std::pair<F32, F32> verbIR (const juce::var& p, double sr)
             for (auto& [k, v] : list) if (k == prog) irName = v;
         }
         const auto L = irLibrary[juce::Identifier (irName)];
+        if (! L.isObject() || ! L["bands"].isArray()) return {};   // the library isn't loaded: no reverb rather than a crash
         early = sincResample (decodeEarly (L["early"].toString()), (double) L["sr"], sr);
         haveEarly = true;
         double mx = 0;
@@ -456,6 +457,7 @@ static Kernel irKernel (const F32& h)
 Chs verbWet (const Chs& chs, double sr, const juce::var& p)
 {
     const auto [IL, IR] = verbIR (p, sr);
+    if (IL.empty()) return Chs (chs.size(), F32 (chs.empty() ? 0 : chs[0].size(), 0.0f));
     const bool st = chs.size() > 1;
     F32 L = convolve (chs[0], irKernel (IL)), R;
     if (st) R = convolve (chs[1], irKernel (IR));

@@ -80,6 +80,7 @@ private:
     int lastSelected = -2;
     // the Align step
     int alignMic = -1, alignHit = -2, renderGeneration = 0;
+    bool renderBusy = false, renderPending = false;   ///< one background render at a time; changes during it ask for one more
     bool alignSpread = true, alignSamples = false, alignDirty = true;
     void refreshAlign();
     void alignOp (std::function<void (hl::Session&)> op, const juce::String& what);

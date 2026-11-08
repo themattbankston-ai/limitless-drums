@@ -1316,122 +1316,343 @@ struct Studio::BigFader : visage::Frame
 };
 
 //==============================================================================
-// Mix: the full console, one strip per mic with a real fader and pan.
+// Mix: the mixer window (approved design mix_v5). One rendered strip per mic (mono or stereo), then a divider and
+// the wider Drum Bus. Each strip: name LCD, five insert slots, R1 / R2 send knobs, pan, M / S, fader with its scale,
+// the liquid-tube meters (one per channel), fader and peak readouts. Click a strip to edit its Tone and Shape in the
+// rack; click an insert slot for its menu, Cmd-click to bypass it; drag knobs and faders, double-click to reset.
 struct Studio::Console : visage::Frame
 {
     explicit Console (Studio& s) : studio (s) {}
     Studio& studio;
-    std::vector<float> meters;
-    int dragFader = -1, dragPan = -1;
-    float dragStartY = 0, dragStartValue = 0;
+    std::vector<float> meters, peaks;
+    float busMeter = 0, busPeak = 0;
 
-    static float dbToPos (float db) { return db <= -100 ? 0.0f : std::cbrt (std::pow (10.0f, db / 20.0f) / 2.0f); }
-    static float posToDb (float p) { return p <= 0.001f ? -100.0f : 20.0f * std::log10 (2.0f * p * p * p); }
+    // the strip renders' geometry, in render pixels (112 or 144 wide, 690 tall)
+    struct Geo { float W, insX, insW, r1, r2, pan, mX, mW, sX, sW, slot, readX, readW; std::vector<std::pair<float, float>> tubes; };
+    static const Geo& geo (bool bus, bool stereo)
+    {
+        static const Geo mono { 112, 8, 96, 32, 80, 56, 12, 42, 58, 42, 34, 14, 50, { { 80, 20 } } };
+        static const Geo st   { 112, 8, 96, 32, 80, 56, 12, 42, 58, 42, 34, 14, 50, { { 71, 15 }, { 90, 15 } } };
+        static const Geo bs   { 144, 8, 128, 40, 104, 72, 14, 56, 74, 56, 48, 14, 66, { { 92, 19 }, { 116, 19 } } };
+        return bus ? bs : stereo ? st : mono;
+    }
+    static constexpr float RH = 690, gapR = 5, divW = 24;
+    float K = 1, Y0 = 0;
+    std::vector<float> xs;   // left edge of each strip; the bus is last
+    float divX = 0;
 
-    float stripW() const { return std::clamp ((width() - 24) / std::max (1.0f, (float) studio.data.tracks.size()), 78.0f, 150.0f); }
+    void layout()
+    {
+        const int n = (int) studio.data.tracks.size();
+        const float avail = width() - 16;
+        K = std::min ((height() - 8) / RH, avail / (n * (112 + gapR) + divW + 12 + 144));
+        Y0 = 4;
+        xs.clear();
+        for (int i = 0; i < n; ++i) xs.push_back (8 + i * (112 + gapR) * K);
+        const float bx = width() - 8 - 144 * K;
+        divX = bx - (divW + 6) * K;
+        xs.push_back (bx);
+    }
+    // a point on a strip's render (the camera tilt: the same projection as the rack)
+    Point P (int si, float px, float py) const
+    {
+        const auto& G = geo (si == (int) xs.size() - 1, false);
+        return { xs[(size_t) si] + (G.W / 2 + (px - G.W / 2) / 1.01f) * K, Y0 + (345 + (py - 345) * 0.98163f / 1.01f) * K };
+    }
+    float fH() const { return 340 * K * 0.98163f / 1.01f; }
+    /** The fader scale: +6 at the top, 0 dB at 12 %, -60 near the bottom (the mockup's law). */
+    static float dbF (float db)
+    {
+        static const float m[7][2] = { { 6, 0 }, { 0, 0.12f }, { -6, 0.27f }, { -12, 0.42f }, { -24, 0.62f }, { -40, 0.8f }, { -60, 0.97f } };
+        for (int i = 0; i < 6; ++i)
+            if (db <= m[i][0] && db >= m[i + 1][0]) { const float u = (m[i][0] - db) / (m[i][0] - m[i + 1][0]); return m[i][1] + u * (m[i + 1][1] - m[i][1]); }
+        return db > 6 ? 0.0f : 1.0f;
+    }
+    static float dbOfF (float f)
+    {
+        float lo = -100, hi = 6;
+        for (int it = 0; it < 40; ++it) { const float mid = (lo + hi) / 2; if (dbF (mid) > f) lo = mid; else hi = mid; }
+        return f >= 0.985f ? -100.0f : (lo + hi) / 2;
+    }
+    static float sendPos (float db) { return db <= -59.5f ? 0.0f : std::clamp ((db + 60) / 66, 0.0f, 1.0f); }   // -60..+6
+    static float sendDb (float p) { return p <= 0.005f ? -60.0f : -60 + p * 66; }
+
+    void arcRing (Canvas& c, Point p, float r, float v, unsigned col, bool bip, float w)
+    {
+        const float pi = 3.14159265f, a0 = -0.75f * pi, full = 1.5f * pi;
+        c.setColor (0x14ffffff); c.arc (p.x - r - w / 2, p.y - r - w / 2, 2 * r + w, w, 0, full / 2, true);
+        float s0 = bip ? 0.0f : a0, s1 = bip ? (v - 0.5f) * full : a0 + v * full;
+        if (s1 < s0) std::swap (s0, s1);
+        if (s1 - s0 < 0.01f) return;
+        c.setBlendMode (visage::BlendMode::Add);
+        c.setColor (Color (col).withAlpha (0.3f)); c.arc (p.x - r - w * 1.5f, p.y - r - w * 1.5f, 2 * r + 3 * w, 3 * w, (s0 + s1) / 2, (s1 - s0) / 2, true);
+        c.setColor (Color (col)); c.arc (p.x - r - w / 2, p.y - r - w / 2, 2 * r + w, w, (s0 + s1) / 2, (s1 - s0) / 2, true);
+        c.setBlendMode (visage::BlendMode::Alpha);
+    }
+
+    /** The liquid tube: tinted glass, glowing liquid with a bright meniscus, a curved highlight, a peak bead. */
+    void tube (Canvas& c, float x, float y, float w, float h, float lev, float peak, unsigned colour)
+    {
+        const Color col (colour), r = w / 2 > 0 ? Color (colour) : Color (colour);
+        const float rad = w / 2;
+        c.setColor (Brush::linear (Color (0xf20a0c10), Color (0xe6161a22), Point (x, 0), Point (x + w / 2, 0)));
+        c.roundedRectangle (x, y, w, h, rad);
+        for (float d : { 0.0f, -6.0f, -12.0f, -24.0f, -40.0f }) { c.setColor (0x1affffff); c.fill (x + 2, y + dbF (d) * h, w * 0.3f, 1); }
+        lev = std::clamp (lev, 0.0f, 1.0f);
+        if (lev > 0.004f)
+        {
+            const float top = y + h * (1 - lev);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (col.withAlpha (0.18f)); c.roundedRectangleShadow (x - w, top - w * 0.5f, w * 3, y + h - top + w, rad * 2, w * 1.6f);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (Brush::linear (col.withAlpha (1.0f).interpolateWith (Color (0xff000000), 0.55f), col.interpolateWith (Color (0xffffffff), 0.45f), Point (0, y + h), Point (0, top)));
+            c.roundedRectangle (x + 0.5f, top, w - 1, y + h - top - 0.5f, std::min (rad, (y + h - top) / 2));
+            c.setColor (Brush::linear (Color (0x73000000), Color (0x00000000), Point (x, 0), Point (x + w * 0.3f, 0)));
+            c.fill (x, top + 2, w * 0.3f, y + h - top - 3);
+            c.setColor (0x38ffffff); c.fill (x + w * 0.36f, top + 2, w * 0.14f, y + h - top - 4);
+            c.setColor (col.interpolateWith (Color (0xffffffff), 0.7f)); c.roundedRectangle (x + 1, top - 0.7f, w - 2, 1.6f, 0.8f);
+        }
+        // the glass: a specular streak, a rim
+        c.setColor (0x4dffffff); c.roundedRectangle (x + w * 0.18f, y + rad * 0.7f, w * 0.1f, h - rad * 1.4f, w * 0.05f);
+        c.setColor (0x8cd2dceb); c.roundedRectangleBorder (x, y, w, h, rad, 1);
+        if (peak > 0.01f)
+        {
+            const float py = y + h * (1 - std::clamp (peak, 0.0f, 1.0f));
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (col.withAlpha (0.5f)); c.circle (x + w / 2 - w * 0.45f, py - w * 0.45f, w * 0.9f);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (col.interpolateWith (Color (0xffffffff), 0.6f)); c.circle (x + w / 2 - w * 0.25f, py - w * 0.18f, w * 0.5f);
+        }
+    }
 
     void draw (Canvas& c) override
     {
-        const auto ch = chrome (studio.day);
-        draw::glass (c, 0, 0, width(), height(), 8);
+        layout();
         const auto& d = studio.data;
-        meters.resize (d.tracks.size(), 0.0f);
-        const float sw = stripW();
-        for (int i = 0; i < (int) d.tracks.size(); ++i)
+        const auto& mv = d.mix;
+        const int n = (int) d.tracks.size();
+        meters.resize ((size_t) n, 0.0f); peaks.resize ((size_t) n, 0.0f);
+        c.setColor (0xff08090b); c.roundedRectangle (0, 0, width(), height(), 8);
+        parts::image (c, LD_PART (divider), divX, Y0, divW * K, RH * K);
+        for (int si = 0; si <= n; ++si)
         {
-            const auto& tr = d.tracks[(size_t) i];
-            const float x = 12 + i * sw, y = 12, w = sw - 8, h = height() - 24;
-            c.setColor (Brush::linear (Color (0xff1e2126), Color (0xff121418), Point (0, y), Point (0, y + h)));
-            c.roundedRectangle (x, y, w, h, 7);
-            c.setColor (Brush::linear (Color (tr.colourA), Color (tr.colourB), Point (x, 0), Point (x + w, 0)));
-            c.roundedRectangle (x + 6, y + 6, w - 12, 4, 2);
-            c.setColor (ch.ink);
-            draw::text (c, tr.name, uiFont (12), Font::kCenter, x, y + 14, w, 18);
-            c.setColor (0xff8a919c);
-            draw::text (c, tr.model, bodyFont (10.5f), Font::kCenter, x, y + 31, w, 14);
-
-            draw::knob (c, x + w * 0.5f, y + 72, 13, tr.pan * 0.5f + 0.5f, tr.colourA);
-            c.setColor (0xff8a919c);
-            draw::text (c, std::abs (tr.pan) < 0.01f ? "C" : draw::fmt (tr.pan < 0 ? "L%.0f" : "R%.0f", std::abs (tr.pan) * 100),
-                        monoFont (10), Font::kCenter, x, y + 94, w, 14);
-
-            // fader slot and meter
-            const float fy = y + 120, fh = h - 190;
-            const float slotX = x + w * 0.5f - 14;
-            c.setColor (0xff050608);
-            c.roundedRectangle (slotX, fy, 4, fh, 2);
-            const float m = meters[(size_t) i];
-            const float mx = x + w * 0.5f + 12;
-            c.setColor (0xff050608);
-            c.roundedRectangle (mx, fy, 6, fh, 2);
-            if (m > 0.001f)
+            const bool bus = si == n;
+            const TrackInfo* tr = bus ? nullptr : &d.tracks[(size_t) si];
+            const bool stereo = bus || tr->stereo;
+            const auto& G = geo (bus, stereo);
+            const float x0 = xs[(size_t) si], W = G.W * K;
+            const unsigned col = bus ? neon::orange : tr->colourA;
+            const Color cc (col);
+            if (bus) parts::image (c, LD_PART (strip_bus), x0, Y0, W, RH * K);
+            else if (stereo) parts::image (c, LD_PART (strip_stereo), x0, Y0, W, RH * K);
+            else parts::image (c, LD_PART (strip_mono), x0, Y0, W, RH * K);
+            // a wash of the track colour over the metal
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (cc.withAlpha (0.07f)); c.roundedRectangle (x0 + 4 * K, Y0 + 4 * K, W - 8 * K, 682 * K, 6);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            const bool sel = bus ? mv.sel < 0 : mv.sel == si;
+            if (sel)
             {
-                const float mh = fh * std::min (1.0f, m);
-                c.setColor (Brush::linear (Color (neon::lime), Color (neon::red), Point (0, fy + fh), Point (0, fy)));
-                c.roundedRectangle (mx, fy + fh - mh, 6, mh, 2);
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (cc.withAlpha (0.25f)); c.roundedRectangleBorder (x0 - 3, Y0 - 3, W + 6, RH * K + 6, 9, 6);
+                c.setBlendMode (visage::BlendMode::Alpha);
+                c.setColor (cc.withAlpha (0.95f)); c.roundedRectangleBorder (x0 + 1, Y0 + 1, W - 2, RH * K - 2, 7, 2);
             }
-            const float pos = dbToPos (tr.volumeDb);
-            const float capY = fy + fh * (1.0f - pos);
-            c.setColor (0x99000000);
-            c.roundedRectangle (slotX - 14, capY - 9, 32, 20, 3);
-            c.setColor (Brush::linear (Color (0xffe9ecf0), Color (0xff8d939b), Point (0, capY - 10), Point (0, capY + 10)));
-            c.roundedRectangle (slotX - 14, capY - 10, 32, 20, 3);
-            c.setColor (0xff1b1d21);
-            c.fill (slotX - 12, capY - 0.5f, 28, 1.5f);
-
-            c.setColor (ch.ink);
-            draw::text (c, tr.volumeDb <= -99 ? "-inf" : draw::fmt ("%+.1f", (double) tr.volumeDb), monoFont (11), Font::kCenter, x, fy + fh + 8, w, 16);
-
-            auto button = [&] (float bx, const char* label, bool on, unsigned col)
+            // name LCD
             {
-                c.setColor (on ? col : 0xff2c2f36);
-                c.roundedRectangle (bx, y + h - 34, 24, 20, 4);
-                c.setColor (on ? 0xff1a1306 : 0xffa3a9b3);
-                draw::text (c, label, boldFont (11), Font::kCenter, bx, y + h - 34, 24, 20);
-            };
-            button (x + w * 0.5f - 27, "S", tr.solo, neon::gold);
-            button (x + w * 0.5f + 3, "M", tr.mute, neon::red);
+                const auto p = P (si, 8, 8); const float nw = (G.W - 16) * K, nh = 24 * K;
+                c.setColor (Brush::linear (cc.withAlpha (0.18f), cc.withAlpha (0.06f), Point (0, p.y), Point (0, p.y + nh)));
+                c.roundedRectangle (p.x + 2, p.y + 2, nw - 4, nh - 4, 3);
+                c.setColor (cc.interpolateWith (Color (0xffffffff), 0.55f));
+                draw::text (c, bus ? std::string ("Drum Bus") : tr->name, uiFont (std::min (10.0f, 11 * K)), Font::kCenter, p.x, p.y, nw, nh);
+            }
+            // inserts
+            const auto* ch = bus ? &mv.bus : (si < (int) mv.chans.size() ? &mv.chans[(size_t) si] : nullptr);
+            for (int k = 0; k < 5; ++k)
+            {
+                const auto p = P (si, G.insX, 40 + k * 26); const float iw = G.insW * K, ih = 22 * K;
+                const auto* in = ch ? &ch->ins[(size_t) k] : nullptr;
+                const bool has = in && ! in->name.empty();
+                if (has)
+                {
+                    c.setBlendMode (visage::BlendMode::Add);
+                    c.setColor (Brush::linear (cc.withAlpha (in->on ? 0.10f : 0.03f), cc.withAlpha (in->on ? 0.30f : 0.08f), Point (0, p.y), Point (0, p.y + ih)));
+                    c.roundedRectangle (p.x + 4, p.y + 3, iw - 8, ih - 8, 4);
+                    if (in->on) { c.setColor (cc); c.fill (p.x + 12, p.y + ih - 6, iw - 24, 1.4f); }
+                    c.setBlendMode (visage::BlendMode::Alpha);
+                }
+                c.setColor (has ? (in->on ? 0xfff4f6fa : 0xff6c717a) : 0xff4a4f57);
+                draw::text (c, has ? in->name : std::string(), boldFont (std::min (7.6f, 8.6f * K)), Font::kCenter, p.x, p.y, iw, ih - 3);
+            }
+            // R1 / R2 sends
+            const float r1 = ch ? ch->r1 : -60, r2 = ch ? ch->r2 : -60;
+            const float kr = (bus ? 16.5f : 15) * K;
+            arcRing (c, P (si, G.r1, 198), kr, sendPos (r1), 0xffa78bff, false, 2);
+            arcRing (c, P (si, G.r2, 198), kr, sendPos (r2), 0xff29e3ff, false, 2);
+            c.setColor (0xffb9bec6);
+            for (auto [k, lbl] : { std::pair<float, const char*> { G.r1, "R1" }, { G.r2, "R2" } })
+            {
+                const auto p = P (si, k, 198);
+                draw::text (c, lbl, boldFont (6.8f), Font::kCenter, p.x - 14, p.y + (bus ? 22 : 21) * K - 6, 28, 12);
+            }
+            // pan
+            {
+                const auto p = P (si, G.pan, 250);
+                const float pan = bus ? 0.0f : tr->pan;
+                arcRing (c, p, (bus ? 19 : 17.5f) * K, pan * 0.5f + 0.5f, bus ? neon::orange : 0xffffffffu, true, 2);
+                c.setColor (0xff8b9099);
+                const std::string pl = bus ? std::string ("BAL") : std::abs (pan) < 0.01f ? std::string ("C") : draw::fmt (pan < 0 ? "L%.0f" : "R%.0f", std::abs (pan) * 100);
+                draw::text (c, pl, boldFont (6.5f), Font::kCenter, p.x - 16, p.y + (bus ? 23 : 21.5f) * K - 6, 32, 12);
+            }
+            // M / S
+            {
+                const bool mute = bus ? mv.busMute : tr->mute, solo = bus ? false : tr->solo;
+                auto key = [&] (float kx, float kw, const char* lbl, bool on, unsigned kc)
+                {
+                    const auto p = P (si, kx, 276); const float w = kw * K, h = 20 * K;
+                    if (on)
+                    {
+                        c.setBlendMode (visage::BlendMode::Add);
+                        c.setColor (Color (kc).withAlpha (0.22f)); c.roundedRectangle (p.x + 3, p.y + 3, w - 6, h - 6, 3);
+                        c.setBlendMode (visage::BlendMode::Alpha);
+                    }
+                    c.setColor (on ? kc : 0xff9aa0a9u);
+                    draw::text (c, lbl, boldFont (8), Font::kCenter, p.x, p.y, w, h);
+                };
+                key (G.mX, G.mW, "M", mute, neon::red);
+                if (! bus) key (G.sX, G.sW, "S", solo, neon::gold);
+            }
+            // fader: scale, lit groove, cap
+            const float fdb = bus ? mv.busFader : tr->volumeDb;
+            const auto ft = P (si, G.slot, 306); const float fh = fH(), cy = ft.y + dbF (fdb) * fh;
+            c.setColor (cc.withAlpha (0.85f)); c.fill (ft.x - 1.2f, cy, 2.4f, ft.y + fh - cy);
+            for (float dd : { 6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -40.0f })
+            {
+                const float yy = ft.y + dbF (dd) * fh;
+                c.setColor (0x47ffffff); c.fill (ft.x - 16 * K, yy, 7 * K, 1);
+                c.setColor (0xff6f767f);
+                draw::text (c, dd > 0 ? std::string ("+6") : draw::fmt ("%.0f", dd), monoFont (6.5f), Font::kRight, ft.x - 17 * K - 30, yy - 5, 28, 10);
+            }
+            parts::image (c, LD_PART (cap_small), ft.x - 16 * K, cy - 11 * K, 32 * K, 22 * K);
+            c.setColor (cc); c.fill (ft.x - 13 * K, cy - 0.75f, 26 * K, 1.5f);
+            // meters
+            const float lv = bus ? busMeter : meters[(size_t) si], pk = bus ? busPeak : peaks[(size_t) si];
+            for (auto [tx, tw] : G.tubes)
+            {
+                const auto p = P (si, tx, 306);
+                tube (c, p.x, p.y, tw * K, fh, lv, pk, col);
+            }
+            // readouts
+            const auto rp = P (si, G.readX, 652);
+            c.setColor (bus ? neon::orange : 0xffe8ecf2u);
+            draw::text (c, fdb <= -99 ? std::string ("-inf") : draw::fmt ("%+.1f", fdb), monoBold (8.5f), Font::kCenter, rp.x, rp.y, G.readW * K, 22 * K);
+            const float tc = G.tubes.size() == 2 ? (G.tubes[0].first + G.tubes[1].first + G.tubes[1].second) / 2 : G.tubes[0].first + G.tubes[0].second / 2;
+            const float pdb = pk > 0.001f ? 20 * std::log10 (pk) : -100;
+            c.setColor (pdb > -2 ? 0xffff5a5fu : cc.interpolateWith (Color (0xffffffff), 0.4f).toARGB());
+            draw::text (c, pdb <= -99 ? std::string ("-inf") : draw::fmt ("%.1f", pdb), monoBold (8), Font::kCenter, P (si, tc, 652).x - 24, rp.y, 48, 22 * K);
+        }
+    }
+
+    // ---- hit testing
+    enum Part { none, strip, ins, r1, r2, pan, mute, solo, fader };
+    struct Hit { int si = -1; Part part = none; int slot = -1; };
+    Hit hitAt (Point q) const
+    {
+        const int n = (int) studio.data.tracks.size();
+        for (int si = 0; si <= n && si < (int) xs.size(); ++si)
+        {
+            const bool bus = si == n;
+            const auto& G = geo (bus, bus || studio.data.tracks[(size_t) si].stereo);
+            const float x0 = xs[(size_t) si];
+            if (q.x < x0 || q.x > x0 + G.W * K || q.y < Y0 || q.y > Y0 + RH * K) continue;
+            auto in = [&] (float px, float py, float w, float h) { const auto p = P (si, px, py); return q.x >= p.x && q.x < p.x + w * K && q.y >= p.y && q.y < p.y + h * K; };
+            auto near = [&] (float px, float py, float r) { const auto p = P (si, px, py); return std::hypot (q.x - p.x, q.y - p.y) < r * K; };
+            for (int k = 0; k < 5; ++k) if (in (G.insX, 40 + k * 26, G.insW, 22)) return { si, ins, k };
+            if (near (G.r1, 198, 20)) return { si, r1 };
+            if (near (G.r2, 198, 20)) return { si, r2 };
+            if (near (G.pan, 250, 22)) return { si, pan };
+            if (in (G.mX, 276, G.mW, 20)) return { si, mute };
+            if (! bus && in (G.sX, 276, G.sW, 20)) return { si, solo };
+            if (in (G.slot - 18, 296, 36, 360)) return { si, fader };
+            return { si, strip };
+        }
+        return {};
+    }
+
+    Hit drag; float grabY = 0, grabV = 0;
+
+    float valueOf (const Hit& h) const
+    {
+        const auto& d = studio.data; const auto& mv = d.mix; const int n = (int) d.tracks.size();
+        const bool bus = h.si == n;
+        const auto* ch = bus ? &mv.bus : (h.si < (int) mv.chans.size() ? &mv.chans[(size_t) h.si] : nullptr);
+        switch (h.part)
+        {
+            case r1: return sendPos (ch ? ch->r1 : -60);
+            case r2: return sendPos (ch ? ch->r2 : -60);
+            case pan: return bus ? 0.0f : d.tracks[(size_t) h.si].pan;
+            case fader: return dbF (bus ? mv.busFader : d.tracks[(size_t) h.si].volumeDb);
+            default: return 0;
+        }
+    }
+    void send (const Hit& h, float v)
+    {
+        const int n = (int) studio.data.tracks.size();
+        const bool bus = h.si == n;
+        const std::string who = bus ? std::string ("bus") : std::to_string (h.si);
+        if (! studio.onMix) return;
+        switch (h.part)
+        {
+            case r1: studio.onMix ("send:" + who + ":0", sendDb (v)); break;
+            case r2: studio.onMix ("send:" + who + ":1", sendDb (v)); break;
+            case pan: if (! bus && studio.onPan) studio.onPan (h.si, v); break;
+            case fader: if (bus) studio.onMix ("busfader", dbOfF (v)); else if (studio.onVolume) studio.onVolume (h.si, dbOfF (v)); break;
+            default: break;
         }
     }
 
     void mouseDown (const visage::MouseEvent& e) override
     {
         studio.requestKeyboardFocus();
-        const auto& d = studio.data;
-        const float sw = stripW();
-        const int i = (int) ((e.position.x - 12) / sw);
-        if (i < 0 || i >= (int) d.tracks.size()) return;
-        const float x = 12 + i * sw, w = sw - 8, y = 12, h = height() - 24;
-        const auto& tr = d.tracks[(size_t) i];
-        if (e.position.y > y + h - 34 && e.position.y < y + h - 14)
+        const auto h = hitAt (e.position);
+        if (h.si < 0) return;
+        const int n = (int) studio.data.tracks.size();
+        const bool bus = h.si == n;
+        const std::string who = bus ? std::string ("bus") : std::to_string (h.si);
+        // any click on a strip selects it for the rack
+        if (studio.onMix && (bus ? studio.data.mix.sel >= 0 : studio.data.mix.sel != h.si)) studio.onMix ("sel:" + who, 0);
+        switch (h.part)
         {
-            if (e.position.x < x + w * 0.5f) { if (studio.onSolo) studio.onSolo (i, ! tr.solo); }
-            else if (studio.onMute) studio.onMute (i, ! tr.mute);
-            return;
-        }
-        if (e.position.y > y + 52 && e.position.y < y + 96)
-        {
-            if (e.repeatClickCount() >= 2) { if (studio.onPan) studio.onPan (i, 0.0f); return; }
-            dragPan = i; dragStartY = e.position.y; dragStartValue = tr.pan;
-            return;
-        }
-        if (e.position.y > y + 110 && e.position.y < height() - 70)
-        {
-            if (e.repeatClickCount() >= 2) { if (studio.onVolume) studio.onVolume (i, 0.0f); return; }
-            dragFader = i; dragStartY = e.position.y; dragStartValue = dbToPos (tr.volumeDb);
+            case ins:
+                if (e.isCmdDown() || e.isAltDown()) { if (studio.onMix) studio.onMix ("insbyp:" + who + ":" + std::to_string (h.slot), 0); }
+                else if (studio.onMixMenu)
+                {
+                    const auto p = P (h.si, geo (bus, true).insX, 40 + h.slot * 26);
+                    studio.onMixMenu ("ins:" + who + ":" + std::to_string (h.slot), p.x + positionInWindow().x, p.y + positionInWindow().y, geo (bus, true).insW * K, 22 * K);
+                }
+                return;
+            case mute: if (bus) { if (studio.onMix) studio.onMix ("busmute", studio.data.mix.busMute ? 0 : 1); } else if (studio.onMute) studio.onMute (h.si, ! studio.data.tracks[(size_t) h.si].mute); return;
+            case solo: if (studio.onSolo) studio.onSolo (h.si, ! studio.data.tracks[(size_t) h.si].solo); return;
+            case r1: case r2: case pan: case fader:
+                if (e.repeatClickCount() >= 2)
+                {
+                    send (h, h.part == fader ? dbF (0) : h.part == pan ? 0.0f : 0.0f);
+                    return;
+                }
+                drag = h; grabY = e.position.y; grabV = valueOf (h);
+                return;
+            default: return;
         }
     }
-
     void mouseDrag (const visage::MouseEvent& e) override
     {
-        const float fh = height() - 24 - 190;
-        if (dragFader >= 0 && studio.onVolume)
-            studio.onVolume (dragFader, posToDb (std::clamp (dragStartValue - (e.position.y - dragStartY) / fh, 0.0f, 1.0f)));
-        if (dragPan >= 0 && studio.onPan)
-            studio.onPan (dragPan, std::clamp (dragStartValue - (e.position.y - dragStartY) / 100.0f, -1.0f, 1.0f));
+        if (drag.si < 0) return;
+        const float dy = e.position.y - grabY;
+        if (drag.part == fader) send (drag, std::clamp (grabV + dy / fH(), 0.0f, 1.0f));
+        else if (drag.part == pan) send (drag, std::clamp (grabV - dy / 120.0f, -1.0f, 1.0f));
+        else send (drag, std::clamp (grabV - dy / 150.0f, 0.0f, 1.0f));
     }
-
-    void mouseUp (const visage::MouseEvent&) override { dragFader = dragPan = -1; }
+    void mouseUp (const visage::MouseEvent&) override { drag = {}; }
 };
 
 //==============================================================================
@@ -2697,12 +2918,23 @@ void Studio::tick (double t)
         stripsLive = stripsLive || any > 0.002f;
     }
     if (stripsLive || playing) strips->redraw();
+    console->peaks.resize (data.tracks.size(), 0.0f);
+    // the tubes read on the fader's scale; the peak bead holds, then sinks slowly
+    auto tubeLevel = [] (float amp) { return amp <= 0.00001f ? 0.0f : 1.0f - Console::dbF (20.0f * std::log10 (amp)); };
+    float busAmp = 0.0f;
     for (size_t i = 0; i < data.tracks.size(); ++i)
     {
         const float l = levelAt (data.tracks[i]);
-        console->meters[i] = std::max (l, console->meters[i] * 0.88f);
+        console->meters[i] = std::max (tubeLevel (l), console->meters[i] * 0.9f);
+        console->peaks[i] = std::max (console->meters[i], console->peaks[i] - 0.004f);
         if (data.tracks[i].isRoom) room = std::max (room, l);
         master = std::max (master, l);
+        busAmp += l;
+    }
+    {
+        const float bl = tubeLevel (std::min (2.0f, busAmp) * (data.mix.busMute ? 0.0f : std::pow (10.0f, data.mix.busFader / 20.0f)));
+        console->busMeter = std::max (bl, console->busMeter * 0.9f);
+        console->busPeak = std::max (console->busMeter, console->busPeak - 0.004f);
     }
     rack->roomMeter = std::max (room, rack->roomMeter * 0.9f);
     rack->masterMeter = std::max (master, rack->masterMeter * 0.9f);

@@ -125,6 +125,11 @@ struct StudioModel
         std::vector<float> refWave;                ///< peaks of the reference's first hit
         struct Ins { std::string name; bool on = false; };
         std::vector<Ins> inserts;                  ///< the selected channel's insert slots
+        /** One mixer strip: its five insert slots (empty name = empty slot) and its reverb sends (dB, -60 = off). */
+        struct Chan { std::array<Ins, 5> ins; float r1 = -60, r2 = -60; };
+        std::vector<Chan> chans;                   ///< per track, in track order
+        Chan bus;                                  ///< the drum bus
+        float busFader = 0; bool busMute = false;
         bool fxOn = false;
     } mix;
 };

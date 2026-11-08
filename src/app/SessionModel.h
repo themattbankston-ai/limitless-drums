@@ -20,6 +20,11 @@ ui::StudioModel::TuneView buildTuneView (const EngineState&, int hit);
 /** The Mix step's view of the selected channel (-1: the bus) around the selected hit. */
 ui::StudioModel::MixView buildMixView (const EngineState&, int sel, int hit, const hl::Chs* refAudio, const std::string& refName);
 
+/** The built-in plugins' names as the mixer shows them (eq: PRISM, comp: THE VISE ...). */
+std::string insertDisplayName (const juce::String& type);
+/** A new insert slot of this type with its starting settings: { type, on, p }. */
+juce::var insertDefaults (const juce::String& type);
+
 /** The audio files behind the edit's tracks, in track order. */
 std::vector<juce::File> editFiles (tracktion::Edit&);
 } // namespace ld
