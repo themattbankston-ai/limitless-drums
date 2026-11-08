@@ -73,6 +73,18 @@ Checked against two real multitracks (a 12-mic song and a 10-mic double-pedal so
   flagged.
 - **Problems flagged on the double-pedal song**: 200 → 54. The 12-mic song: 27 → 19, with its isolated flams kept.
 
+## Doubles that were really decay bumps
+Of the 18 doubles flagged on the double-pedal song, 9 of the 10 kick ones weren't second strikes: a kick's low end
+swells again about 50 ms after the hit, and the detector read that as a new hit (neither kick mic gets any louder).
+- **New rule in hit detection:** a new hit has to get at least 3 dB louder than what was already sounding on that
+  mic, looking up to 25 ms on (tom attacks can take 15 ms to build).
+- Results: 247 kick "hits" on that song were decay bumps and are gone. Tom hits that fired early on bleed now land
+  on the real attack. Of the louder toms no longer found, 7 of 8 checked on the waveform were snare bleed or
+  nothing. One (188.44 s) is borderline between a tom-and-snare unison and a hard snare.
+- Very quiet partners don't count as flams or doubles on toms either (ringing), as on kicks.
+- Problems flagged on that song: 54 → 32 (doubles 18 → 3: a snare double stroke, a real kick double, and one kick
+  to listen to at 113.66 s). The 12-mic song: 19 → 17, and the rush near 80 s is gone.
+
 ## Tried and not kept: arrival order
 Idea: a drum reaches its own mic first and every other mic a fixed time later, so a hit that turns up on a mic before
 the bleed delay must have been played near that mic. Measured on both multitracks:

@@ -90,6 +90,19 @@ std::vector<Onset> onsetsOf (const F32& x, double sr, int track, Drum drum)
         long pos = pkAt;
         for (long q = flAt; q <= pkAt; ++q) if (std::abs (x[(size_t) q]) >= fl + 0.2 * (pk - fl)) { pos = q; break; }
         if (pos - last < minGap) continue;
+        // a new strike gets louder than what was already sounding: a bump in the decay of the last hit (a kick's
+        // low end swells again ~50 ms later) doesn't. Peak just after the start against the peak just before it.
+        {
+            const long b0 = std::max (0L, pos - (long) (0.008 * sr)), b1 = std::max (0L, pos - (long) (0.002 * sr));
+            // (a tom's attack can take 15 ms or more to build, so look 25 ms on)
+            const long a0 = std::max (0L, pos - (long) (0.001 * sr)), a1 = std::min ((long) x.size(), pos + (long) (0.025 * sr));
+            double before = 0, after = 0;
+            for (long q = b0; q < b1; ++q) before = std::max (before, (double) std::abs (x[(size_t) q]));
+            for (long q = a0; q < a1; ++q) after = std::max (after, (double) std::abs (x[(size_t) q]));
+            if (std::getenv ("LD_RISE_DEBUG") && after < before * 1.4)
+                fprintf (stderr, "no rise: track %d at %.3f s, %+.1f dB\n", track, pos / sr, 20 * std::log10 (after / (before + 1e-12)));
+            if (after < before * 1.4) continue;   // under 3 dB of rise
+        }
         last = pos;
         // brightness: how much of the hit's first 8 ms is in the differenced (high-frequency) signal
         double hf = 0, en = 0;
@@ -347,8 +360,8 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
                 bool run = false;
                 for (size_t k = j; k-- > 0 && A.hits[j].pos - A.hits[k].pos <= reach;) if (sameAt (k, i)) { run = true; break; }
                 for (size_t k = i + 1; ! run && k < A.hits.size() && A.hits[k].pos - A.hits[i].pos <= reach; ++k) if (sameAt (k, i)) run = true;
-                // on a kick, a very quiet partner is a leftover from a second kick mic rather than a played note
-                const bool phantom = A.hits[i].drum == Drum::kick && std::min (A.hits[i].vel, A.hits[j].vel) < 0.15f;
+                // on a kick or a tom, a very quiet partner is a second mic's leftover or the drum ringing, not a played note
+                const bool phantom = (A.hits[i].drum == Drum::kick || A.hits[i].drum == Drum::tom) && std::min (A.hits[i].vel, A.hits[j].vel) < 0.15f;
                 if (! run && ! phantom) A.hits[i].flam = true;
                 break;
             }
@@ -737,7 +750,7 @@ std::vector<SongProblem> findProblems (const SongAnalysis& A, const SongSettings
                 // part of a run (a roll, a double-pedal stream): another hit on this drum within three gaps either side
                 const long reach = std::max (gap * 3, (long) (0.06 * sr));
                 const bool roll = (prev2 >= 0 && prev - prev2 <= reach) || (next >= 0 && next - h.pos <= reach);
-                const bool phantom = h.drum == Drum::kick && std::min (h.vel, prevVel) < 0.15f;
+                const bool phantom = (h.drum == Drum::kick || h.drum == Drum::tom) && std::min (h.vel, prevVel) < 0.15f;
                 if (gap < (long) (std::min (0.09, beat / 8) * sr) && ! roll && ! phantom)
                     P.push_back ({ h.pos, "double", std::string ("Double ") + drumName (h.drum) + " hit" });
             }
