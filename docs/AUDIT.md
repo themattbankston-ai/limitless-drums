@@ -50,8 +50,25 @@ Hidden cases (run with a tag):
 - `[.mem]`: memory probes.
 - `[.perf]`: performance probes.
 
-Tests that need local data (the synthetic songs in `/home/claude/songtest`, the test VST3) skip themselves when
-that data is absent.
+Tests that need local data skip themselves when it's absent:
+- **Synthetic songs** (`LD_SONG`, default `/home/claude/songtest/song60` and `song240`): make them with
+  `tools/testdata/make_song.py <out dir> <seconds> [seed]` (60 and 240 seconds, seed 1). The generator takes its snare
+  from a reference sample session (see below), so it needs that data too.
+- **Test VST3** (`LD_PLUGIN_PATH`): build `tools/testdata/testplug` with `-DJUCE_DIR=` pointing at the JUCE inside the
+  fetched Tracktion Engine. It's a gain plug-in with 64 samples of reported latency.
+- **Parity reference data** (`LD_PARITY_SESSIONS`): not included (see below). Without it these files' parity cases skip:
+  CompMeterTests, VerbSendTests, ExportParityTests, ParityTests, AlignOpsTests, PrepParityTests, MemoryProbe,
+  NewSessionTests, StandardTests and AuditionTests.
+
+### Reference data not in this archive
+The parity suite compares the engine with **Hitline 4.8's own output**, made by running Hitline's processing in a
+headless browser (`harness.html` plus `run.js`) on sample sessions. That material is third-party and isn't ours to
+distribute:
+- Hitline's application code.
+- Commercial sample sessions (GetGood Drums).
+- Panda Studios recordings.
+
+An auditor who wants to rerun parity needs their own licensed copies of Hitline 4.8 and of test sessions.
 
 ## Specifications and notes
 - `docs/plugin-windows.md`: each plugin window's controls and live behaviour.
@@ -62,15 +79,20 @@ that data is absent.
   conversation rather than kept in the repo.
 
 ## Built-in processors and their intended references
-Limitless Drums began as a port of **Hitline 4.8**'s processing (`src/hl/`). Its inserts are Hitline's models,
-re-skinned with original artwork and names. The names below are the products each model was voiced after.
-None of those products' code, impulse responses or artwork is used; the DSP is Hitline's model, ported. No
-third-party code was decompiled.
+**Provenance, stated plainly:**
+- **Ported from Hitline:** the engine in `src/hl/` is a C++ translation of **Hitline 4.8's JavaScript processing**
+  (Hitline ships as an Electron app, so its code is readable), checked against Hitline's own output by the parity
+  tests. That covers detection, alignment, tuning, levelling, the inserts and the reverbs.
+- **Original to Limitless Drums:** the interface, the plug-in window artwork, Song mode (`src/hl/Song.*`), third-party
+  plug-in hosting (`src/app/ExtPlugins.*`), the Tracktion integration, and every change made since the port.
+- **What the names below mean:** they're the products Hitline's models were voiced after. None of those products'
+  code, impulse responses or artwork is used, and nothing was decompiled. Whether porting Hitline's code is permitted
+  is a licensing question for the audit; the project is for personal use only.
 
 | Window | Insert type | Modes, and what each is modelled on |
 | --- | --- | --- |
-| **Skull Cutter** (saturation) | `sat` | VALVE = Soundtoys Decapitator (styles A, E, N, T, P); CRUSH = Soundtoys Devil-Loc (Crush, Darkness); MULTI = FabFilter Saturn (Gentle, Tape, Tube, Transformer, Heavy); TAPE = Empirical Labs FATSO (Warmth, compression Off / Buss / GP / Spank) |
-| **The Vise** (compressor) | `comp` | PANIC = Empirical Labs Distressor (ratios 1 to 20 and Nuke); FET = UREI/UA 1176 (ratios 4, 8, 12, 20, All); VARI-MU = Fairchild 660/670 (threshold, time constant); VCA = dbx 160 (ratios 1.5 to infinity); CLEAN = a transparent channel compressor (no specific reference) |
+| **Skull Cutter** (saturation) | `sat` (models `decap`, `devil`, `saturn`, `fatso`) | VALVE = Soundtoys Decapitator (styles A, E, N, T, P); CRUSH = Soundtoys Devil-Loc (Crush, Darkness); MULTI = FabFilter Saturn (Gentle, Tape, Tube, Transformer, Heavy); TAPE = Empirical Labs FATSO (Warmth, compression Off / Buss / GP / Spank) |
+| **The Vise** (compressor) | `comp` (models `dist`, `76`, `fair`, `160`, default clean) | PANIC = Empirical Labs Distressor (ratios 1 to 20 and Nuke); FET = UREI/UA 1176 (ratios 4, 8, 12, 20, All); VARI-MU = Fairchild 660/670 (threshold, time constant); VCA = dbx 160 (ratios 1.5 to infinity); CLEAN = a transparent channel compressor (no specific reference) |
 | **Portcullis** (gate) | `gate` | Generic gate/expander with key filters, Listen and Flip (ducking). No single reference. |
 | **Ember** (tube EQ) | `pultec` | Pultec EQP-1A with MEQ-5 |
 | **Prism** (EQ) | `eq` | Generic parametric/dynamic EQ (Hitline's EQ). No single reference. |
