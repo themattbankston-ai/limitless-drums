@@ -19,6 +19,8 @@ ui::StudioModel::TuneView buildTuneView (const EngineState&, int hit);
 
 /** The Mix step's view of the selected channel (-1: the bus) around the selected hit. */
 ui::StudioModel::MixView buildMixView (const EngineState&, int sel, int hit, const hl::Chs* refAudio, const std::string& refName);
+/** Song mode's Edit & Tempo view: the grid, the hits and where they move, the problems. */
+ui::StudioModel::SongView buildSongView (const EngineState&);
 
 /** The built-in plugins' names as the mixer shows them (eq: PRISM, comp: THE VISE ...). */
 std::string insertDisplayName (const juce::String& type);

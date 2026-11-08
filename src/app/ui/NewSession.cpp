@@ -16,7 +16,7 @@ const DrumDef drums[9] = {
     { "crash",  "Crash",    0xff7cff9b, "M5 16L35 10M20 13v19", 40 },
     { "china",  "China",    0xffff6a3d, "M4 11c4 6 28 6 32 0M8 13l-3-4M32 13l3-4M20 15v17", 40 },
     { "splash", "Splash",   0xffff7ad9, "M10 14c4-3 16-3 20 0M20 14v18", 40 },
-    { "kit",    "Full kit", 0xffffd27a, "M20 14a8 8 0 1 0 0.01 0M3 14a6 2.5 0 1 0 12 0a6 2.5 0 1 0 -12 0M25 14a6 2.5 0 1 0 12 0a6 2.5 0 1 0 -12 0M3 7l10-2M27 5l10 2", 40 },
+    { "kit",    "Song", 0xffffd27a, "M20 14a8 8 0 1 0 0.01 0M3 14a6 2.5 0 1 0 12 0a6 2.5 0 1 0 -12 0M25 14a6 2.5 0 1 0 12 0a6 2.5 0 1 0 -12 0M3 7l10-2M27 5l10 2", 40 },
 };
 
 std::string hex (unsigned c)

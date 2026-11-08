@@ -68,6 +68,8 @@ Reference loadReference (const Session&, const MixRender&, const juce::File&);
 void computeTune (Session&);
 /** Hitline's Auto prep. False when the hit count doesn't match the velocity and round-robin settings. */
 bool autoPrep (Session&);
+/** Song mode (whole-kit takes): finds every hit and the beats (Song.h). autoPrep runs it for whole-kit takes. */
+void analyseSongOf (Session&);
 
 /** Whole-kit takes: up to 48 of the loudest hits, at least 300 ms apart. */
 std::vector<long> strongHits (const F32& x, double sr);

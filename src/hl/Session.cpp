@@ -699,6 +699,12 @@ MixRender renderMix (const Session& S)
     M.scan.resize ((size_t) nT);
     // clean-up
     for (auto& tr : S.tracks) M.dn.push_back (baseCh (tr));
+    // Song mode: tightening and swing, every mic cut at the same places so phase is untouched
+    if (S.mode == "kit" && S.song.an.done)
+    {
+        const auto E = planEdits (S.song.an, S.song.set);
+        if (! E.empty()) parallelFor ((size_t) nT, [&] (size_t t) { M.dn[t] = applyEdits (M.dn[t], E, sr); });
+    }
     const bool kit = S.mode == "kit";
     const auto& dnOns = kit ? S.kitOn : S.onsets;
     if (S.dnOn && ! dnOns.empty())
@@ -1533,6 +1539,12 @@ juce::var settingsToVar (const Session& S)
     put (mix, "verbs", vu); put (mix, "busR1", S.busR1); put (mix, "busR2", S.busR2);
     put (st, "mix", mix);
     put (st, "kitBleed", S.kitBleed);
+    {
+        auto sg = obj(); const auto& ss = S.song.set;
+        put (sg, "tempoMode", juce::String (ss.tempoMode)); put (sg, "tightness", ss.tightness); put (sg, "swing", ss.swing); put (sg, "keepFeel", ss.keepFeel);
+        put (sg, "swingHatsOnly", ss.swingHatsOnly); put (sg, "division", ss.division); put (sg, "bpmScale", ss.bpmScale); put (sg, "flatBpm", ss.flatBpm);
+        put (st, "song", sg);
+    }
     juce::Array<juce::var> tracks;
     for (auto& t : S.tracks)
     {
@@ -1607,6 +1619,13 @@ void applySettings (Session& S, const juce::var& st)
         S.busR1 = nn (mix, "busR1", S.busR1); S.busR2 = nn (mix, "busR2", S.busR2);
     }
     S.kitBleed = nn (st, "kitBleed", S.kitBleed);
+    if (st["song"].isObject())
+    {
+        const auto& sg = st["song"]; auto& ss = S.song.set;
+        ss.tempoMode = s_ (sg, "tempoMode", ss.tempoMode.c_str()); ss.tightness = nn (sg, "tightness", 0); ss.swing = nn (sg, "swing", 0);
+        ss.keepFeel = ! sg.hasProperty ("keepFeel") || truthy (sg, "keepFeel"); ss.swingHatsOnly = truthy (sg, "swingHatsOnly");
+        ss.division = (int) nn (sg, "division", 16); ss.bpmScale = nn (sg, "bpmScale", 1); ss.flatBpm = nn (sg, "flatBpm", 0);
+    }
     if (auto* tracks = st["tracks"].getArray())
         for (auto& t : S.tracks)
             for (auto& kt : *tracks)

@@ -518,4 +518,33 @@ ui::StudioModel::MixView buildMixView (const EngineState& es, int sel, int hit, 
     }
     return v;
 }
+
+ui::StudioModel::SongView buildSongView (const EngineState& es)
+{
+    ui::StudioModel::SongView v;
+    const auto& S = es.session;
+    if (S.mode != "kit" || ! S.song.an.done) return v;
+    const auto& A = S.song.an; const auto& set = S.song.set;
+    v.valid = true;
+    v.beats = hl::gridBeats (A, set);
+    for (double b : hl::bpmOf (v.beats)) v.bpm.push_back ((float) b);
+    if (! v.bpm.empty()) { double a = 0; for (float b : v.bpm) a += b; v.avgBpm = (float) (a / v.bpm.size()); }
+    v.downbeat = set.bpmScale > 1.5 ? A.downbeat * 2 % 4 : set.bpmScale < 0.75 ? A.downbeat / 2 : A.downbeat;
+    const auto E = hl::planEdits (A, set);
+    double mv = 0;
+    for (auto& h : A.hits)
+    {
+        ui::StudioModel::SongView::Hit x;
+        x.t = h.pos / S.sr; x.moved = hl::movedPos (h.pos, E) / S.sr; x.drum = (int) h.drum; x.vel = h.vel; x.ghost = h.ghost; x.flam = h.flam;
+        if (std::abs (x.moved - x.t) > 0.0002) { ++v.moved; mv += std::abs (x.moved - x.t); }
+        v.counts[std::clamp (x.drum, 0, 5)]++;
+        v.hits.push_back (x);
+    }
+    v.avgMoveMs = v.moved ? (float) (mv / v.moved * 1000) : 0;
+    for (auto& p : hl::findProblems (A, set)) v.problems.push_back ({ p.pos / S.sr, p.kind, p.text });
+    v.tempoMode = set.tempoMode; v.tightness = (float) set.tightness; v.swing = (float) set.swing; v.keepFeel = set.keepFeel; v.hatsOnly = set.swingHatsOnly;
+    v.division = set.division; v.bpmScale = (float) set.bpmScale; v.kitBleed = (float) S.kitBleed;
+    return v;
+}
+
 } // namespace ld

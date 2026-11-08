@@ -6,6 +6,7 @@
 #include "Resolve.h"
 #include "Shape.h"
 #include "Tune.h"
+#include "Song.h"
 #include <functional>
 #include <optional>
 #include <string>
@@ -131,6 +132,7 @@ struct Session
     std::optional<TuneInfo> tuneInfo;
     std::vector<long> kitOn;          ///< whole-kit takes: the strong hits alignment is measured on
     double kitBleed = 0;              ///< whole-kit takes: close mics ease down this many dB between their own hits
+    SongState song;                   ///< whole-kit takes (Song mode): the hits, tempo and the Edit & Tempo settings
     // the console (playback and the one-shot only)
     double busFader = 0;
     bool busMute = false;

@@ -136,6 +136,24 @@ struct StudioModel
         float busFader = 0; bool busMute = false;
         bool fxOn = false;
     } mix;
+    /** Song mode's Edit & Tempo: the grid, every hit (where it was and where it goes), the problems, the settings. */
+    struct SongView
+    {
+        bool valid = false;
+        std::vector<double> beats;                 ///< the grid's beats (seconds)
+        std::vector<float> bpm;                    ///< per grid beat
+        int downbeat = 0;
+        struct Hit { double t = 0, moved = 0; int drum = 5; float vel = 0; bool ghost = false, flam = false; };
+        std::vector<Hit> hits;
+        struct Problem { double t = 0; std::string kind, text; };
+        std::vector<Problem> problems;
+        int counts[6] {};                          ///< hits per drum (kick, snare, tom, hat, cymbal, other)
+        std::string tempoMode = "smooth";
+        float tightness = 0, swing = 0, avgBpm = 0, bpmScale = 1, kitBleed = 0;
+        bool keepFeel = true, hatsOnly = false;
+        int division = 16, moved = 0;
+        float avgMoveMs = 0;
+    } song;
 };
 
 /** An open plugin window: which slot, its type, and its settings flattened to paths ("decap.drive"). */
@@ -174,6 +192,7 @@ struct HeaderState
     float phase = NAN, meterL = 0, meterR = 0;
     std::string monitorMic;           ///< the mic the heart monitor follows
     int velocities = 6;
+    bool song = false;                ///< Song mode: Hits is Edit & Tempo, Level is Clean, Tune isn't used
 };
 
 class Studio : public visage::Frame
@@ -235,6 +254,9 @@ public:
     /** The Mix module: action, value; and its menus with where they open. */
     std::function<void (const std::string&, double)> onMix;
     std::function<void (const std::string&, float, float, float, float)> onMixMenu;
+    /** Song mode: Edit & Tempo and Clean ("tempo", "tight", "swing", "feel", "hats", "div", "x2", "half", "prob", "bleed", ...). */
+    std::function<void (const std::string&, double)> onSong;
+    bool showChanges = true;          ///< Song mode: mark every hit that moved
     std::function<void (int)> onPad;                  ///< a velocity pad (0-based): plays a random round robin of it     ///< track, 0 = left channel / 1 = right channel, pan
     std::function<void (int)> onRename, onHistoryJump;
     std::function<void (const std::vector<std::string>&)> onFilesDropped;

@@ -3,6 +3,8 @@
 #include "hl/Detect.h"
 #include "hl/FxSat.h"
 #include "hl/FxInserts.h"
+#include "hl/Song.h"
+#include <set>
 #if defined (__GLIBC__)
  #include <malloc.h>
 #endif
@@ -63,6 +65,7 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
     studio.onAlignMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onAlignMenu (w, x, y, ww, h); };
     studio.onTune = [this] (const std::string& a, double v) { onTuneAction (a, v); };
     studio.onMix = [this] (const std::string& a, double v) { onMixAction (a, v); };
+    studio.onSong = [this] (const std::string& a, double v) { onSongAction (a, v); };
     studio.onMixMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onMixMenu (w, x, y, ww, h); };
     studio.onTuneMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onTuneMenu (w, x, y, ww, h); };
     studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
@@ -457,6 +460,7 @@ void MainComponent::refreshModel()
     if (engineState) m.align = buildAlignView (*engineState, alignMic, studio.selectedHit, alignSpread, alignSamples);
     if (engineState) m.tune = buildTuneView (*engineState, studio.selectedHit);
     if (engineState) m.mix = buildMixView (*engineState, mixSel, studio.selectedHit, refAudio.empty() ? nullptr : &refAudio, refName);
+    if (engineState) m.song = buildSongView (*engineState);
     mixHit = studio.selectedHit;
     tuneHit = studio.selectedHit;
     alignMic = m.align.mic; alignHit = studio.selectedHit;
@@ -690,7 +694,8 @@ void MainComponent::startPrep()
             sp->refreshPlugin();
             sp->updateHeader();
             releaseFreedMemory();
-            sp->setNotice ("Ready. Every hit is on the level standard. File > Export writes the samples.");
+            sp->setNotice (st->session.mode == "kit" ? "Ready. Hits and tempo found: Edit tightens the timing; File > Export writes the tracks and the tempo map."
+                                                     : "Ready. Every hit is on the level standard. File > Export writes the samples.");
             sp->storeInLibrary();
         });
     }).detach();
@@ -799,6 +804,12 @@ void MainComponent::dialogUseTake (int index)
         if (std::find (known.begin(), known.end(), recs[0].drum) != known.end()) s.drum = recs[0].drum;
         if (! recs[0].artic.empty()) s.artic = recs[0].artic;
     }
+    // a take with close mics on more than one drum is a performance: Song mode
+    {
+        std::set<int> drums;
+        for (auto& m : take.mics) { const auto d = hl::drumOfMic (m.file.getFileNameWithoutExtension().toStdString()); if (d != hl::Drum::other && d != hl::Drum::cymbal) drums.insert ((int) d); }
+        if (drums.size() >= 2) s.drum = "kit";
+    }
     if (const auto c = hl::guessCounts (names)) { s.vel = c->first; s.rr = c->second; s.countsFromNames = true; }
     else s.countsFromNames = false;
     if (s.name.empty())
@@ -875,6 +886,19 @@ void MainComponent::exportTake()
                     if (! f.replaceWithData (bytes.getData(), bytes.getSize())) throw std::runtime_error ("Couldn't write " + f.getFullPathName().toStdString());
                 };
                 n = kit ? hl::writeKit (st->session, *st->mix, sink) : hl::writeSession (st->session, *st->mix, *st->levels, sink);
+                if (kit && st->session.song.an.done)
+                {
+                    // Song mode: the tempo map for Pro Tools, and every hit as MIDI on it
+                    const auto& S = st->session;
+                    const auto beats = hl::gridBeats (S.song.an, S.song.set);
+                    const auto E = hl::planEdits (S.song.an, S.song.set);
+                    auto put = [&] (const std::string& name, const std::string& bytes) { sink (name, juce::MemoryBlock (bytes.data(), bytes.size())); ++n; };
+                    if (beats.size() > 1)
+                    {
+                        put ("Tempo Map.mid", hl::midiTempoMap (beats));
+                        put ("Drums (MIDI).mid", hl::midiPerformance (S.song.an.hits, E, beats, S.sr));
+                    }
+                }
             }
             catch (const std::exception& e) { err = e.what(); }
             juce::MessageManager::callAsync ([sp, n, err, dir]
@@ -1318,6 +1342,8 @@ void MainComponent::updateHeader()
                      + juce::String (S.sr / 1000.0, 1).toStdString() + " kHz";
         const bool ok = hl::countsOk (S);
         h.status[0] = std::to_string (S.tracks.size()) + " MICS"; h.done[0] = true;
+        h.song = S.mode == "kit";
+        if (h.song) { h.sessionLine = "Song \xc2\xb7 " + sessionName.toStdString(); h.detailLine = std::to_string (S.tracks.size()) + " mics \xc2\xb7 " + juce::String (S.maxLen() / S.sr, 1).toStdString() + " s \xc2\xb7 " + juce::String (S.sr / 1000.0, 1).toStdString() + " kHz"; }
         h.status[1] = std::to_string (S.onsets.size()) + (ok ? " HITS" : " FOUND"); h.done[1] = ok;
         int moved = 0;
         for (auto& t : S.tracks) if (t.autoResult && ! t.autoResult->kept && (t.lag != 0 || t.pol < 0 || ! t.ap.empty())) ++moved;
@@ -1331,6 +1357,17 @@ void MainComponent::updateHeader()
         h.status[4] = ! es->mix ? (prepping ? "RENDERING" : "NOT YET") : hl::fxOn (S) || hl::busLive (S) || hl::roomLive (S) ? "ON" : "FLAT";
         const bool lv = es->levels && es->levels->valid;
         h.status[5] = lv ? "ON STANDARD" : (es->mix ? "NEEDS HITS" : prepping ? "MEASURING" : "NOT YET"); h.done[5] = lv;
+        if (h.song)
+        {
+            // Song mode: Edit & Tempo, Clean; Tune is for samples
+            const auto bp = hl::bpmOf (hl::gridBeats (S.song.an, S.song.set));
+            double avg = 0; for (double b : bp) avg += b; if (! bp.empty()) avg /= (double) bp.size();
+            h.status[1] = S.song.an.done ? juce::String (avg, 1).toStdString() + " BPM" + (S.song.set.tightness > 0 ? " \xc2\xb7 TIGHT" : "") : std::string ("NOT YET");
+            h.done[1] = S.song.an.done;
+            h.status[3] = "SAMPLES ONLY"; h.done[3] = false;
+            h.status[5] = S.kitBleed > 0.05 ? "BLEED -" + juce::String ((int) std::lround (S.kitBleed)).toStdString() + " dB" : std::string ("OFF");
+            h.done[5] = S.kitBleed > 0.05;
+        }
         h.exportReady = es->mix && (lv || S.mode == "kit");
         static const EngineState* countedFor = nullptr; static size_t files = 0;
         if (countedFor != es || ! h.exportReady) { files = hl::exportList (S).size(); countedFor = h.exportReady ? es : nullptr; }
@@ -1695,6 +1732,58 @@ void MainComponent::refreshPlugin()
         else plugT = -2;
     }
     studio.setPlugin (std::move (pv));
+}
+
+void MainComponent::onSongAction (const std::string& a, double v)
+{
+    if (! engineState) return;
+    auto& S = engineState->session;
+    if (a.rfind ("prob:", 0) == 0)
+    {
+        // step to the next (or previous) flagged problem and play from just before it
+        const auto P = hl::findProblems (S.song.an, S.song.set);
+        if (P.empty()) return;
+        const double now = studio.playhead; const int dir = std::stoi (a.substr (5));
+        double to = -1;
+        if (dir > 0) { for (auto& p : P) if (p.pos / S.sr > now + 0.07) { to = p.pos / S.sr; break; } if (to < 0) to = P.front().pos / S.sr; }
+        else { for (auto it = P.rbegin(); it != P.rend(); ++it) if (it->pos / S.sr < now - 0.07) { to = it->pos / S.sr; break; } if (to < 0) to = P.back().pos / S.sr; }
+        studio.onSeek (to);
+        studio.setTransport (to, false);
+        for (auto& p : P) if (std::abs (p.pos / S.sr - to) < 0.001) { setNotice (juce::String (p.text) + " at " + juce::String (to, 2) + " s."); break; }
+        studio.view.start = std::max (0.0, to - 1.5);   // bring it into view
+        studio.redrawAll();
+        return;
+    }
+    auto change = [this] (std::function<void (hl::Session&)> op, const juce::String& what)
+    {
+        if (audition) audition->stop();
+        op (engineState->session);
+        refreshModel(); updateHeader(); setNotice (what);
+        rerender();
+    };
+    if (a.rfind ("tempo:", 0) == 0)
+    {
+        const auto m = a.substr (6);
+        change ([m] (hl::Session& s) { s.song.set.tempoMode = m; }, m == "keep" ? "Tempo: following every push and pull." : m == "smooth" ? "Tempo: a gentle map that follows the drummer." : "Tempo: one tempo for the whole song.");
+        return;
+    }
+    if (a == "half" || a == "x2")
+    {
+        const double cur = S.song.set.bpmScale, to = a == "half" ? (cur < 0.75 ? 1.0 : 0.5) : (cur > 1.5 ? 1.0 : 2.0);
+        change ([to] (hl::Session& s) { s.song.set.bpmScale = to; }, to == 1.0 ? "Tempo as detected." : to < 1 ? "Half time." : "Double time.");
+        return;
+    }
+    if (a == "tight") { change ([v] (hl::Session& s) { s.song.set.tightness = std::clamp (v, 0.0, 1.0); }, "Tightness: " + juce::String ((int) std::lround (v * 100)) + " %."); return; }
+    if (a == "swing") { change ([v] (hl::Session& s) { s.song.set.swing = std::clamp (v, 0.0, 1.0); }, v <= 0 ? juce::String ("Swing off.") : "Swing: " + juce::String ((int) std::lround (v * 100)) + " %."); return; }
+    if (a.rfind ("div:", 0) == 0) { const int d = std::stoi (a.substr (4)); change ([d] (hl::Session& s) { s.song.set.division = d; }, d == 8 ? "Grid: eighths." : d == 12 ? "Grid: eighth-note triplets." : "Grid: sixteenths."); return; }
+    if (a == "feel") { change ([] (hl::Session& s) { s.song.set.keepFeel = ! s.song.set.keepFeel; }, S.song.set.keepFeel ? "Keep Feel off: ghost notes and flams tighten too." : "Keep Feel on: ghost notes and flams stay loose."); return; }
+    if (a == "hats") { change ([] (hl::Session& s) { s.song.set.swingHatsOnly = ! s.song.set.swingHatsOnly; }, S.song.set.swingHatsOnly ? "Swing on everything." : "Swing on the hats only."); return; }
+    if (a == "bleed") { change ([v] (hl::Session& s) { s.kitBleed = std::clamp (v, 0.0, 24.0); }, v <= 0 ? juce::String ("Bleed control off.") : "Bleed: close mics down " + juce::String ((int) std::lround (v)) + " dB between their own hits."); return; }
+    if (a == "reanalyse")
+    {
+        if (audition) audition->stop();
+        hl::analyseSongOf (S); refreshModel(); updateHeader(); rerender(); setNotice ("Hits and tempo found again.");
+    }
 }
 
 void MainComponent::onMixAction (const std::string& a, double v)

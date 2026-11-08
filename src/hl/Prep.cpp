@@ -452,7 +452,15 @@ bool autoPrep (Session& S)
     if (! countsOk (S) && S.mode != "kit") return false;
     runAnalyze (S);
     if (pitched (S.drum) && S.mode != "kit" && ! soundsLikeCymbal (S)) runPitch (S);
+    if (S.mode == "kit") analyseSongOf (S);
     return true;
+}
+
+void analyseSongOf (Session& S)
+{
+    std::vector<F32> monos; std::vector<std::string> names;
+    for (auto& t : S.tracks) { monos.push_back (t.mono.empty() ? monoOf (t.ch) : t.mono); names.push_back (t.mic + " " + t.name); }
+    S.song.an = analyseSong (monos, names, S.sr);
 }
 
 std::string hitCountAdvice (const Session& S)

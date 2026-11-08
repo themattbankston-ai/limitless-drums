@@ -59,6 +59,7 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/FxSat.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Clean.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Shape.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Song.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Session.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Prep.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Rules.cpp)
@@ -222,6 +223,7 @@ if(LD_BUILD_TESTS)
     tests/StandardTests.cpp
     tests/CompMeterTests.cpp
     tests/MemoryProbe.cpp
+    tests/SongTests.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp
