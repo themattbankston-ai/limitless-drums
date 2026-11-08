@@ -3004,7 +3004,23 @@ struct Studio::Footer : visage::Frame
                       studio.day ? 0xff2c8a1c : neon::lime, false, 0);
             }
         }
-        const std::string status = ! studio.notice.empty() ? studio.notice : studio.device;
+        std::string status = ! studio.notice.empty() ? studio.notice : studio.device;
+        {
+            // too long for the space: cut at a word and end with an ellipsis rather than mid-word
+            const auto f = bodyFont (12);
+            const float room = limit - x - 10;
+            if (room > 20 && textWidth (f, status) > room)
+            {
+                const std::string ell = "\xe2\x80\xa6";
+                while (! status.empty() && textWidth (f, status + ell) > room)
+                {
+                    const auto sp = status.find_last_of (' ');
+                    status.resize (sp == std::string::npos || sp == 0 ? status.size() - 1 : sp);
+                }
+                while (! status.empty() && (status.back() == ',' || status.back() == ';' || status.back() == ':' || status.back() == ' ')) status.pop_back();
+                status += ell;
+            }
+        }
         c.setColor (ch.inkDim);
         c.setClampBounds (x + 4, 0, std::max (0.0f, limit - x), h);
         draw::text (c, status, bodyFont (12), Font::kLeft, x + 6, 0, width(), h);
