@@ -5226,6 +5226,7 @@ void Studio::setTransport (double seconds, bool isPlaying)
                 screen->redraw();
             }
     const bool changed = playing != isPlaying;
+    if (seconds != playhead) screen->overlay.redraw();   // a seek while stopped still moves the playhead
     playhead = seconds;
     playing = isPlaying;
     lastPlayhead = seconds;
@@ -5249,7 +5250,13 @@ void Studio::tick (double t)
     const float abTarget = hdr.processed ? 1.0f : 0.0f;
     if (std::abs (abMix - abTarget) > 0.001f) { abMix += (abTarget - abMix) * 0.22f; if (std::abs (abMix - abTarget) < 0.01f) abMix = abTarget; screen->redraw(); }
     header->redraw();
-    screen->overlay.redraw();
+    // the overlay (playhead, transient pulses) only changes while something plays or a pulse is fading
+    {
+        bool pulsing = false;
+        for (double p : pulseStart) if (t - p >= 0 && t - p < 0.5) { pulsing = true; break; }
+        if (playing || pulsing || overlayWasLive) screen->overlay.redraw();
+        overlayWasLive = playing || pulsing;
+    }
 
     // meters follow the audio under the playhead
     auto levelAt = [&] (const TrackInfo& tr)

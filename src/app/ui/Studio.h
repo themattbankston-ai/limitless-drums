@@ -310,6 +310,7 @@ private:
     std::unique_ptr<HistoryPanel> historyPanel;
     std::unique_ptr<PluginWindow> pluginWin;
     double lastPlayhead = 0.0, lastTick = 0.0;
+    bool overlayWasLive = true;
     bool atFit = true;
     void layoutPanels();
     friend struct Screen;
