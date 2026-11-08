@@ -4,6 +4,7 @@
 #include "hl/FxSat.h"
 #include "hl/FxInserts.h"
 #include "hl/Song.h"
+#include "ExtPlugins.h"
 #include <set>
 #if defined (__GLIBC__)
  #include <malloc.h>
@@ -45,6 +46,7 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
     // the measured reverb models and the pro-library reference the engine draws on
     hl::setReverbLibrary (juce::JSON::parse (juce::String::fromUTF8 (BinaryData::irlib_json, BinaryData::irlib_jsonSize)));
     hl::setLibraryReference (juce::JSON::parse (juce::String::fromUTF8 (BinaryData::libref_json, BinaryData::libref_jsonSize)));
+    hl::setExternalRenderer ([] (const juce::var& ins, const hl::Chs& in, double sr) { return ext::render (ins, in, sr); });
     setLookAndFeel (&lnf);
     setOpaque (true);
 
@@ -281,6 +283,7 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
 MainComponent::~MainComponent()
 {
     stopTimer();
+    ext::closeEditors();
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
 #endif
@@ -1795,6 +1798,21 @@ void MainComponent::refreshPlugin()
     studio.setPlugin (std::move (pv));
 }
 
+void MainComponent::onExtState (int t, int k, const juce::String& state)
+{
+    if (! engineState) return;
+    auto& S = engineState->session;
+    if (t >= (int) S.tracks.size()) return;
+    juce::var& ii = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
+    if (! ii.isArray() || k >= ii.getArray()->size() || ii[k]["type"].toString() != "ext") return;
+    if (ii[k]["p"]["state"].toString() == state) return;
+    if (audition) audition->stop();
+    const auto before = settingsSnapshot();
+    if (auto* p = ii[k]["p"].getDynamicObject()) p->setProperty ("state", state);
+    recordChange (before, ii[k]["p"]["name"].toString() + " changed.");
+    rerender();
+}
+
 void MainComponent::onSongAction (const std::string& a, double v)
 {
     if (! engineState) return;
@@ -2023,7 +2041,20 @@ void MainComponent::onMixAction (const std::string& a, double v)
         if (a.rfind ("plug:open:", 0) == 0)
         {
             const auto rest = a.substr (10); const auto c = rest.find (':');
-            plugT = whoOf (rest.substr (0, c)); plugK = std::stoi (rest.substr (c + 1));
+            const int t = whoOf (rest.substr (0, c)), k = std::stoi (rest.substr (c + 1));
+            const juce::var& ii = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
+            if (ii.isArray() && k < ii.getArray()->size() && ii[k]["type"].toString() == "ext")
+            {
+                // a third-party plugin opens its own editor; its changes come back as its state
+                const auto title = (t < 0 ? juce::String ("Drum Bus") : juce::String (S.tracks[(size_t) t].mic)) + " - Insert " + juce::String (k + 1) + " - " + ii[k]["p"]["name"].toString();
+                ext::openEditor (ii[k], title, [this, t, k] (const juce::String& state)
+                {
+                    if (! engineState) return;
+                    onExtState (t, k, state);
+                });
+                return;
+            }
+            plugT = t; plugK = k;
             refreshPlugin(); return;
         }
         if (a == "plug:close") { plugT = -2; refreshPlugin(); return; }
@@ -2232,7 +2263,16 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
         for (int i = 0; i < 6; ++i)
             if (i != 5 || stereo) add.addItem (10 + i, blurb[i]);
         add.addSeparator();
-        add.addItem (30, "Third Party Plugin...  (coming with plugin hosting)", false);
+        // third-party plugins: what the last scan found, by maker, and a scan
+        juce::PopupMenu third;
+        const auto types = ext::known().getTypes();
+        std::map<juce::String, juce::PopupMenu> byMaker;
+        for (int i = 0; i < types.size() && i < 400; ++i)
+            if (! types.getReference (i).isInstrument) byMaker[types.getReference (i).manufacturerName.isEmpty() ? juce::String ("Other") : types.getReference (i).manufacturerName].addItem (1000 + i, types.getReference (i).name + "  (" + types.getReference (i).pluginFormatName + ")");
+        for (auto& [mk, sub] : byMaker) third.addSubMenu (mk, sub);
+        if (! byMaker.empty()) third.addSeparator();
+        third.addItem (40, ext::scanning() ? "Scanning for plugins..." : types.isEmpty() ? "Find my plugins" : "Scan again", ! ext::scanning());
+        add.addSubMenu ("Third Party Plugin", third);
         if (has)
         {
             const auto cur = ins[k]["type"].toString();
@@ -2249,7 +2289,17 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
             for (int i = 0; i < 6; ++i)
                 if (i != 5 || stereo) m.addItem (10 + i, blurb[i]);
             m.addSeparator();
-            m.addItem (30, "Third Party Plugin...  (coming with plugin hosting)", false);
+            {
+                juce::PopupMenu third;
+                const auto types = ext::known().getTypes();
+                std::map<juce::String, juce::PopupMenu> byMaker;
+                for (int i = 0; i < types.size() && i < 400; ++i)
+                    if (! types.getReference (i).isInstrument) byMaker[types.getReference (i).manufacturerName.isEmpty() ? juce::String ("Other") : types.getReference (i).manufacturerName].addItem (1000 + i, types.getReference (i).name + "  (" + types.getReference (i).pluginFormatName + ")");
+                for (auto& [mk, sub] : byMaker) third.addSubMenu (mk, sub);
+                if (! byMaker.empty()) third.addSeparator();
+                third.addItem (40, ext::scanning() ? "Scanning for plugins..." : types.isEmpty() ? "Find my plugins" : "Scan again", ! ext::scanning());
+                m.addSubMenu ("Third Party Plugin", third);
+            }
         }
         m.showMenuAsync (opts, [this, t, k, has] (int r)
         {
@@ -2270,6 +2320,28 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
             if (r == 1) { onMixAction ("plug:open:" + who + ":" + std::to_string (k), 0); return; }
             if (r == 2) { onMixAction ("insbyp:" + (t < 0 ? std::string ("bus") : std::to_string (t)) + ":" + std::to_string (k), 0); return; }
             if (r == 3) { mutate ([k] (juce::Array<juce::var>& a) { if (k < a.size()) a.remove (k); }, "Insert removed."); return; }
+            if (r == 40)
+            {
+                setNotice ("Looking for your plugins (VST3" + juce::String (JUCE_MAC ? ", AU" : "") + ")...");
+                ext::scan ([this] (int n) { setNotice ("Found " + juce::String (n) + " plugins. They're in Third Party Plugin on any insert."); });
+                return;
+            }
+            if (r >= 1000)
+            {
+                const auto types = ext::known().getTypes();
+                if (r - 1000 >= types.size()) return;
+                const auto ins = ext::makeInsert (types.getReference (r - 1000));
+                const auto nm = types.getReference (r - 1000).name;
+                mutate ([k, has, ins] (juce::Array<juce::var>& a)
+                {
+                    if (has && k < a.size()) a.set (k, ins);
+                    else if (a.size() < 5) a.add (ins);
+                }, nm + (has ? " replaces it." : " added."));
+                const auto& ii = t < 0 ? engineState->session.busIns : engineState->session.tracks[(size_t) t].strip.inserts;
+                const int n = ii.getArray() ? ii.getArray()->size() : 0;
+                onMixAction ("plug:open:" + who + ":" + std::to_string (has ? k : n - 1), 0);
+                return;
+            }
             if (r >= 10 && r < 16)
             {
                 const juce::String type (types[r - 10]);

@@ -500,6 +500,9 @@ Chs verbRender (const Chs& chs, double sr, const juce::var& p)
 
 Chs roomRender (const F32& send, double sr, const juce::var& p) { return verbWet ({ send, send }, sr, p); }
 
+static ExternalRenderer& externalRenderer() { static ExternalRenderer f; return f; }
+void setExternalRenderer (ExternalRenderer f) { externalRenderer() = std::move (f); }
+
 Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const InsertOptions& o, std::vector<F64>* compGr)
 {
     Chs y = chs;
@@ -527,6 +530,7 @@ Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const Insert
             else if (type == "comp") y = compRender (y, sr, p, o.ons.empty() ? nullptr : &o.ons, compGr, o.grCurves ? &(*o.grCurves)[slot] : nullptr);
             else if (type == "sat") y = satRender (y, sr, p);
             else if (type == "verb") y = verbRender (y, sr, p);
+            else if (type == "ext" && externalRenderer()) y = externalRenderer() (s, y, sr);
         }
     return y;
 }

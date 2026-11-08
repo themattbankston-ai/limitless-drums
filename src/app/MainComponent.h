@@ -97,6 +97,7 @@ private:
     double songFrom = 0; bool songPlaying = false;   ///< Song mode playback: where it started   ///< the insert whose window is open (-2 none, -1 the bus)
     void onMixAction (const std::string& action, double v);
     void onSongAction (const std::string& action, double v);
+    void onExtState (int track, int slot, const juce::String& state);
 public:
     /** Undo for the engine's settings (mix, plugins, Song mode): a deep copy of them, and putting one back. */
     juce::var settingsSnapshot() const;

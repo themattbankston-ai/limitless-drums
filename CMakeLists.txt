@@ -190,6 +190,7 @@ if(LD_BUILD_APP)
         src/app/SessionModel.cpp
         src/app/Engine.cpp
         src/app/Audition.cpp
+        src/app/ExtPlugins.cpp
         src/app/Library.cpp
         src/app/ui/VisageHost.cpp
         src/app/ui/Studio.cpp
@@ -224,11 +225,13 @@ if(LD_BUILD_TESTS)
     tests/CompMeterTests.cpp
     tests/MemoryProbe.cpp
     tests/SongTests.cpp
+    tests/ExtPluginTests.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp
         src/app/ui/Wave.cpp
         src/app/Audition.cpp
+        src/app/ExtPlugins.cpp
         src/app/Library.cpp
         src/app/Engine.cpp)
     target_compile_definitions(LDTests PRIVATE LD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

@@ -502,7 +502,8 @@ ui::StudioModel::MixView buildMixView (const EngineState& es, int sel, int hit, 
             for (int k = 0; k < std::min (5, arr->size()); ++k)
             {
                 const auto& x = arr->getReference (k);
-                out[(size_t) k] = { insertDisplayName (x["type"].toString()), ! x.hasProperty ("on") || (bool) x["on"] };
+                const auto nm = x["type"].toString() == "ext" ? x["p"]["name"].toString().toUpperCase().toStdString() : insertDisplayName (x["type"].toString());
+                out[(size_t) k] = { nm.empty() ? std::string ("PLUGIN") : nm, ! x.hasProperty ("on") || (bool) x["on"] };
             }
         return out;
     };

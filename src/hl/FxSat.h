@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include "FxCore.h"
 
 namespace ld::hl
@@ -24,5 +25,9 @@ struct InsertOptions
     std::map<int, F32>* grCurves = nullptr;
 };
 /** Hitline's insRender: trim, then every insert that is switched on, in slot order. */
+/** Third-party plugins (insert type "ext"): the app supplies how to run one offline (the engine doesn't host plugins
+    itself). Called from render threads, one call per insert per render; returns the input unchanged when it can't. */
+using ExternalRenderer = std::function<Chs (const juce::var& insert, const Chs& in, double sr)>;
+void setExternalRenderer (ExternalRenderer);
 Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const InsertOptions& = {}, std::vector<F64>* compGr = nullptr);
 } // namespace ld::hl

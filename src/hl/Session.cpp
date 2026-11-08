@@ -53,7 +53,7 @@ const std::map<std::string, std::array<double, 3>> TAME_SENS = {
     { "china", { 500, 900, 1500 } }, { "splash", { 500, 900, 1500 } } };
 const std::map<std::string, std::string> DRUM_NAMES = { { "kit", "Full kit" }, { "kick", "Kick" }, { "snare", "Snare" }, { "tom", "Tom" },
     { "hat", "Hi-hat" }, { "ride", "Ride" }, { "crash", "Crash" }, { "china", "China" }, { "splash", "Splash" }, { "other", "Other" } };
-const char* INS_TYPES[] = { "gate", "eq", "pultec", "comp", "sat", "verb", "width" };
+const char* INS_TYPES[] = { "gate", "eq", "pultec", "comp", "sat", "verb", "width", "ext" };
 constexpr double ROOM_WIN_MS = 400;
 
 /** Runs fn(0..n-1) across the cores. Every job is independent, so the results are the same as in order. */
