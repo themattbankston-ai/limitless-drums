@@ -106,7 +106,10 @@ latency removed.
 ## Known gaps relevant to an audit
 - **Audible playback:** not yet verified on a real audio device. The development machine has none; offline
   renders are tested.
-- **Double-bass kits:** two kick drums on separate mics are currently treated as one kick. This was found on a real
-  multitrack, and the fix is pending.
+- **Several drums of one kind:** Song mode groups mics into drums. Two mics count as the same drum when at least
+  60% of their strong hits land on both and their level offsets cancel. Toms and kicks can be split into separate
+  drums; snare and hat mics always stay one drum. On the multitrack where this came up, it turned out to be one
+  kick with two mics, played with a double pedal, and Song mode now keeps it as one. Exported MIDI puts a second
+  kick on note 35 and toms on notes 48/47/45/43/41. (Added after the archived build `8d55461`.)
 - **Drum-bus inserts:** everything except the compressor runs on each mic separately, not on the summed bus. This
   is by design, because the export is one file per mic.

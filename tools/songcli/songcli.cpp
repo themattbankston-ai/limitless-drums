@@ -14,11 +14,11 @@ int main (int argc, char** argv)
         names.push_back (a.substr (0, eq));
         std::ifstream f (a.substr (eq + 1), std::ios::binary | std::ios::ate); size_t n = (size_t) f.tellg() / 4; f.seekg (0);
         F32 x (n); f.read ((char*) x.data(), (std::streamsize) (n * 4)); monos.push_back (std::move (x));
-        printf ("mic %-14s -> %s\n", names.back().c_str(), drumName (drumOfMic (names.back())));
+
     }
     auto A = analyseSong (monos, names, sr);
     std::map<std::string, int> cnt; int ghosts = 0, flams = 0;
-    for (auto& h : A.hits) { cnt[drumName (h.drum)]++; ghosts += h.ghost; flams += h.flam; }
+    for (auto& h : A.hits) { cnt[std::string (drumName (h.drum)) + (h.voice ? std::to_string (h.voice + 1) : "")]++; ghosts += h.ghost; flams += h.flam; }
     printf ("hits %zu:", A.hits.size()); for (auto& [k, v] : cnt) printf (" %s %d", k.c_str(), v); printf (" | ghosts %d flams %d\n", ghosts, flams);
     for (const char* mode : { "keep", "smooth", "flatten" })
     {
@@ -27,6 +27,7 @@ int main (int argc, char** argv)
         double lo = 1e9, hi = 0, m = 0; for (double v : bpm) { lo = std::min (lo, v); hi = std::max (hi, v); m += v; }
         printf ("%-8s beats %zu  bpm avg %.2f  min %.2f  max %.2f\n", mode, b.size(), bpm.empty() ? 0 : m / bpm.size(), lo, hi);
     }
+    for (size_t t = 0; t < names.size(); ++t) printf ("mic %-14s %s voice %d\n", names[t].c_str(), drumName (drumOfMic (names[t])), A.micVoice[t]);
     printf ("downbeat %d  suggested grid %d\n", A.downbeat, A.suggestedDivision);
     SongSettings s; s.tightness = 0.6; s.division = A.suggestedDivision;
     auto E = planEdits (A, s); double mv = 0; for (auto& e : E) mv += std::abs ((double) e.shift); 

@@ -1,5 +1,9 @@
 #include "Song.h"
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <map>
 #include <climits>
 #include <cstdint>
 #include <cmath>
@@ -35,7 +39,7 @@ namespace
 {
 constexpr int H = 128;   // onset frames
 
-struct Onset { long pos; int track; Drum drum; float strength, vel; float level = 0, bright = 0; };
+struct Onset { long pos; int track; Drum drum; float strength, vel; float level = 0, bright = 0; int voice = 0; };
 
 /** Onsets on one mic: a log-energy rise of the differentiated signal (transients over ringing), peaks over an adaptive
     floor, refined to the sample where the hit starts. */
@@ -155,12 +159,66 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
     if (all.empty())
         for (size_t t = 0; t < monos.size(); ++t) { auto o = onsetsOf (monos[t], sr, (int) t, Drum::other); all.insert (all.end(), o.begin(), o.end()); }
     std::sort (all.begin(), all.end(), [] (auto& a, auto& b) { return a.pos < b.pos; });
+    // which mics are the same drum: two mics of one kind (kick in and out; two kick drums) are one drum when their strong
+    // hits are also strong on the other mic, within 3 ms, most of the time; a second drum is heard on the other's mic only
+    // as quiet bleed. Each drum of a kind gets its own voice.
+    const size_t nt = monos.size();
+    A.micVoice.assign (nt, -1);
+    {
+        std::vector<std::vector<size_t>> byTrack (nt);
+        for (size_t i = 0; i < all.size(); ++i) byTrack[(size_t) all[i].track].push_back (i);
+        // one drum on both mics: its strong hits show on the other mic too, at a steady level offset, and the offset is
+        // the same seen from either mic (a is c dB over b on a's hits, so b is c dB under a on b's hits: the two medians
+        // cancel). Two drums: each mic is louder on its own drum's hits, so the medians add up instead of cancelling.
+        auto offsetFrom = [&] (size_t a, size_t b, int& n, int& hit)
+        {
+            n = 0; hit = 0; size_t k = 0;
+            std::vector<double> diff;
+            const auto& B = byTrack[b];
+            for (auto i : byTrack[a])
+            {
+                if (all[i].vel < 0.5f) continue;
+                ++n;
+                while (k < B.size() && all[B[k]].pos < all[i].pos - (long) (0.003 * sr)) ++k;
+                for (size_t q = k; q < B.size() && all[B[q]].pos <= all[i].pos + (long) (0.003 * sr); ++q)
+                { ++hit; diff.push_back (20 * std::log10 ((all[i].level + 1e-9) / (all[B[q]].level + 1e-9))); break; }
+            }
+            if (diff.empty()) return 0.0;
+            std::nth_element (diff.begin(), diff.begin() + (long) diff.size() / 2, diff.end());
+            return diff[diff.size() / 2];
+        };
+        auto sameDrum = [&] (size_t a, size_t b)
+        {
+            int na, ha, nb, hb;
+            const double ma = offsetFrom (a, b, na, ha), mb = offsetFrom (b, a, nb, hb);
+            if (na < 8 || nb < 8) return true;
+            const double both = std::min ((double) ha / na, (double) hb / nb), sum = ma + mb;
+            if (std::getenv ("LD_SONG_DEBUG")) fprintf (stderr, "mics %zu+%zu: on both %.0f%%, offsets %+.1f / %+.1f dB (sum %.1f)\n", a, b, 100 * both, ma, mb, sum);
+            return both >= 0.6 && sum < 10;
+        };
+        for (Drum d : { Drum::kick, Drum::snare, Drum::tom, Drum::hat })
+        {
+            const bool canSplit = d == Drum::kick || d == Drum::tom;   // two snares (or hats) on separate mics: not worth the risk
+            std::vector<size_t> ts;
+            for (size_t t = 0; t < nt; ++t) if (! byTrack[t].empty() && all[byTrack[t][0]].drum == d) ts.push_back (t);
+            std::vector<int> root (ts.size()); for (size_t k = 0; k < ts.size(); ++k) root[k] = (int) k;
+            std::function<int (int)> find = [&] (int x) { return root[(size_t) x] == x ? x : root[(size_t) x] = find (root[(size_t) x]); };
+            for (size_t a = 0; a < ts.size(); ++a)
+                for (size_t b = a + 1; b < ts.size(); ++b)
+                {
+                    if (! canSplit || sameDrum (ts[a], ts[b])) root[(size_t) find ((int) a)] = find ((int) b);
+                }
+            std::map<int, int> vid;
+            for (size_t k = 0; k < ts.size(); ++k) { const int r = find ((int) k); if (! vid.count (r)) { const int n = (int) vid.size(); vid[r] = n; } A.micVoice[ts[k]] = vid[r]; }
+        }
+        for (auto& o : all) o.voice = std::max (0, A.micVoice[(size_t) o.track]);
+    }
+    auto same = [&] (size_t a, size_t b) { return all[a].drum == all[b].drum && all[a].voice == all[b].voice; };
     // 2. one hit per drum per moment: bleed (much weaker than another drum's mic at the same time) dropped,
     //    the same drum's mics (snare top and bottom) merged, the earliest arrival kept
     const long win = (long) (0.018 * sr);
     // how loud each drum's close mic is heard on every other close mic (bleed), learnt from this song: for each pair, the
     // median level ratio when the two mics' onsets coincide (most coincidences are the one drum heard on both)
-    const size_t nt = monos.size();
     std::vector<float> bleedRatio (nt * nt, 0.0f);
     {
         std::vector<std::vector<float>> rs (nt * nt);
@@ -168,7 +226,7 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
             for (size_t j = i + 1; j < all.size() && all[j].pos - all[i].pos <= (long) (0.004 * sr); ++j)
             {
                 const auto& a = all[i]; const auto& b = all[j];
-                if (a.track == b.track || a.drum == b.drum) continue;
+                if (a.track == b.track || same (i, j)) continue;
                 if (a.level > b.level) rs[(size_t) a.track * nt + (size_t) b.track].push_back (b.level / a.level);
                 else rs[(size_t) b.track * nt + (size_t) a.track].push_back (a.level / b.level);
             }
@@ -197,18 +255,21 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
         std::vector<size_t> grp { i };
         for (size_t j = i + 1; j < all.size() && all[j].pos - all[i].pos <= win; ++j) if (! used[j]) grp.push_back (j);
         float strongest = 0; for (auto g : grp) strongest = std::max (strongest, all[g].vel);
-        for (int d = 0; d < 6; ++d)
+        std::vector<std::pair<int, int>> keys;
+        for (auto g : grp) { const std::pair<int, int> k { (int) all[g].drum, all[g].voice }; if (std::find (keys.begin(), keys.end(), k) == keys.end()) keys.push_back (k); }
+        std::sort (keys.begin(), keys.end());
+        for (auto [d, voice] : keys)
         {
             long pos = -1; float vel = 0;
             for (auto g : grp)
             {
-                if ((int) all[g].drum != d) continue;
+                if ((int) all[g].drum != d || all[g].voice != voice) continue;
                 if (all[g].vel < strongest * 0.28f && all[g].drum != Drum::cymbal) continue;   // bleed from the louder drum
                 // within twice (6 dB) the level this mic normally hears from a louder drum in the group: that drum's bleed
                 bool bleed = false;
                 for (auto o : grp)
                 {
-                    if (o == g || all[o].drum == all[g].drum || all[o].drum == Drum::cymbal || all[o].level <= all[g].level) continue;
+                    if (o == g || same (o, g) || all[o].drum == Drum::cymbal || all[o].level <= all[g].level) continue;
                     const float br = bleedRatio[(size_t) all[o].track * nt + (size_t) all[g].track];
                     if (br > 0 && all[g].level < all[o].level * br * 2.0f) bleed = true;
                 }
@@ -230,6 +291,7 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
                 if (other) continue;
             }
             A.hits.push_back ({ pos, (Drum) d, vel });
+            A.hits.back().voice = voice;
         }
         for (auto g : grp) used[g] = true;
     }
@@ -243,7 +305,7 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
             for (size_t k = m.size(); k-- > 0;)
             {
                 if (h.pos - m[k].pos > (long) (0.015 * sr)) break;
-                if (m[k].drum == h.drum) { m[k].vel = std::max (m[k].vel, h.vel); merged = true; break; }
+                if (m[k].drum == h.drum && m[k].voice == h.voice) { m[k].vel = std::max (m[k].vel, h.vel); merged = true; break; }
             }
             if (! merged) m.push_back (h);
         }
@@ -257,12 +319,26 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
         const float med = sv[sv.size() / 2];
         for (auto& h : A.hits) if (h.drum == Drum::snare && h.vel < med * 0.4f) h.ghost = true;
     }
-    for (size_t i = 1; i < A.hits.size(); ++i)
-        for (size_t j = i; j-- > 0;)
-        {
-            if (A.hits[i].pos - A.hits[j].pos > (long) (0.045 * sr)) break;
-            if (A.hits[j].drum == A.hits[i].drum) { A.hits[i].flam = true; break; }
-        }
+    // a flam: a grace note just before the main stroke on the same drum, on its own. Inside a run (a double-pedal
+    // stream, a roll) the same spacing is just the run, so a pair with another hit on that drum close before it or
+    // after it isn't a flam.
+    {
+        auto sameAt = [&] (size_t k, size_t i) { return A.hits[k].drum == A.hits[i].drum && A.hits[k].voice == A.hits[i].voice; };
+        for (size_t i = 1; i < A.hits.size(); ++i)
+            for (size_t j = i; j-- > 0;)
+            {
+                if (A.hits[i].pos - A.hits[j].pos > (long) (0.045 * sr)) break;
+                if (! sameAt (j, i)) continue;
+                const long gap = A.hits[i].pos - A.hits[j].pos, reach = std::max (gap * 3, (long) (0.06 * sr));
+                bool run = false;
+                for (size_t k = j; k-- > 0 && A.hits[j].pos - A.hits[k].pos <= reach;) if (sameAt (k, i)) { run = true; break; }
+                for (size_t k = i + 1; ! run && k < A.hits.size() && A.hits[k].pos - A.hits[i].pos <= reach; ++k) if (sameAt (k, i)) run = true;
+                // on a kick, a very quiet partner is a leftover from a second kick mic rather than a played note
+                const bool phantom = A.hits[i].drum == Drum::kick && std::min (A.hits[i].vel, A.hits[j].vel) < 0.15f;
+                if (! run && ! phantom) A.hits[i].flam = true;
+                break;
+            }
+    }
     // 4. the beats: tempo per stretch of the song, then a beat tracker that follows the hits (Ellis' dynamic programme)
     long len = 0; for (auto& m : monos) len = std::max (len, (long) m.size());
     const size_t nf = (size_t) (len / sr * 100) + 1;
@@ -579,14 +655,17 @@ void applyConsistency (std::vector<Chs>& tracks, const std::vector<std::string>&
     const double sr = A.sr;
     const long win = (long) (0.03 * sr), fade = (long) (0.002 * sr);
     for (Drum d : { Drum::kick, Drum::snare, Drum::tom })
+      for (int voice = 0; voice < 8; ++voice)
     {
+        // this drum's own mics (one kick drum of two, one tom)
         std::vector<size_t> mics;
-        for (size_t t = 0; t < names.size() && t < tracks.size(); ++t) if (drumOfMic (names[t]) == d) mics.push_back (t);
+        for (size_t t = 0; t < names.size() && t < tracks.size(); ++t)
+            if (drumOfMic (names[t]) == d && (t >= A.micVoice.size() ? voice == 0 : std::max (0, A.micVoice[t]) == voice)) mics.push_back (t);
         if (mics.empty()) continue;
         std::vector<long> pos; std::vector<double> lev; std::vector<bool> keep;
         for (auto& h : A.hits)
         {
-            if (h.drum != d) continue;
+            if (h.drum != d || h.voice != voice) continue;
             double pk = 0;
             for (auto t : mics) for (auto& x : tracks[t]) for (long q = h.pos; q < std::min ((long) x.size(), h.pos + win); ++q) pk = std::max (pk, (double) std::abs (x[(size_t) q]));
             pos.push_back (h.pos); lev.push_back (20 * std::log10 (pk + 1e-9)); keep.push_back (h.ghost || h.flam);
@@ -631,9 +710,9 @@ std::vector<SongProblem> findProblems (const SongAnalysis& A, const SongSettings
         if (h.drum != Drum::hat && ! h.flam)
         {
             // the previous and next hits on the same drum
-            long prev = -1, next = -1, prev2 = -1;
-            for (size_t j = i; j-- > 0;) if (A.hits[j].drum == h.drum) { if (prev < 0) prev = A.hits[j].pos; else { prev2 = A.hits[j].pos; break; } }
-            for (size_t j = i + 1; j < A.hits.size(); ++j) if (A.hits[j].drum == h.drum) { next = A.hits[j].pos; break; }
+            long prev = -1, next = -1, prev2 = -1; float prevVel = 1;
+            for (size_t j = i; j-- > 0;) if (A.hits[j].drum == h.drum && A.hits[j].voice == h.voice) { if (prev < 0) { prev = A.hits[j].pos; prevVel = A.hits[j].vel; } else { prev2 = A.hits[j].pos; break; } }
+            for (size_t j = i + 1; j < A.hits.size(); ++j) if (A.hits[j].drum == h.drum && A.hits[j].voice == h.voice) { next = A.hits[j].pos; break; }
             if (prev >= 0)
             {
                 // a double: closer than half a 16th at the local tempo, and not part of a roll (three or more evenly spaced hits)
@@ -641,9 +720,11 @@ std::vector<SongProblem> findProblems (const SongAnalysis& A, const SongSettings
                 auto it = std::upper_bound (beats.begin(), beats.end(), t);
                 const double beat = beats.size() > 1 ? (it == beats.begin() || it == beats.end() ? beats[1] - beats[0] : *it - *(it - 1)) : 0.5;
                 const long gap = h.pos - prev;
-                const auto even = [gap] (long other) { return other > 0 && other < gap * 1.6 && other > gap * 0.6; };
-                const bool roll = even (prev2 >= 0 ? prev - prev2 : -1) || even (next >= 0 ? next - h.pos : -1);
-                if (gap < (long) (std::min (0.09, beat / 8) * sr) && ! roll)
+                // part of a run (a roll, a double-pedal stream): another hit on this drum within three gaps either side
+                const long reach = std::max (gap * 3, (long) (0.06 * sr));
+                const bool roll = (prev2 >= 0 && prev - prev2 <= reach) || (next >= 0 && next - h.pos <= reach);
+                const bool phantom = h.drum == Drum::kick && std::min (h.vel, prevVel) < 0.15f;
+                if (gap < (long) (std::min (0.09, beat / 8) * sr) && ! roll && ! phantom)
                     P.push_back ({ h.pos, "double", std::string ("Double ") + drumName (h.drum) + " hit" });
             }
         }
@@ -750,7 +831,10 @@ std::string midiPerformance (const std::vector<SongHit>& hits, const std::vector
     std::vector<Ev> ev;
     for (auto& h : hits)
     {
-        const int note = h.drum == Drum::kick ? 36 : h.drum == Drum::snare ? 38 : h.drum == Drum::tom ? 45 : h.drum == Drum::hat ? 42 : h.drum == Drum::cymbal ? 49 : 37;
+        // GM: the second kick drum on 35, each tom on its own note (high to low in mic order)
+        static const int toms[] = { 48, 47, 45, 43, 41 };
+        const int note = h.drum == Drum::kick ? (h.voice ? 35 : 36) : h.drum == Drum::snare ? 38 : h.drum == Drum::tom ? toms[std::min (h.voice, 4)]
+                       : h.drum == Drum::hat ? 42 : h.drum == Drum::cymbal ? 49 : 37;
         const long tk = ticksAt (movedPos (h.pos, edits) / sr, beats, st);
         const int v = std::clamp ((int) std::lround (h.vel * 127), 1, 127);
         ev.push_back ({ tk, note, v, true }); ev.push_back ({ tk + PPQ / 8, note, 0, false });

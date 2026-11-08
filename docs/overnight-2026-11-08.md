@@ -64,6 +64,15 @@ Notes for the morning, kept up to date through the night.
     quarter, levelling off: caches filling, not a steady leak.
   - **Third-party plugin on every mic** of the 4-minute song: a re-render takes about 1 s.
 
+## Real-song tuning (after the audit export)
+Checked against two real multitracks (a 12-mic song and a 10-mic double-pedal song):
+- **Drum voices**: mics are grouped into separate drums from how often they hit together and whether their level
+  offsets cancel. Three toms now come out as three toms rather than one.
+- **Flams and doubles inside runs** (double-pedal streams, rolls) are no longer flagged.
+- **Phantom kick hits**: a very quiet kick next to a loud one is the second kick mic, not a note, so it's no longer
+  flagged.
+- **Problems flagged on the double-pedal song**: 200 → 54. The 12-mic song: 27 → 19, with its isolated flams kept.
+
 ## Correction
 - Last night I said the memory cleanup would halve memory by storing audio as 32-bit instead of 64-bit. The audio was
   already 32-bit, so that part was wrong.

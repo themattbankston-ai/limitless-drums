@@ -22,6 +22,7 @@ struct SongHit
     Drum drum = Drum::other;
     float vel = 0;         ///< 0..1, against this drum's loudest hits
     bool ghost = false, flam = false;
+    int voice = 0;         ///< which drum of its kind (two kick drums, each tom): mics whose hits coincide are one drum
 };
 
 struct SongSettings
@@ -44,6 +45,7 @@ struct SongAnalysis
     std::vector<SongHit> hits;          ///< every hit, in time order
     std::vector<double> beats;          ///< seconds, the beats as the drummer played them
     int downbeat = 0;                   ///< which beat (0..3) starts the bars
+    std::vector<int> micVoice;          ///< per mic: its drum's voice (-1 for mics that aren't a drum's close mic)
     int suggestedDivision = 16;         ///< 12 when the hits sit on triplets (a shuffle, 6/8 or 12/8 feel), else 16
     double sr = 44100;
 };
