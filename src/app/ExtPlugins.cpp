@@ -80,7 +80,7 @@ void scan (std::function<void (int)> done)
         {
             auto paths = f->getDefaultLocationsToSearch();
             const auto extra = juce::SystemStats::getEnvironmentVariable ("LD_PLUGIN_PATH", {});
-            if (extra.isNotEmpty()) paths.addPath (juce::File (extra));
+            if (extra.isNotEmpty()) paths.add (juce::File (extra));
             // a plugin that takes the scan down is named in the pedal file and left out next time
             juce::PluginDirectoryScanner sc (known(), *f, paths, true, dataDir().getChildFile ("scan-crash.txt"), false);
             juce::String name;

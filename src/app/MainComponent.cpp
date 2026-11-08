@@ -1809,7 +1809,9 @@ void MainComponent::onExtState (int t, int k, const juce::String& state)
     if (audition) audition->stop();
     const auto before = settingsSnapshot();
     if (auto* p = ii[k]["p"].getDynamicObject()) p->setProperty ("state", state);
-    recordChange (before, ii[k]["p"]["name"].toString() + " changed.");
+    const auto what = ii[k]["p"]["name"].toString() + " changed.";
+    recordChange (before, what);
+    setNotice (what);
     rerender();
 }
 
@@ -2265,13 +2267,13 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
         add.addSeparator();
         // third-party plugins: what the last scan found, by maker, and a scan
         juce::PopupMenu third;
-        const auto types = ext::known().getTypes();
+        const auto found = ext::known().getTypes();
         std::map<juce::String, juce::PopupMenu> byMaker;
-        for (int i = 0; i < types.size() && i < 400; ++i)
-            if (! types.getReference (i).isInstrument) byMaker[types.getReference (i).manufacturerName.isEmpty() ? juce::String ("Other") : types.getReference (i).manufacturerName].addItem (1000 + i, types.getReference (i).name + "  (" + types.getReference (i).pluginFormatName + ")");
+        for (int i = 0; i < found.size() && i < 400; ++i)
+            if (! found.getReference (i).isInstrument) byMaker[found.getReference (i).manufacturerName.isEmpty() ? juce::String ("Other") : found.getReference (i).manufacturerName].addItem (1000 + i, found.getReference (i).name + "  (" + found.getReference (i).pluginFormatName + ")");
         for (auto& [mk, sub] : byMaker) third.addSubMenu (mk, sub);
         if (! byMaker.empty()) third.addSeparator();
-        third.addItem (40, ext::scanning() ? "Scanning for plugins..." : types.isEmpty() ? "Find my plugins" : "Scan again", ! ext::scanning());
+        third.addItem (40, ext::scanning() ? "Scanning for plugins..." : found.isEmpty() ? "Find my plugins" : "Scan again", ! ext::scanning());
         add.addSubMenu ("Third Party Plugin", third);
         if (has)
         {
@@ -2291,13 +2293,13 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
             m.addSeparator();
             {
                 juce::PopupMenu third;
-                const auto types = ext::known().getTypes();
+                const auto found = ext::known().getTypes();
                 std::map<juce::String, juce::PopupMenu> byMaker;
-                for (int i = 0; i < types.size() && i < 400; ++i)
-                    if (! types.getReference (i).isInstrument) byMaker[types.getReference (i).manufacturerName.isEmpty() ? juce::String ("Other") : types.getReference (i).manufacturerName].addItem (1000 + i, types.getReference (i).name + "  (" + types.getReference (i).pluginFormatName + ")");
+                for (int i = 0; i < found.size() && i < 400; ++i)
+                    if (! found.getReference (i).isInstrument) byMaker[found.getReference (i).manufacturerName.isEmpty() ? juce::String ("Other") : found.getReference (i).manufacturerName].addItem (1000 + i, found.getReference (i).name + "  (" + found.getReference (i).pluginFormatName + ")");
                 for (auto& [mk, sub] : byMaker) third.addSubMenu (mk, sub);
                 if (! byMaker.empty()) third.addSeparator();
-                third.addItem (40, ext::scanning() ? "Scanning for plugins..." : types.isEmpty() ? "Find my plugins" : "Scan again", ! ext::scanning());
+                third.addItem (40, ext::scanning() ? "Scanning for plugins..." : found.isEmpty() ? "Find my plugins" : "Scan again", ! ext::scanning());
                 m.addSubMenu ("Third Party Plugin", third);
             }
         }
@@ -2322,16 +2324,20 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
             if (r == 3) { mutate ([k] (juce::Array<juce::var>& a) { if (k < a.size()) a.remove (k); }, "Insert removed."); return; }
             if (r == 40)
             {
-                setNotice ("Looking for your plugins (VST3" + juce::String (JUCE_MAC ? ", AU" : "") + ")...");
+               #if JUCE_MAC
+                setNotice ("Looking for your plugins (VST3, AU)...");
+               #else
+                setNotice ("Looking for your plugins (VST3)...");
+               #endif
                 ext::scan ([this] (int n) { setNotice ("Found " + juce::String (n) + " plugins. They're in Third Party Plugin on any insert."); });
                 return;
             }
             if (r >= 1000)
             {
-                const auto types = ext::known().getTypes();
-                if (r - 1000 >= types.size()) return;
-                const auto ins = ext::makeInsert (types.getReference (r - 1000));
-                const auto nm = types.getReference (r - 1000).name;
+                const auto found = ext::known().getTypes();
+                if (r - 1000 >= found.size()) return;
+                const auto ins = ext::makeInsert (found.getReference (r - 1000));
+                const auto nm = found.getReference (r - 1000).name;
                 mutate ([k, has, ins] (juce::Array<juce::var>& a)
                 {
                     if (has && k < a.size()) a.set (k, ins);

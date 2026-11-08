@@ -31,8 +31,16 @@ TEST_CASE ("Third-party plugins: found, run offline in time, state kept")
     REQUIRE (om.size() == 1);
     CHECK (std::abs (om[0][2000] - 0.5f) < 1e-5f);
     // its state: gain 1.5 saved as the plugin saves it
-    juce::MemoryBlock m; { juce::MemoryOutputStream o (m, false); o.writeFloat (1.5f); }
-    ins["p"].getDynamicObject()->setProperty ("state", m.toBase64Encoding());
+    // (a hosted plugin's state is whatever its wrapper hands back, so make it the way the editor does: set the
+    // parameter on an instance and save that instance's state)
+    {
+        juce::String err;
+        auto inst = ld::ext::formats().createPluginInstance (desc, 48000, 512, err);
+        REQUIRE (inst != nullptr);
+        for (auto* prm : inst->getParameters()) if (prm->getName (32) == "Gain") prm->setValueNotifyingHost (1.5f / 2.0f);
+        juce::MemoryBlock m; inst->getStateInformation (m);
+        ins["p"].getDynamicObject()->setProperty ("state", m.toBase64Encoding());
+    }
     out = ld::ext::render (ins, in, 48000);
     CHECK (std::abs (out[0][1000] - 1.5f) < 1e-5f);
     // a plugin that isn't there: the audio passes through
