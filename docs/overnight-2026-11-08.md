@@ -57,6 +57,13 @@ Notes for the morning, kept up to date through the night.
   - On Linux, glibc kept freed buffers resident. Large buffers now go back to the system straight away; macOS
     already does this.
 
+- **Stress results after the fixes**:
+  - **4-minute song**: two 7-minute monkey runs survived about 1,750 actions each. Peak memory was 4.4 and 3.8 GB,
+    down from 5.6 GB or more, when the OS was killing the app.
+  - **Sample session**: a 20-minute soak survived 4,918 actions. Memory went 1.41 → 1.58 → 1.69 → 1.72 GB by
+    quarter, levelling off: caches filling, not a steady leak.
+  - **Third-party plugin on every mic** of the 4-minute song: a re-render takes about 1 s.
+
 ## Correction
 - Last night I said the memory cleanup would halve memory by storing audio as 32-bit instead of 64-bit. The audio was
   already 32-bit, so that part was wrong.
