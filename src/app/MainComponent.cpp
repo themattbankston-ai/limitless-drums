@@ -1613,7 +1613,42 @@ void MainComponent::refreshMix()
     if (! engineState) return;
     studio.data.mix = buildMixView (*engineState, mixSel, studio.selectedHit, refAudio.empty() ? nullptr : &refAudio, refName);
     mixHit = studio.selectedHit;
+    refreshPlugin();
     studio.redrawAll();
+}
+
+void MainComponent::refreshPlugin()
+{
+    // the open plugin window shows its insert's settings, flattened ("decap.drive" = 3, "model" = "decap")
+    ui::PluginView pv;
+    if (engineState && plugT >= -1)
+    {
+        auto& S = engineState->session;
+        const juce::var* ins = plugT < 0 ? &S.busIns : (plugT < (int) S.tracks.size() ? &S.tracks[(size_t) plugT].strip.inserts : nullptr);
+        if (ins && ins->isArray() && plugK < ins->getArray()->size())
+        {
+            const auto& it = (*ins)[plugK];
+            pv.open = true; pv.who = plugT; pv.slot = plugK;
+            pv.type = it["type"].toString().toStdString(); pv.on = (bool) it["on"];
+            pv.track = plugT < 0 ? std::string ("DRUM BUS") : juce::String (S.tracks[(size_t) plugT].mic).toUpperCase().toStdString();
+            std::function<void (const juce::var&, const std::string&)> flat = [&] (const juce::var& o, const std::string& pre)
+            {
+                if (auto* d = o.getDynamicObject())
+                    for (auto& kv : d->getProperties())
+                    {
+                        const auto key = pre + kv.name.toString().toStdString();
+                        const auto& x = kv.value;
+                        if (x.isObject()) flat (x, key + ".");
+                        else if (x.isBool()) pv.num[key] = (bool) x ? 1.0 : 0.0;
+                        else if (x.isInt() || x.isInt64() || x.isDouble()) pv.num[key] = (double) x;
+                        else if (x.isString()) pv.str[key] = x.toString().toStdString();
+                    }
+            };
+            flat (it["p"], "");
+        }
+        else plugT = -2;
+    }
+    studio.setPlugin (std::move (pv));
 }
 
 void MainComponent::onMixAction (const std::string& a, double v)
@@ -1750,6 +1785,67 @@ void MainComponent::onMixAction (const std::string& a, double v)
         change ([v] (hl::Session& s) { s.busMute = v > 0.5; }, v > 0.5 ? "Drum bus muted." : "Drum bus on.");
         return;
     }
+    if (a.rfind ("plug", 0) == 0)
+    {
+        // the plugin window: open / close / bypass, and setting one of its values by path ("decap.drive")
+        if (a.rfind ("plug:open:", 0) == 0)
+        {
+            const auto rest = a.substr (10); const auto c = rest.find (':');
+            plugT = whoOf (rest.substr (0, c)); plugK = std::stoi (rest.substr (c + 1));
+            refreshPlugin(); return;
+        }
+        if (a == "plug:close") { plugT = -2; refreshPlugin(); return; }
+        if (plugT < -1) return;
+        const int t = plugT, k = plugK;
+        if (a == "plug:byp") { onMixAction ("insbyp:" + (t < 0 ? std::string ("bus") : std::to_string (t)) + ":" + std::to_string (k), 0); return; }
+        const bool isStr = a.rfind ("plugstr:", 0) == 0;
+        std::string path, sval;
+        if (isStr) { const auto rest = a.substr (8); const auto c = rest.rfind (':'); path = rest.substr (0, c); sval = rest.substr (c + 1); }
+        else if (a.rfind ("plug:set:", 0) == 0) path = a.substr (9);
+        else return;
+        double val = v;
+        // Skull Cutter's cut knobs park at "off" (0) at their ends
+        if (path == "decap.lowcut" && val <= 20.5) val = 0;
+        if (path == "decap.highcut" && val >= 19900) val = 0;
+        change ([t, k, path, sval, isStr, val] (hl::Session& s)
+        {
+            juce::var& ii = t < 0 ? s.busIns : s.tracks[(size_t) t].strip.inserts;
+            if (! ii.isArray() || k >= ii.getArray()->size()) return;
+            juce::var node = ii[k]["p"];
+            juce::StringArray parts; parts.addTokens (juce::String (path), ".", "");
+            for (int i = 0; i + 1 < parts.size(); ++i)
+            {
+                juce::var nx = node[juce::Identifier (parts[i])];
+                if (! nx.isObject()) { nx = juce::var (new juce::DynamicObject()); if (auto* o = node.getDynamicObject()) o->setProperty (parts[i], nx); }
+                node = nx;
+            }
+            auto* o = node.getDynamicObject(); if (! o) return;
+            const juce::Identifier leaf (parts[parts.size() - 1]);
+            if (isStr) o->setProperty (leaf, juce::String (sval));
+            else if (o->getProperty (leaf).isBool()) o->setProperty (leaf, val > 0.5);
+            else o->setProperty (leaf, val);
+        }, [&]
+        {
+            // the notice in words: "Skull Cutter: Drive 6.5", "Destroy on", "Style III"
+            static const std::map<std::string, std::string> names {
+                { "decap.drive", "Drive" }, { "devil.crush", "Drive" }, { "saturn.drive", "Drive" }, { "fatso.input", "Drive" },
+                { "decap.tone", "Tone" }, { "devil.darkness", "Darkness" }, { "saturn.tone", "Tone" }, { "fatso.warmth", "Warmth" },
+                { "decap.lowcut", "Low cut" }, { "decap.highcut", "High cut" }, { "mix", "Mix" }, { "out", "Output" },
+                { "decap.punish", "Destroy" }, { "decap.thump", "Boom" }, { "decap.steep", "Sploosh" }, { "auto", "Auto gain" },
+                { "model", "Model" }, { "decap.style", "Style" }, { "saturn.style", "Style" }, { "fatso.comp", "Comp" } };
+            const auto& arr = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
+            const juce::String plug (insertDisplayName (arr[k]["type"].toString()));
+            const auto n = names.count (path) ? names.at (path) : path;
+            juce::String val2;
+            if (isStr) val2 = juce::String (sval).toUpperCase();
+            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto") val2 = val > 0.5 ? "on" : "off";
+            else if ((path == "decap.lowcut" || path == "decap.highcut") && val == 0) val2 = "off";
+            else if (path == "mix") val2 = juce::String (juce::roundToInt (val * 100)) + " %";
+            else val2 = juce::String (val, 1);
+            return plug + ": " + juce::String (n) + " " + val2 + ".";
+        }());
+        return;
+    }
     if (a.rfind ("insbyp:", 0) == 0)
     {
         const auto rest = a.substr (7); const auto c = rest.find (':');
@@ -1862,7 +1958,7 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
         {
             const auto cur = ins[k]["type"].toString();
             m.addSectionHeader (insertDisplayName (cur));
-            m.addItem (1, "Open", false);
+            m.addItem (1, "Open");
             m.addItem (2, (bool) ins[k]["on"] ? "Bypass" : "Turn on");
             m.addSubMenu ("Replace with", add);
             m.addSeparator();
@@ -1889,6 +1985,8 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
                 refreshModel(); refreshMix(); updateHeader(); setNotice (what2);
                 rerender();
             };
+            const std::string who = t < 0 ? std::string ("bus") : std::to_string (t);
+            if (r == 1) { onMixAction ("plug:open:" + who + ":" + std::to_string (k), 0); return; }
             if (r == 2) { onMixAction ("insbyp:" + (t < 0 ? std::string ("bus") : std::to_string (t)) + ":" + std::to_string (k), 0); return; }
             if (r == 3) { mutate ([k] (juce::Array<juce::var>& a) { if (k < a.size()) a.remove (k); }, "Insert removed."); return; }
             if (r >= 10 && r < 16)
@@ -1899,6 +1997,9 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
                     if (has && k < a.size()) a.set (k, insertDefaults (type));
                     else if (a.size() < 5) a.add (insertDefaults (type));
                 }, juce::String (insertDisplayName (type)) + (has ? " replaces it." : " added."));
+                const auto& ii = t < 0 ? engineState->session.busIns : engineState->session.tracks[(size_t) t].strip.inserts;
+                const int n = ii.getArray() ? ii.getArray()->size() : 0;
+                onMixAction ("plug:open:" + who + ":" + std::to_string (has ? k : n - 1), 0);
             }
         });
         return;

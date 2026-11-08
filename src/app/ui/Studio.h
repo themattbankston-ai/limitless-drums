@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -137,6 +138,19 @@ struct StudioModel
     } mix;
 };
 
+/** An open plugin window: which slot, its type, and its settings flattened to paths ("decap.drive"). */
+struct PluginView
+{
+    bool open = false;
+    int who = -1, slot = 0;           ///< who: track index, -1 the drum bus
+    std::string type, track;
+    bool on = true;
+    std::map<std::string, double> num;      ///< numbers and switches (1 / 0)
+    std::map<std::string, std::string> str; ///< choices ("model", "decap.style")
+    double get (const std::string& k, double d) const { auto i = num.find (k); return i == num.end() ? d : i->second; }
+    std::string gets (const std::string& k, const std::string& d) const { auto i = str.find (k); return i == str.end() ? d : i->second; }
+};
+
 enum class Step { session, hits, align, tune, mix, level, exportStep };
 
 /** What the header shows (Hitline's steps, Auto Prep and transport). */
@@ -184,6 +198,9 @@ public:
     void zoomBy (double factor, double anchorSeconds);
     /** The big fader beside a track's header while its mini fader is held (-1 hides it). */
     void showBigFader (int track);
+    /** Opens, updates or closes (open = false) the floating plugin window. */
+    void setPlugin (PluginView);
+    float pluginLevel (int who) const;
     void flashPad (int velocity);
 
     /** Called ~60 times a second for the playhead, meters and the transient pulses. */
@@ -253,7 +270,7 @@ public:
     double screenWidthForZoom() const;
 
 private:
-    struct Header; struct Strips; struct Screen; struct Rack; struct Footer; struct HistoryPanel; struct Console; struct BigFader;
+    struct Header; struct Strips; struct Screen; struct Rack; struct Footer; struct HistoryPanel; struct Console; struct BigFader; struct PluginWindow;
     std::unique_ptr<Header> header;
     std::unique_ptr<Strips> strips;
     std::unique_ptr<BigFader> bigFader;
@@ -262,9 +279,11 @@ private:
     std::unique_ptr<Rack> rack;
     std::unique_ptr<Footer> footer;
     std::unique_ptr<HistoryPanel> historyPanel;
-    double lastPlayhead = 0.0;
+    std::unique_ptr<PluginWindow> pluginWin;
+    double lastPlayhead = 0.0, lastTick = 0.0;
     bool atFit = true;
     void layoutPanels();
     friend struct Screen;
+    friend struct PluginWindow;
 };
 } // namespace ld::ui

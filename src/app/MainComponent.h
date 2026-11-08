@@ -92,6 +92,8 @@ private:
     hl::Chs refAudio; std::string refName;
     std::unique_ptr<juce::FileChooser> refChooser;
     void refreshMix();
+    void refreshPlugin();
+    int plugT = -2, plugK = 0;   ///< the insert whose window is open (-2 none, -1 the bus)
     void onMixAction (const std::string& action, double v);
     void onMixMenu (const std::string& which, float x, float y, float w, float h);
     // the Tune step

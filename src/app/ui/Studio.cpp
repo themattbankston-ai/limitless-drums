@@ -1625,6 +1625,8 @@ struct Studio::Console : visage::Frame
         {
             case ins:
                 if (e.isCmdDown() || e.isAltDown()) { if (studio.onMix) studio.onMix ("insbyp:" + who + ":" + std::to_string (h.slot), 0); }
+                else if (! e.isRightButton() && studio.onMix && ! (bus ? studio.data.mix.bus : studio.data.mix.chans[(size_t) h.si]).ins[(size_t) h.slot].name.empty())
+                    studio.onMix ("plug:open:" + who + ":" + std::to_string (h.slot), 0);   // a filled slot opens its window; right-click for the menu
                 else if (studio.onMixMenu)
                 {
                     const auto p = P (h.si, geo (bus, true).insX, 40 + h.slot * 26);
@@ -2820,11 +2822,405 @@ struct Studio::HistoryPanel : visage::Frame
 };
 
 //==============================================================================
+//==============================================================================
+// A built-in plugin's window: floats over the studio, drag it by its title bar. The faceplate is a Blender render;
+// everything that moves or shows a value is drawn here on the render's camera (panel px, tilted 11 degrees), and
+// every label is centred on its control at the height of the surface it sits on.
+namespace pw
+{
+    #define LD_IMG(n) reinterpret_cast<const unsigned char*> (BinaryData::n), BinaryData::n##Size
+    static Font stencil (float s) { return fontOf (BinaryData::BlackOpsOneRegular_ttf, BinaryData::BlackOpsOneRegular_ttfSize, s); }
+    struct Img { const unsigned char* d; int n; };
+    static const Img sawSharp[8] = { { LD_IMG (skull_saw_0_jpg) }, { LD_IMG (skull_saw_1_jpg) }, { LD_IMG (skull_saw_2_jpg) }, { LD_IMG (skull_saw_3_jpg) },
+                                     { LD_IMG (skull_saw_4_jpg) }, { LD_IMG (skull_saw_5_jpg) }, { LD_IMG (skull_saw_6_jpg) }, { LD_IMG (skull_saw_7_jpg) } };
+    static const Img sawBlur[8] = { { LD_IMG (skull_sawb_0_jpg) }, { LD_IMG (skull_sawb_1_jpg) }, { LD_IMG (skull_sawb_2_jpg) }, { LD_IMG (skull_sawb_3_jpg) },
+                                    { LD_IMG (skull_sawb_4_jpg) }, { LD_IMG (skull_sawb_5_jpg) }, { LD_IMG (skull_sawb_6_jpg) }, { LD_IMG (skull_sawb_7_jpg) } };
+}
+
+struct Studio::PluginWindow : visage::Frame
+{
+    explicit PluginWindow (Studio& s) : studio (s) { setVisible (false); }
+    Studio& studio;
+    PluginView v;
+    static constexpr float FW = 980, FH = 544, TH = 46, WW = 1000, WH = 600;
+    float k = 1;                  // window scale
+    float sawAngle = 0;           // in teeth
+    // drag state
+    bool moving = false; Point grab;
+    std::string dragKey; float dragY0 = 0, dragV0 = 0, liveV = NAN;
+
+    // the face's camera: panel px (+ height in Blender units) to frame px
+    float BX() const { return 10 * k; }
+    float BY() const { return TH * k; }
+    Point P (float px, float py, float z = 0) const
+    {
+        return { BX() + (FW / 2 + (px - FW / 2) / 1.01f) * k, BY() + (FH / 2 + (py - FH / 2) * 0.98163f / 1.01f - z * 100 * 0.190809f / 1.01f) * k };
+    }
+    float S (float x) const { return x * k; }
+    void label (Canvas& c, const std::string& t, float px, float py, float z, const Font& f, unsigned col, float boxW = 160, float boxH = 24)
+    {
+        const auto p = P (px, py, z);
+        c.setColor (col);
+        draw::text (c, t, f, Font::kCenter, p.x - S (boxW) / 2, p.y - S (boxH) / 2, S (boxW), S (boxH));
+    }
+    void glowLabel (Canvas& c, const std::string& t, float px, float py, float z, const Font& f, unsigned col, float boxW = 160)
+    {
+        // lit lettering: the colour, then the same again added on top so it reads as light rather than paint
+        label (c, t, px, py, z, f, col, boxW);
+        c.setBlendMode (visage::BlendMode::Add);
+        label (c, t, px, py, z, f, Color (col).withAlpha (0.45f).toARGB(), boxW);
+        c.setBlendMode (visage::BlendMode::Alpha);
+    }
+    void readout (Canvas& c, float px, float py, const std::string& t, float w = 70)
+    {
+        const auto p = P (px, py);
+        draw::glass (c, p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3));
+        glowLabel (c, t, px, py, 0, monoBold (S (10.5f)), 0xffff7a2a, w);
+    }
+
+    // ---------------------------------------------------------------- Skull Cutter's controls
+    struct Ctl { const char* key; float x, y, r; int kind; };   // kind 0 knob, 1 key, 2 dome, 3 tag, 4 stepped
+    static const std::vector<Ctl>& skullCtls()
+    {
+        static const std::vector<Ctl> c = {
+            { "drive", 812, 222, 64, 0 }, { "tone", 82, 456, 25, 0 }, { "lowcut", 194, 456, 25, 0 }, { "highcut", 306, 456, 25, 0 },
+            { "mix", 676, 456, 25, 0 }, { "out", 788, 456, 25, 0 }, { "style", 904, 456, 25, 4 }, { "destroy", 490, 452, 24, 2 },
+            { "boom", 95, 360, 0, 1 }, { "sploosh", 173, 360, 0, 1 }, { "auto", 251, 360, 0, 1 },
+            { "m:decap", 74, 39, 0, 3 }, { "m:devil", 166, 39, 0, 3 }, { "m:saturn", 258, 39, 0, 3 }, { "m:fatso", 350, 39, 0, 3 } };
+        return c;
+    }
+    std::string model() const { return v.gets ("model", "decap"); }
+    /** The knob's position 0..1 for this model, and the value it stands for. */
+    struct Range { std::string path; double lo, hi; bool log; bool on; };
+    Range rangeOf (const std::string& key) const
+    {
+        const auto m = model();
+        if (key == "mix") return { "mix", 0, 1, false, true };
+        if (key == "out") return { "out", -24, 24, false, true };
+        if (key == "drive")
+        {
+            if (m == "devil") return { "devil.crush", 0, 10, false, true };
+            if (m == "saturn") return { "saturn.drive", -12, 30, false, true };
+            if (m == "fatso") return { "fatso.input", -12, 24, false, true };
+            return { "decap.drive", 0, 10, false, true };
+        }
+        if (key == "tone")
+        {
+            if (m == "devil") return { "devil.darkness", 0, 10, false, true };
+            if (m == "saturn") return { "saturn.tone", -5, 5, false, true };
+            if (m == "fatso") return { "fatso.warmth", 0, 7, false, true };
+            return { "decap.tone", -5, 5, false, true };
+        }
+        if (key == "lowcut") return { "decap.lowcut", 20, 500, true, m == "decap" };
+        if (key == "highcut") return { "decap.highcut", 1500, 20000, true, m == "decap" };
+        return { "", 0, 1, false, false };
+    }
+    double defOf (const std::string& path) const
+    {
+        static const std::map<std::string, double> d { { "decap.drive", 3 }, { "devil.crush", 4 }, { "devil.darkness", 2 }, { "decap.lowcut", 20 }, { "decap.highcut", 20000 }, { "mix", 1 } };
+        auto i = d.find (path); return i == d.end() ? 0.0 : i->second;
+    }
+    float posOf (const std::string& key) const
+    {
+        if (key == dragKey && std::isfinite (liveV)) return liveV;
+        const auto R = rangeOf (key);
+        double x = v.get (R.path, defOf (R.path));
+        if (R.path == "decap.lowcut" && x < 20) x = 20;
+        if (R.path == "decap.highcut" && x <= 0) x = 20000;
+        return (float) std::clamp (R.log ? std::log (x / R.lo) / std::log (R.hi / R.lo) : (x - R.lo) / (R.hi - R.lo), 0.0, 1.0);
+    }
+    double valueAt (const std::string& key, float pos) const
+    {
+        const auto R = rangeOf (key);
+        return R.log ? R.lo * std::pow (R.hi / R.lo, (double) pos) : R.lo + (R.hi - R.lo) * pos;
+    }
+    std::string text (const std::string& key, float pos) const
+    {
+        const auto R = rangeOf (key); const double x = valueAt (key, pos);
+        if (! R.on) return "off";
+        if (R.path == "mix") return draw::fmt ("%.0f %%", x * 100);
+        if (R.path == "out" || R.path == "saturn.drive" || R.path == "fatso.input") return draw::fmt ("%+.1f dB", x);
+        if (R.path == "decap.lowcut") return x <= 20.5 ? std::string ("off") : draw::fmt ("%.0f Hz", x);
+        if (R.path == "decap.highcut") return x >= 19900 ? std::string ("off") : draw::fmt ("%.1f kHz", x / 1000);
+        if (R.path == "decap.tone" || R.path == "saturn.tone") return draw::fmt ("%+.1f", x);
+        return draw::fmt ("%.1f", x);
+    }
+    std::vector<std::string> styles() const
+    {
+        const auto m = model();
+        if (m == "decap") return { "A", "E", "N", "T", "P" };
+        if (m == "saturn") return { "gentle", "tape", "tube", "transformer", "heavy" };
+        if (m == "fatso") return { "off", "buss", "gp", "spank" };
+        return {};
+    }
+    std::string stylePath() const { const auto m = model(); return m == "fatso" ? "fatso.comp" : m + ".style"; }
+    int styleIndex() const
+    {
+        const auto st = styles(); if (st.empty()) return -1;
+        const auto cur = v.gets (stylePath(), st[0]);
+        for (size_t i = 0; i < st.size(); ++i) if (st[i] == cur) return (int) i;
+        return 0;
+    }
+
+    void drawSkull (Canvas& c)
+    {
+        const float fw = S (FW), fh = S (FH), bx = BX(), by = BY();
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (skull_plate_jpg), bx, by, fw, fh);
+        const bool destroy = model() == "decap" && v.get ("decap.punish", 0) > 0.5;
+        const float drive = posOf ("drive");
+        if (destroy) { c.setBlendMode (visage::BlendMode::Add); c.setColor (0xffffffff); c.image (LD_IMG (skull_cracks_jpg), bx, by, fw, fh); c.setBlendMode (visage::BlendMode::Alpha); }
+        // the saw: spins faster with drive; motion-blurred when fast
+        {
+            static const float box[4] = { 640, 124, 1320, 785 };   // in the 1960 x 1088 render
+            const float sx = fw / 1960, sy = fh / 1088;
+            const int f = ((int) std::floor (sawAngle * 8) % 8 + 8) % 8;
+            const auto& im = (v.on && drive > 0.5f) ? pw::sawBlur[f] : pw::sawSharp[f];
+            c.setColor (0xffffffff);
+            c.image (im.d, im.n, bx + box[0] * sx, by + box[1] * sy, (box[2] - box[0]) * sx, (box[3] - box[1]) * sy);
+        }
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (skull_skull_png), bx, by, fw, fh);
+        const float eyes = v.on ? std::clamp ((drive - 0.15f) / 0.75f, 0.0f, 1.0f) : 0.0f;
+        if (eyes > 0.01f) { c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (0xffffffff).withAlpha (eyes)); c.image (LD_IMG (skull_eyes_jpg), bx, by, fw, fh); c.setBlendMode (visage::BlendMode::Alpha); }
+
+        const unsigned cream = 0xffe9dcc0, hot = 0xffff7a2a, ink = 0xd90a0908;
+        // model tags (stamped steel, tops 0.035 up)
+        const char* tags[4] = { "VALVE", "CRUSH", "MULTI", "TAPE" };
+        const char* models[4] = { "decap", "devil", "saturn", "fatso" };
+        for (int i = 0; i < 4; ++i)
+        {
+            const float px = 32 + i * 92 + 42;
+            if (model() == models[i])
+            {
+                const auto a = P (32 + i * 92, 24, 0.035f);
+                c.setColor (Color (hot).withAlpha (0.9f)); c.roundedRectangleBorder (a.x + 1, a.y + 1, S (84 / 1.01f) - 2, S (30 * 0.972f) - 2, S (5), S (1.4f));
+                glowLabel (c, tags[i], px, 39, 0.035f, pw::stencil (S (12)), 0xffff8a3a);
+            }
+            else { label (c, tags[i], px, 39.8f, 0.035f, pw::stencil (S (12)), 0x29ffffff); label (c, tags[i], px, 39, 0.035f, pw::stencil (S (12)), ink); }
+        }
+        // VU needle in the porthole (dial printed in the render)
+        {
+            const float lv = studio.pluginLevel (v.who);
+            const float fr = 106 * 0.99f;
+            const auto pc = P (170, 204 + 0.6f * fr, -0.02f);
+            const float vR = 0.42f * 2 * fr / 1.01f * k;
+            const float a = (-140 + 100 * std::clamp (lv, 0.0f, 1.0f)) * 3.14159265f / 180;
+            c.setColor (0x66000000); c.segment (pc.x + std::cos (a) * S (16) + S (3), pc.y + std::sin (a) * S (16) + S (2), pc.x + std::cos (a) * (vR + S (12)) + S (3), pc.y + std::sin (a) * (vR + S (12)) + S (2), S (1.6f), true);
+            c.setColor (0xff120c08); c.segment (pc.x + std::cos (a) * S (16), pc.y + std::sin (a) * S (16), pc.x + std::cos (a) * (vR + S (12)), pc.y + std::sin (a) * (vR + S (12)), S (1.6f), true);
+            c.setColor (0xffb0261c); c.segment (pc.x + std::cos (a) * (vR - S (14)), pc.y + std::sin (a) * (vR - S (14)), pc.x + std::cos (a) * (vR + S (12)), pc.y + std::sin (a) * (vR + S (12)), S (1.6f), true);
+            c.setColor (0xff2a1d14); c.circle (pc.x - S (11), pc.y - S (11), S (22));
+        }
+        // DRIVE: painted scale, lit arc, pointer
+        {
+            const auto d0 = P (812, 222); const float pos = drive;
+            const float pi = 3.14159265f, A0 = 0.75f * pi, ASP = 1.5f * pi;
+            for (int i = 0; i <= 40; ++i)
+            {
+                const float a = A0 + ASP * i / 40; const bool big = i % 4 == 0, hotZ = i >= 30, lit = hotZ && pos > 0.75f && v.on;
+                const float r0 = 98, r1 = big ? 110 : 104;
+                c.setColor (hotZ ? (lit ? 0xffff5a2au : 0xffc03a22u) : 0xbfe8d6b4u);
+                c.segment (d0.x + std::cos (a) * S (r0) / 1.01f, d0.y + std::sin (a) * S (r0) * 0.972f, d0.x + std::cos (a) * S (r1) / 1.01f, d0.y + std::sin (a) * S (r1) * 0.972f, S (big ? 2.2f : 1.2f), false);
+            }
+            for (int i = 0; i <= 10; ++i) { if (i == 5) continue; const float a = A0 + ASP * i / 10; label (c, std::to_string (i), 812 + std::cos (a) * 124, 222 + std::sin (a) * 124, 0, pw::stencil (S (15)), i >= 8 ? 0xffd8452au : cream, 40); }
+            c.setBlendMode (visage::BlendMode::Add);
+            const float R = S (92) / 1.01f, half = ASP * pos / 2;
+            const float centre = -0.75f * pi + half;   // visage arcs: 0 = up, clockwise
+            c.setColor (Color (0xffff5a1e).withAlpha (v.on ? 0.3f : 0.12f)); c.arc (d0.x - R - S (4), d0.y - R - S (4), 2 * R + S (8), S (8), centre, half, true);
+            c.setColor (Color (0xffff5a1e).withAlpha (v.on ? 0.95f : 0.4f)); c.arc (d0.x - R - S (1.5f), d0.y - R - S (1.5f), 2 * R + S (3), S (3), centre, half, true);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            const auto cc = P (812, 222, 0.39f); const float cr = S (0.8f * 64), pa = A0 + ASP * pos;
+            c.setColor (0xe61c120a); c.segment (cc.x + std::cos (pa) * cr * 0.3f, cc.y + std::sin (pa) * cr * 0.3f, cc.x + std::cos (pa) * cr * 0.88f, cc.y + std::sin (pa) * cr * 0.88f, S (4.2f), true);
+            c.setColor (0xffe0301a); c.circle (cc.x + std::cos (pa) * cr * 0.9f - S (3), cc.y + std::sin (pa) * cr * 0.9f - S (3), S (6));
+            label (c, "DRIVE", 812, 96, 0, pw::stencil (S (20)), cream, 200, 30);
+            readout (c, 812, 370, text ("drive", pos), 86);
+        }
+        // the small knobs
+        const char* names[5] = { "TONE", "LOW CUT", "HIGH CUT", "MIX", "OUTPUT" };
+        const char* keys[5] = { "tone", "lowcut", "highcut", "mix", "out" };
+        const float xs[5] = { 82, 194, 306, 676, 788 };
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto R = rangeOf (keys[i]);
+            const float pos = posOf (keys[i]);
+            const float pi = 3.14159265f, A0 = 0.75f * pi, ASP = 1.5f * pi;
+            const auto kc = P (xs[i], 456); 
+            for (int j = 0; j <= 10; ++j) { const float a = A0 + ASP * j / 10; c.setColor (0x80e8d6b4); c.segment (kc.x + std::cos (a) * S (38) / 1.01f, kc.y + std::sin (a) * S (38) * 0.972f, kc.x + std::cos (a) * S (42) / 1.01f, kc.y + std::sin (a) * S (42) * 0.972f, S (1.2f), false); }
+            const auto cc = P (xs[i], 456, 0.34f); const float cr = S (20), a = A0 + ASP * pos;
+            c.setColor (R.on ? 0xe61c120au : 0x661c120au); c.segment (cc.x + std::cos (a) * cr * 0.25f, cc.y + std::sin (a) * cr * 0.25f, cc.x + std::cos (a) * cr * 0.9f, cc.y + std::sin (a) * cr * 0.9f, S (3), true);
+            std::string nm = names[i];
+            if (i == 0 && model() == "devil") nm = "DARKNESS"; else if (i == 0 && model() == "fatso") nm = "WARMTH";
+            if (i == 2 - 2 + 0 && false) {}
+            label (c, nm, xs[i], 406, 0, pw::stencil (S (12.5f)), R.on ? cream : 0x66e9dcc0u, 120);
+            readout (c, xs[i], 506, text (keys[i], pos), 68);
+        }
+        // STYLE: Roman numerals around the dark knob
+        {
+            const auto st = styles(); const int sel = styleIndex();
+            const char* rn[5] = { "I", "II", "III", "IV", "V" };
+            for (int i = 0; i < 5; ++i)
+            {
+                const float a = -3.14159265f / 2 + (i - 2) * 0.66f;
+                const float px = 904 + std::cos (a) * 46, py = 456 + std::sin (a) * 46;
+                const bool en = i < (int) st.size();
+                if (en && i == sel) glowLabel (c, rn[i], px, py, 0, pw::stencil (S (13)), hot, 40);
+                else label (c, rn[i], px, py, 0, pw::stencil (S (13)), en ? cream : 0x40e9dcc0u, 40);
+            }
+            if (sel >= 0)
+            {
+                const auto cc = P (904, 456, 0.34f); const float a = -3.14159265f / 2 + (sel - 2) * 0.66f, cr = S (20);
+                c.setColor (0xe61c120a); c.segment (cc.x + std::cos (a) * cr * 0.2f, cc.y + std::sin (a) * cr * 0.2f, cc.x + std::cos (a) * cr * 0.9f, cc.y + std::sin (a) * cr * 0.9f, S (3), true);
+            }
+            label (c, model() == "fatso" ? "COMP" : "STYLE", 904, 508, 0, pw::stencil (S (12.5f)), st.empty() ? 0x66e9dcc0u : cream, 120);
+        }
+        // DESTROY
+        if (destroy) glowLabel (c, "DESTROY", 490, 506, 0, pw::stencil (S (14)), 0xffff3a1a, 200);
+        else label (c, "DESTROY", 490, 506, 0, pw::stencil (S (14)), model() == "decap" ? 0xffb8321eu : 0x55b8321eu, 200);
+        if (destroy)
+        {
+            const auto d = P (490, 452, 0.05f);
+            c.setBlendMode (visage::BlendMode::Add); c.setColor (Color (0xffff2a10).withAlpha (0.35f)); c.circle (d.x - S (40), d.y - S (40), S (80)); c.setBlendMode (visage::BlendMode::Alpha);
+        }
+        // BOOM / SPLOOSH / AUTO keys (caps 0.06 up)
+        const char* kn[3] = { "BOOM", "SPLOOSH", "AUTO" };
+        const char* kp[3] = { "decap.thump", "decap.steep", "auto" };
+        for (int i = 0; i < 3; ++i)
+        {
+            const float px = 60 + i * 78 + 35, py = 348 + 12;
+            const bool en = i == 2 || model() == "decap";
+            const bool on = en && v.get (kp[i], i == 2 ? 1 : 0) > 0.5;
+            if (on)
+            {
+                const auto a = P (px - 16, 348 + 20, 0.06f);
+                c.setColor (0xffff6a2a); c.roundedRectangle (a.x, a.y, S (32), S (1.8f), S (0.9f));
+                glowLabel (c, kn[i], px, py - 1, 0.06f, pw::stencil (S (10.5f)), 0xffff8a3a, 70);
+            }
+            else label (c, kn[i], px, py - 1, 0.06f, pw::stencil (S (10.5f)), en ? 0x99e9dcc0u : 0x40e9dcc0u, 70);
+        }
+        if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffe9dcc0); draw::text (c, "BYPASSED", pw::stencil (S (28)), Font::kCenter, bx, by, fw, fh); }
+    }
+
+    void draw (Canvas& c) override
+    {
+        // shadow, chrome, title bar
+        c.setColor (0xe6000000); c.roundedRectangleShadow (S (6), S (12), width() - S (12), height() - S (12), S (10), S (30));
+        c.setColor (0xff131315); c.roundedRectangle (0, 0, width(), height(), S (10));
+        c.setColor (Brush::linear (Color (0xff2b2b30), Color (0xff1a1a1e), Point (0, 0), Point (0, S (38))));
+        c.roundedRectangle (0, 0, width(), S (38), S (10));
+        c.setColor (0xff1a1a1e); c.fill (0, S (20), width(), S (18));
+        c.setColor (0x99000000); c.fill (0, S (37), width(), 1);
+        const unsigned col = 0xffff6a2a;
+        // bypass power
+        {
+            const float px = S (22), py = S (19), r = S (6.5f);
+            c.setColor (v.on ? col : 0xff5a5f68);
+            c.arc (px - r, py - r, 2 * r, S (2), 3.14159265f, 3.14159265f * 0.82f, true);
+            c.segment (px, py - S (8), px, py - S (1), S (2), true);
+        }
+        draw::glass (c, S (42), S (9), S (150), S (20), S (4));
+        c.setColor (col); draw::text (c, v.track, monoBold (S (10.5f)), Font::kCenter, S (42), S (9), S (150), S (20));
+        c.setColor (0x73dcdce6); draw::text (c, "INSERT " + std::to_string (v.slot + 1), uiFont (S (10)), Font::kLeft, S (212), S (9), S (120), S (20));
+        c.setColor (0xebf0f0f5);
+        const std::string title = v.type == "sat" ? "SKULL CUTTER" : v.type == "comp" ? "THE VISE" : v.type == "gate" ? "PORTCULLIS" : v.type == "pultec" ? "EMBER" : v.type == "eq" ? "PRISM" : v.type == "width" ? "HORIZON" : v.type;
+        draw::text (c, title, boldFont (S (13)), Font::kCenter, 0, S (9), width(), S (20));
+        c.setColor (0x99e6e6eb); draw::text (c, "\xe2\x9c\x95", uiFont (S (12)), Font::kCenter, width() - S (40), S (9), S (26), S (20));
+        if (v.type == "sat") drawSkull (c);
+        else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
+    }
+
+    // ---- interaction
+    std::string ctlAt (Point q) const
+    {
+        if (v.type != "sat") return {};
+        for (auto& ct : skullCtls())
+        {
+            if (ct.kind == 0 || ct.kind == 4 || ct.kind == 2)
+            {
+                const auto p = P (ct.x, ct.y, 0.2f);
+                if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key;
+            }
+            else
+            {
+                const float w = ct.kind == 3 ? 84 : 70, h = ct.kind == 3 ? 30 : 24;
+                const auto p = P (ct.x - w / 2, ct.y - h / 2, 0.05f);
+                if (q.x >= p.x && q.x < p.x + S (w) && q.y >= p.y && q.y < p.y + S (h)) return ct.key;
+            }
+        }
+        return {};
+    }
+    void send (const std::string& a, double val) { if (studio.onMix) studio.onMix ("plug:" + a, val); }
+
+    void mouseDown (const visage::MouseEvent& e) override
+    {
+        const auto q = e.position;
+        if (q.y < S (38))
+        {
+            if (q.x > width() - S (44)) { send ("close", 0); return; }
+            if (q.x < S (36)) { send ("byp", v.on ? 0 : 1); return; }
+            moving = true; grab = q; return;
+        }
+        const auto key = ctlAt (q);
+        if (key.empty()) return;
+        if (key.rfind ("m:", 0) == 0) { if (studio.onMix) studio.onMix ("plugstr:model:" + key.substr (2), 0); return; }
+        if (key == "destroy") { if (model() == "decap") send ("set:decap.punish", v.get ("decap.punish", 0) > 0.5 ? 0 : 1); return; }
+        if (key == "boom" || key == "sploosh") { if (model() == "decap") { const std::string p2 = key == "boom" ? "decap.thump" : "decap.steep"; send ("set:" + p2, v.get (p2, 0) > 0.5 ? 0 : 1); } return; }
+        if (key == "auto") { send ("set:auto", v.get ("auto", 1) > 0.5 ? 0 : 1); return; }
+        if (key == "style")
+        {
+            const auto st = styles(); if (st.empty()) return;
+            const int nx = (styleIndex() + (e.isRightButton() ? (int) st.size() - 1 : 1)) % (int) st.size();
+            if (studio.onMix) studio.onMix ("plugstr:" + stylePath() + ":" + st[(size_t) nx], 0);
+            return;
+        }
+        if (! rangeOf (key).on) return;
+        if (e.repeatClickCount() >= 2)
+        {
+            const auto R = rangeOf (key); send ("set:" + R.path, defOf (R.path)); return;
+        }
+        dragKey = key; dragY0 = q.y; dragV0 = posOf (key); liveV = dragV0;
+    }
+    void mouseDrag (const visage::MouseEvent& e) override
+    {
+        if (moving)
+        {
+            const float nx = std::clamp (x() + e.position.x - grab.x, -width() + 120, studio.width() - 120);
+            const float ny = std::clamp (y() + e.position.y - grab.y, 0.0f, studio.height() - 40);
+            setBounds (nx, ny, width(), height());
+            studio.redrawAll();
+            return;
+        }
+        if (dragKey.empty()) return;
+        liveV = std::clamp (dragV0 + (dragY0 - e.position.y) / S (220), 0.0f, 1.0f);
+        redraw();
+    }
+    void mouseUp (const visage::MouseEvent&) override
+    {
+        if (! dragKey.empty() && std::isfinite (liveV) && std::abs (liveV - dragV0) > 1e-4f)
+        {
+            const auto R = rangeOf (dragKey);
+            double val = valueAt (dragKey, liveV);
+            val = R.path == "mix" ? std::round (val * 100) / 100 : std::round (val * 10) / 10;
+            send ("set:" + R.path, val);
+        }
+        moving = false; dragKey.clear(); liveV = NAN;
+    }
+
+    void advance (double dt)
+    {
+        if (! isVisible() || v.type != "sat") return;
+        const float d = posOf ("drive");
+        const float lv = studio.pluginLevel (v.who);
+        // a slow idle turn, faster with drive, and kicked along by the signal
+        sawAngle += (float) dt * (v.on ? (0.4f + 6.0f * d * d + 10.0f * lv * d) : 0.0f);
+        redraw();
+    }
+};
+
 Studio::Studio()
     : header (std::make_unique<Header> (*this)), strips (std::make_unique<Strips> (*this)), bigFader (std::make_unique<BigFader> (*this)),
       screen (std::make_unique<Screen> (*this)), console (std::make_unique<Console> (*this)),
       rack (std::make_unique<Rack> (*this)), footer (std::make_unique<Footer> (*this)),
-      historyPanel (std::make_unique<HistoryPanel> (*this))
+      historyPanel (std::make_unique<HistoryPanel> (*this)), pluginWin (std::make_unique<PluginWindow> (*this))
 {
     setAcceptsKeystrokes (true);
     addChild (header.get());
@@ -2837,11 +3233,13 @@ Studio::Studio()
     historyPanel->setOnTop (true);
     addChild (bigFader.get(), false);
     bigFader->setOnTop (true);
+    addChild (pluginWin.get(), false);
+    pluginWin->setOnTop (true);
 }
 
 Studio::~Studio()
 {
-    for (visage::Frame* f : { (visage::Frame*) bigFader.get(), (visage::Frame*) historyPanel.get(), (visage::Frame*) footer.get(), (visage::Frame*) rack.get(),
+    for (visage::Frame* f : { (visage::Frame*) pluginWin.get(), (visage::Frame*) bigFader.get(), (visage::Frame*) historyPanel.get(), (visage::Frame*) footer.get(), (visage::Frame*) rack.get(),
                               (visage::Frame*) console.get(), (visage::Frame*) screen.get(), (visage::Frame*) strips.get(), (visage::Frame*) header.get() })
         removeChild (f);
 }
@@ -3015,6 +3413,27 @@ void Studio::tick (double t)
     rack->masterMeter = std::max (master, rack->masterMeter * 0.9f);
     rack->redraw();
     if (currentStep == Step::mix) console->redraw();
+    pluginWin->advance (lastTick > 0 ? std::min (0.1, t - lastTick) : 0.0);
+    lastTick = t;
+}
+
+void Studio::setPlugin (PluginView p)
+{
+    const bool wasOpen = pluginWin->isVisible();
+    pluginWin->v = std::move (p);
+    if (! pluginWin->v.open) { pluginWin->setVisible (false); redrawAll(); return; }
+    const float k = std::min (1.0f, (width() - 40) / PluginWindow::WW);
+    pluginWin->k = k;
+    if (! wasOpen) pluginWin->setBounds ((width() - PluginWindow::WW * k) / 2, std::max (20.0f, (height() - PluginWindow::WH * k) / 2), PluginWindow::WW * k, PluginWindow::WH * k);
+    pluginWin->setVisible (true);
+    pluginWin->redraw();
+}
+
+float Studio::pluginLevel (int who) const
+{
+    // the level the plugin window's meters show: its channel's (or the bus's) tube level, 0..1
+    if (who < 0) return console->busMeter;
+    return who < (int) console->meters.size() ? console->meters[(size_t) who] : 0.0f;
 }
 
 void Studio::showBigFader (int track)

@@ -135,6 +135,27 @@ if(LD_BUILD_APP)
         assets/ui/parts/strip_stereo.png
         assets/ui/parts/strip_bus.png
         assets/ui/parts/divider.png
+        assets/ui/plugins/skull_cracks.jpg
+        assets/ui/plugins/skull_eyes.jpg
+        assets/ui/plugins/skull_plate.jpg
+        assets/ui/plugins/skull_saw_0.jpg
+        assets/ui/plugins/skull_saw_1.jpg
+        assets/ui/plugins/skull_saw_2.jpg
+        assets/ui/plugins/skull_saw_3.jpg
+        assets/ui/plugins/skull_saw_4.jpg
+        assets/ui/plugins/skull_saw_5.jpg
+        assets/ui/plugins/skull_saw_6.jpg
+        assets/ui/plugins/skull_saw_7.jpg
+        assets/ui/plugins/skull_sawb_0.jpg
+        assets/ui/plugins/skull_sawb_1.jpg
+        assets/ui/plugins/skull_sawb_2.jpg
+        assets/ui/plugins/skull_sawb_3.jpg
+        assets/ui/plugins/skull_sawb_4.jpg
+        assets/ui/plugins/skull_sawb_5.jpg
+        assets/ui/plugins/skull_sawb_6.jpg
+        assets/ui/plugins/skull_sawb_7.jpg
+        assets/ui/plugins/skull_skull.png
+        assets/fonts/BlackOpsOne-Regular.ttf
         assets/irlib.json
         assets/libref.json
         assets/logo/lockup-horizontal-night.svg
