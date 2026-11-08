@@ -553,6 +553,35 @@ bool busLive (const Session& S)
     return false;
 }
 static double sendOf (const SessionTrack& tr) { return tr.strip.send; }
+static double verbSendOf (const SessionTrack& tr, int k) { return k == 0 ? tr.strip.r1 : tr.strip.r2; }
+static double busVerbSendOf (const Session& S, int k) { return k == 0 ? S.busR1 : S.busR2; }
+bool verbLive (const Session& S, int k)
+{
+    if (S.mode == "kit") return false;
+    if (busVerbSendOf (S, k) > -59.5) return true;
+    for (auto& tr : S.tracks) if (verbSendOf (tr, k) > -59.5) return true;
+    return false;
+}
+juce::var verbParams (const VerbUnit& v)
+{
+    // the four types on the measured models: Room = Lexicon Room A, Plate = EMT plate B, Hall = Lexicon Small Hall A, Chamber = Lexicon Chamber
+    auto* o = new juce::DynamicObject();
+    const auto& t = v.type;
+    o->setProperty ("model", t == "plate" ? "emt" : "lex");
+    o->setProperty ("prog", t == "plate" ? "B" : t == "hall" ? "Small Hall A" : t == "chamber" ? "Chamber" : "Room A");
+    o->setProperty ("decay", clampD (v.decay, 0.25, 3));
+    o->setProperty ("pre", clampD (v.pre, 0, 250));
+    o->setProperty ("early", clampD (v.size, 0, 2));
+    o->setProperty ("era", "Now");
+    // tone: dark pulls the top down to 3 kHz, bright opens it to 20 kHz and lifts the low cut to 300 Hz
+    const double tn = clampD (v.tone, -1, 1);
+    o->setProperty ("lpf", tn < 0 ? 14000 * std::pow (3000.0 / 14000, -tn) : 14000 + 6000 * tn);
+    o->setProperty ("hpf", tn > 0 ? 100 * std::pow (3.0, tn) : 100);
+    o->setProperty ("width", clampD (v.width, 0, 2));
+    o->setProperty ("mix", 1.0);
+    o->setProperty ("out", 0.0);
+    return juce::var (o);
+}
 bool roomLive (const Session& S)
 {
     if (S.mode == "kit" || ! S.room.on) return false;
@@ -805,6 +834,44 @@ MixRender renderMix (const Session& S)
         const auto& tr = S.tracks[t];
         if (! tr.ap.empty()) for (auto& x : M.proc[t]) x = applyAllpass (x, sr, tr.ap);
     });
+    // the two reverb units: every channel's R1/R2 send (post-fader, panned, mute/solo respected) and the drum bus send
+    // (the channel sum before any return, so nothing feeds back), each into a 100 % wet reverb, stereo return
+    for (int k = 0; k < 2; ++k)
+    {
+        if (! verbLive (S, k)) continue;
+        size_t n = 0; for (auto& c : M.proc) n = std::max (n, c[0].size());
+        F32 sL (n, 0.0f), sR (n, 0.0f), bL (n, 0.0f), bR (n, 0.0f);
+        const bool anySolo = std::any_of (S.tracks.begin(), S.tracks.end(), [] (auto& t) { return t.solo; });
+        const double busSend = busVerbSendOf (S, k);
+        for (int t = 0; t < nT; ++t)
+        {
+            const auto& tr = S.tracks[(size_t) t];
+            const bool audible = anySolo ? tr.solo : ! tr.mute;
+            if (! audible || tr.fader <= -60) continue;
+            const double fad = std::pow (10.0, tr.fader / 20), db = verbSendOf (tr, k);
+            const double gs = db > -59.5 ? fad * std::pow (10.0, db / 20) : 0, gb = busSend > -59.5 ? fad : 0;
+            if (gs == 0 && gb == 0) continue;
+            const auto& c = M.proc[(size_t) t];
+            const bool st = c.size() > 1;
+            const auto P = trackPanGains (tr.strip.pan, tr.panL, tr.panR, st);
+            const long l = (long) jsRound (lagOf (S, t));
+            const double pol = polR (S, t);
+            for (size_t q = 0; q < n; ++q)
+            {
+                const long m = (long) q + l; if (m < 0 || m >= (long) c[0].size()) continue;
+                const double x = c[0][(size_t) m] * pol, y = st ? c[1][(size_t) m] * pol : 0;
+                const double Lq = x * P[0] + (st ? y * P[1] : 0), Rq = x * P[2] + (st ? y * P[3] : 0);
+                if (gs != 0) { sL[q] = (float) (sL[q] + Lq * gs); sR[q] = (float) (sR[q] + Rq * gs); }
+                if (gb != 0) { bL[q] = (float) (bL[q] + Lq * gb); bR[q] = (float) (bR[q] + Rq * gb); }
+            }
+        }
+        if (busSend > -59.5)
+        {
+            const double g = std::pow (10.0, busSend / 20);
+            for (size_t q = 0; q < n; ++q) { sL[q] = (float) (sL[q] + bL[q] * g); sR[q] = (float) (sR[q] + bR[q] * g); }
+        }
+        M.rev[(size_t) k] = verbWet ({ sL, sR }, S.sr, verbParams (S.verbs[(size_t) k]));
+    }
     return M;
 }
 
@@ -1146,6 +1213,15 @@ HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult
         const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? 1.0 : ratio)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
         for (auto& x : M.room) h.room.push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, o.taps, keep), n));
     }
+    if (o.processed && o.only.empty())
+        for (int k = 0; k < 2; ++k)
+        {
+            if (M.rev[(size_t) k].empty() || ! verbLive (S, k)) continue;
+            const double on = (double) S.onsets[i];
+            const auto keep = attackKeep (S, ratio, 1, S.sr);
+            const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? 1.0 : ratio)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / ratio));
+            for (auto& x : M.rev[(size_t) k]) h.rev[(size_t) k].push_back (fit (renderTuned (x, on, preOut, outLen, 0, 1, gainAt (S.refIdx), ratio, r.start, r.end, 0, o.taps, keep), n));
+        }
     h.i = i; h.ratio = ratio; h.start = r.start; h.len = n;
     return h;
 }
@@ -1196,6 +1272,9 @@ std::pair<F32, F32> mixToStereo (const Session& S, const HitStems& h)
             R[q] = (float) ((double) R[q] + (l * P[2] + (st ? r * P[3] : 0)) * g);
         }
     }
+    for (auto& rv : h.rev)
+        if (rv.size() == 2 && bus != 0)
+            for (size_t q = 0; q < n && q < rv[0].size(); ++q) { L[q] = (float) ((double) L[q] + (double) rv[0][q] * bus); R[q] = (float) ((double) R[q] + (double) rv[1][q] * bus); }
     if (! h.room.empty())
     {
         const double g = roomLin (S) * bus;
@@ -1316,7 +1395,7 @@ Session sessionFromHitline (const juce::var& st, std::vector<Chs> audio)
         if (sv.isObject())
         {
             tr.strip.trim = nn (sv, "trim", 0); tr.strip.pan = nn (sv, "pan", 0); tr.strip.pol = truthy (sv, "pol");
-            tr.strip.send = nn (sv, "send", -60);
+            tr.strip.send = nn (sv, "send", -60); tr.strip.r1 = nn (sv, "r1", -60); tr.strip.r2 = nn (sv, "r2", -60);
             tr.strip.tone = toneOf (sv["tone"]); tr.strip.shape = shapeOf (sv["shape"]);
             tr.strip.inserts = sv["inserts"].isArray() ? sv["inserts"] : juce::var (juce::Array<juce::var>());
         }
@@ -1370,6 +1449,9 @@ juce::var settingsToVar (const Session& S)
     put (mix, "busIns", S.busIns.isArray() ? S.busIns : juce::var (juce::Array<juce::var>()));
     put (mix, "fader", S.busFader); put (mix, "mute", S.busMute); put (mix, "norm", S.oneShotNorm);
     auto room = obj(); put (room, "on", S.room.on); put (room, "ret", S.room.ret); put (room, "p", S.room.p); put (mix, "room", room);
+    juce::Array<juce::var> vu;
+    for (auto& v : S.verbs) { auto o = obj(); put (o, "type", juce::String (v.type)); put (o, "decay", v.decay); put (o, "pre", v.pre); put (o, "size", v.size); put (o, "tone", v.tone); put (o, "width", v.width); vu.add (o); }
+    put (mix, "verbs", vu); put (mix, "busR1", S.busR1); put (mix, "busR2", S.busR2);
     put (st, "mix", mix);
     put (st, "kitBleed", S.kitBleed);
     juce::Array<juce::var> tracks;
@@ -1379,7 +1461,7 @@ juce::var settingsToVar (const Session& S)
         put (kt, "mic", juce::String (t.mic)); put (kt, "alignTo", juce::String (t.alignTo)); put (kt, "amount", t.amount); put (kt, "apOn", t.apOn);
         put (kt, "fader", t.fader); put (kt, "panL", t.panL); put (kt, "panR", t.panR); put (kt, "mute", t.mute); put (kt, "lrLock", t.lrLock);
         auto sv = obj();
-        put (sv, "trim", t.strip.trim); put (sv, "pan", t.strip.pan); put (sv, "pol", t.strip.pol); put (sv, "send", t.strip.send);
+        put (sv, "trim", t.strip.trim); put (sv, "pan", t.strip.pan); put (sv, "pol", t.strip.pol); put (sv, "send", t.strip.send); put (sv, "r1", t.strip.r1); put (sv, "r2", t.strip.r2);
         put (sv, "tone", toneVar (t.strip.tone)); put (sv, "shape", shapeVar (t.strip.shape));
         put (sv, "inserts", t.strip.inserts.isArray() ? t.strip.inserts : juce::var (juce::Array<juce::var>()));
         put (kt, "strip", sv);
@@ -1435,6 +1517,14 @@ void applySettings (Session& S, const juce::var& st)
         S.busFader = nn (mix, "fader", S.busFader); S.busMute = truthy (mix, "mute");
         if (mix.hasProperty ("norm")) S.oneShotNorm = truthy (mix, "norm");
         if (mix["room"].isObject()) { S.room.on = truthy (mix["room"], "on"); S.room.ret = nn (mix["room"], "ret", 0); S.room.p = mix["room"]["p"]; }
+        if (auto* vu = mix["verbs"].getArray())
+            for (int k = 0; k < std::min (2, vu->size()); ++k)
+            {
+                const auto& o = vu->getReference (k); auto& v = S.verbs[(size_t) k];
+                v.type = s_ (o, "type", v.type.c_str()); v.decay = nn (o, "decay", v.decay); v.pre = nn (o, "pre", v.pre);
+                v.size = nn (o, "size", v.size); v.tone = nn (o, "tone", v.tone); v.width = nn (o, "width", v.width);
+            }
+        S.busR1 = nn (mix, "busR1", S.busR1); S.busR2 = nn (mix, "busR2", S.busR2);
     }
     S.kitBleed = nn (st, "kitBleed", S.kitBleed);
     if (auto* tracks = st["tracks"].getArray())
@@ -1448,7 +1538,7 @@ void applySettings (Session& S, const juce::var& st)
                 const auto sv = kt["strip"];
                 if (sv.isObject())
                 {
-                    t.strip.trim = nn (sv, "trim", 0); t.strip.pan = nn (sv, "pan", 0); t.strip.pol = truthy (sv, "pol"); t.strip.send = nn (sv, "send", -60);
+                    t.strip.trim = nn (sv, "trim", 0); t.strip.pan = nn (sv, "pan", 0); t.strip.pol = truthy (sv, "pol"); t.strip.send = nn (sv, "send", -60); t.strip.r1 = nn (sv, "r1", -60); t.strip.r2 = nn (sv, "r2", -60);
                     t.strip.tone = toneOf (sv["tone"]); t.strip.shape = shapeOf (sv["shape"]);
                     if (sv["inserts"].isArray()) t.strip.inserts = sv["inserts"];
                 }

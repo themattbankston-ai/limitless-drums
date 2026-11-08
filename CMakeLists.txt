@@ -174,6 +174,7 @@ if(LD_BUILD_TESTS)
         tests/AuditionTests.cpp
         tests/RulesTests.cpp
         tests/AlignOpsTests.cpp
+    tests/VerbSendTests.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp

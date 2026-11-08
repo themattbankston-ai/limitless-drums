@@ -34,7 +34,8 @@ struct ToneSettings : ToneMoves
 
 struct Strip
 {
-    double trim = 0, pan = 0, send = -60;   ///< send -60 = off
+    double trim = 0, pan = 0, send = -60;   ///< send -60 = off (the old shared room)
+    double r1 = -60, r2 = -60;              ///< reverb sends R1/R2 (dB, post-fader); -60 = off
     bool pol = false;
     ToneMoves tone;
     ShapeMoves shape;
@@ -85,6 +86,11 @@ struct ExportSettings
 
 struct RoomSettings { bool on = false; double ret = 0; juce::var p; };
 
+/** One of the two reverb units in the rack (R1, R2): 100 % wet, fed by every channel's send and the drum bus send.
+    type: room, plate, hall, chamber. decay x0.25..3, pre 0..250 ms, size (early reflections) 0..2, tone -1 dark..+1 bright,
+    width 0..2. */
+struct VerbUnit { std::string type = "room"; double decay = 1, pre = 0, size = 1, tone = 0, width = 1; };
+
 struct TuneState { F64 ratios; double medF = NAN; };
 
 struct Session
@@ -102,6 +108,8 @@ struct Session
     ShapeMoves shape;
     juce::var busIns;                 ///< bus insert slots
     RoomSettings room;
+    std::array<VerbUnit, 2> verbs { VerbUnit { "room" }, VerbUnit { "plate" } };
+    double busR1 = -60, busR2 = -60;  ///< drum bus sends (tapped from the channel sum before the returns)
     std::optional<TuneState> tinfo;
     // detection, alignment and tuning settings and results (Hitline's det, phase, groupAnchors, tune, pitch)
     double minGapMs = 180, thrDb = -40;
@@ -142,6 +150,7 @@ struct MixRender
 {
     std::vector<Chs> dn, tone, ins, bus, proc;   ///< per track: after clean-up, tone/shape/tame, inserts, bus, phase EQ
     Chs room;                                    ///< the shared room's return (empty when off)
+    std::array<Chs, 2> rev;                      ///< R1, R2 returns, stereo, on the lead's timeline (empty when nothing sends)
     struct Scan { std::vector<F64> bands; std::vector<EnvStats> env; ResScanResult res; };
     std::vector<std::optional<Scan>> scan;       ///< per track, when the tone pass listened to it
 };
@@ -185,6 +194,9 @@ bool fxOn (const Session&);
 bool trackFxOn (const Session&, int t);
 bool roomLive (const Session&);
 bool busLive (const Session&);
+bool verbLive (const Session&, int k);   ///< anything sends to reverb unit k (0 = R1, 1 = R2)
+/** The reverb unit's parameters for the reverb engine (model, programme and knobs). */
+juce::var verbParams (const VerbUnit&);
 
 /** Runs the whole chain (Hitline's runDenoise, runFx with tame, runIns with bus and room). */
 MixRender renderMix (const Session&);
@@ -217,7 +229,7 @@ int writeKit (const Session&, const MixRender&,
 
 /** One hit, every mic, ready to play: processed, on its level, one natural tail for all mics (Hitline's
     renderHitStems for processed playback). Mono mics come back as one channel at -3 dB. */
-struct HitStems { std::vector<Chs> stems; Chs room; size_t i = 0; double ratio = 1; long start = 0, len = 0; };
+struct HitStems { std::vector<Chs> stems; Chs room; std::array<Chs, 2> rev; size_t i = 0; double ratio = 1; long start = 0, len = 0; };
 struct StemOptions
 {
     bool processed = true;            ///< false: the recording as it is (Hitline's A side)
