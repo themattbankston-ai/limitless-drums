@@ -249,6 +249,7 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
             if (bs[t].size() >= 8) { std::nth_element (bs[t].begin(), bs[t].begin() + (long) bs[t].size() / 2, bs[t].end()); hatBright[t] = bs[t][bs[t].size() / 2]; }
     }
     std::vector<bool> used (all.size(), false);
+    std::vector<char> fate (all.size(), 'k');   // diagnostics: kept, v(elocity), b(leed), h(at dull)
     for (size_t i = 0; i < all.size(); ++i)
     {
         if (used[i]) continue;
@@ -264,7 +265,7 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
             for (auto g : grp)
             {
                 if ((int) all[g].drum != d || all[g].voice != voice) continue;
-                if (all[g].vel < strongest * 0.28f && all[g].drum != Drum::cymbal) continue;   // bleed from the louder drum
+                if (all[g].vel < strongest * 0.28f && all[g].drum != Drum::cymbal) { fate[g] = 'v'; continue; }   // bleed from the louder drum
                 // within twice (6 dB) the level this mic normally hears from a louder drum in the group: that drum's bleed
                 bool bleed = false;
                 for (auto o : grp)
@@ -273,12 +274,12 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
                     const float br = bleedRatio[(size_t) all[o].track * nt + (size_t) all[g].track];
                     if (br > 0 && all[g].level < all[o].level * br * 2.0f) bleed = true;
                 }
-                if (bleed && all[g].drum != Drum::cymbal) continue;
+                if (bleed && all[g].drum != Drum::cymbal) { fate[g] = 'b'; continue; }
                 // the snare or a tom on the hi-hat mic: duller than the hats' own hits
                 if (all[g].drum == Drum::hat && hatBright[(size_t) all[g].track] > 0 && all[g].bright < hatBright[(size_t) all[g].track] * 0.6f)
                 {
                     bool drum = false; for (auto o : grp) if (all[o].drum == Drum::kick || all[o].drum == Drum::snare || all[o].drum == Drum::tom) drum = true;
-                    if (drum) continue;
+                    if (drum) { fate[g] = 'h'; continue; }
                 }
                 pos = pos < 0 ? all[g].pos : std::min (pos, all[g].pos);
                 vel = std::max (vel, all[g].vel);
@@ -295,6 +296,19 @@ SongAnalysis analyseSong (const std::vector<F32>& monos, const std::vector<std::
         }
         for (auto g : grp) used[g] = true;
     }
+    if (const char* dumpTo = std::getenv ("LD_SONG_DUMP"))
+        if (FILE* df = fopen (dumpTo, "w"))
+        {
+            // every close-mic onset: when, which mic, its level, what was decided, and the loudest other mic near it
+            for (size_t i = 0; i < all.size(); ++i)
+            {
+                int src = -1; float sl = 0;
+                for (size_t j = 0; j < all.size(); ++j)
+                    if (j != i && std::labs (all[j].pos - all[i].pos) <= win && all[j].track != all[i].track && all[j].level > sl) { sl = all[j].level; src = all[j].track; }
+                fprintf (df, "%ld\t%d\t%d\t%.5f\t%.3f\t%c\t%d\t%.5f\n", all[i].pos, all[i].track, (int) all[i].drum, all[i].level, all[i].vel, fate[i], src, sl);
+            }
+            fclose (df);
+        }
     std::sort (A.hits.begin(), A.hits.end(), [] (auto& a, auto& b) { return a.pos < b.pos; });
     // the same drum twice within 15 ms is one hit seen on two of its mics (a group boundary fell between them)
     {

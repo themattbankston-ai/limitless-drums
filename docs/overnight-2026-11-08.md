@@ -85,6 +85,21 @@ the bleed delay must have been played near that mic. Measured on both multitrack
   Tightening on the bleed delay removed nothing.
 - Next candidate is the tone check instead: compare a transient's spectrum with that mic's own confirmed hits.
 
+## Tried and not kept: tone checks
+Measured on both multitracks with a diagnostic dump of every close-mic onset (`LD_SONG_DUMP=<file>`):
+- **Tone template** (each mic's own hits vs its bleed, 12 bands over the first 30 ms): separates them 90–100% on kick
+  and snare mics, only 73–84% on toms (few clean tom hits to learn from). As a rule it's wrong in a key case: a snare
+  hit played with the kick sounds like kick bleed (it has the kick's low end), so real snare-and-kick unisons would be
+  dropped. It was right about two tom-fill bleeds kept as snares on the 12-mic song.
+- **Per-band bleed prediction** (learn how much of each band of the louder drum reaches this mic, then ask how much
+  is left over): clean on the double-pedal song for kick and snare (real hits 20–45 dB above the prediction, bleed
+  about 4–9 dB) and it keeps the snare-and-kick unisons. On tom mics it breaks down: they hear cymbals and ring all
+  the time, which the one louder drum doesn't predict, so a 10 dB rule would add 100–200 noise "hits" per tom mic.
+  Subtracting what was already ringing before the onset made it noisier, not cleaner. Too few tom hits on the
+  12-mic song to learn the tom pairs at all.
+- **What would need to change** for it to work on toms: predict bleed from every mic at once (cymbals included), not
+  only the loudest neighbour, and have enough hits per drum to learn from (or ask the user to mark a few).
+
 ## Correction
 - Last night I said the memory cleanup would halve memory by storing audio as 32-bit instead of 64-bit. The audio was
   already 32-bit, so that part was wrong.
