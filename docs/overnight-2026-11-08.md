@@ -73,6 +73,18 @@ Checked against two real multitracks (a 12-mic song and a 10-mic double-pedal so
   flagged.
 - **Problems flagged on the double-pedal song**: 200 → 54. The 12-mic song: 27 → 19, with its isolated flams kept.
 
+## Tried and not kept: arrival order
+Idea: a drum reaches its own mic first and every other mic a fixed time later, so a hit that turns up on a mic before
+the bleed delay must have been played near that mic. Measured on both multitracks:
+- **Bleed delays are real and steady where the source is sharp**: snare into the toms and overheads holds within
+  about 0.1 ms (1–3 ms delays). Kick is looser (0.4–0.9 ms) and tom-sourced pairs are noisy (1–2.7 ms).
+- **As a rule it didn't help.** First version: it rescued tom-mic noise that happened to start a few ms before a snare
+  ghost note (+142 "toms" on the double-pedal song). With a 2 ms window: kick bleed counted as snare, because the kick
+  mic's onset is slow (low end), so the snare-bottom mic hears the beater click "first". Without the kick as a source:
+  only 10 toms and a few very quiet hats and snares changed, and the waveforms didn't show them to be real hits.
+  Tightening on the bleed delay removed nothing.
+- Next candidate is the tone check instead: compare a transient's spectrum with that mic's own confirmed hits.
+
 ## Correction
 - Last night I said the memory cleanup would halve memory by storing audio as 32-bit instead of 64-bit. The audio was
   already 32-bit, so that part was wrong.
