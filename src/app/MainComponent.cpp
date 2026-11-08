@@ -1910,6 +1910,7 @@ void MainComponent::onMixAction (const std::string& a, double v)
                 { "thr", "Threshold" }, { "range", "Range" }, { "ratio", "Ratio" }, { "hyst", "Hysteresis" }, { "atk", "Attack" }, { "hold", "Hold" },
                 { "rel", "Release" }, { "look", "Look-ahead" }, { "hpf", "Key HPF" }, { "lpf", "Key LPF" }, { "listen", "Key listen" }, { "flip", "Flip" }, { "keyT", "Key" },
                 { "phase", "Phase" }, { "out", "Output" },
+                { "width", "Width" }, { "bassMono", "Bass mono" }, { "highWidth", "High width" }, { "highFrom", "Highs from" }, { "keep", "Keep loudness" },
                 // Ember
                 { "lf", "Low frequency" }, { "lfBoost", "Low boost" }, { "lfAtten", "Low atten" }, { "hf", "High frequency" }, { "bw", "Bandwidth" },
                 { "hfBoost", "High boost" }, { "hfa", "Atten select" }, { "hfAtten", "High atten" }, { "drive", "Drive" }, { "eqp", "EQP section" },
@@ -1928,11 +1929,12 @@ void MainComponent::onMixAction (const std::string& a, double v)
             }
             juce::String val2;
             if (isStr) val2 = juce::String (sval).toUpperCase();
-            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip" || path == "eqp" || path == "meq" || path == "tube"
+            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip" || path == "eqp" || path == "meq" || path == "tube" || path == "keep"
                      || (path.rfind ("bands.", 0) == 0 && (path.size() > 3 && (path.substr (path.size() - 3) == ".on")))) val2 = val > 0.5 ? "on" : "off";
             else if (path == "keyT") val2 = val < 0 ? juce::String ("self") : juce::String (S.tracks[(size_t) (int) val].mic);
             else if ((path == "decap.lowcut" || path == "decap.highcut") && val == 0) val2 = "off";
-            else if (path == "mix") val2 = juce::String (juce::roundToInt (val * 100)) + " %";
+            else if (path == "mix" || path == "width" || path == "highWidth") val2 = juce::String (juce::roundToInt (val * 100)) + " %";
+            else if ((path == "bassMono" && val < 20) || (path == "highFrom" && val <= 0)) val2 = "off";
             else val2 = juce::String (val, 1);
             return plug + ": " + juce::String (n) + " " + val2 + ".";
         }());

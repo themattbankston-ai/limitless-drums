@@ -73,3 +73,28 @@ TEST_CASE ("Gate: attenuation curve, flip and listen")
     double a = 0, b = 0; for (size_t q = 12000; q < 14400; ++q) { a += std::abs (L[0][q]); b += std::abs (x[q]); }
     CHECK (a < b);   // the key filter took the low end out
 }
+
+TEST_CASE ("Horizon: width by frequency and the correlation curve")
+{
+    using namespace ld::hl;
+    const double sr = 48000; const size_t n = 48000;
+    F32 L (n), R (n);
+    uint32_t s = 1; auto rnd = [&] { s = s * 1664525u + 1013904223u; return (float) ((s >> 8) / 16777216.0 - 0.5); };
+    for (size_t q = 0; q < n; ++q) { L[q] = rnd() * 0.5f; R[q] = rnd() * 0.5f; }   // uncorrelated: all side and mid
+    const Chs in { L, R };
+    auto P = [] (const char* j) { return juce::JSON::parse (juce::String (j)); };
+    auto sideHigh = [&] (const Chs& y)   // side energy above 8 kHz, by a crude difference filter
+    { double e = 0; for (size_t q = 1; q < n; ++q) { const double sd = 0.5 * ((y[0][q] - y[1][q]) - (y[0][q - 1] - y[1][q - 1])); e += sd * sd; } return e; };
+    const auto same = widthRender (in, sr, P (R"({"width":1,"keep":false})"));
+    const auto split = widthRender (in, sr, P (R"({"width":1,"highWidth":1,"highFrom":3000,"keep":false})"));
+    double d = 0; for (size_t q = 0; q < n; ++q) d = std::max (d, (double) std::abs (same[0][q] - split[0][q]));
+    CHECK (d < 1e-4);                                                  // equal widths: the split changes nothing
+    const auto narrowHi = widthRender (in, sr, P (R"({"width":1,"highWidth":0,"highFrom":2000,"keep":false})"));
+    CHECK (sideHigh (narrowHi) < sideHigh (same) * 0.3);              // highs pulled to mono
+    F32 cc;
+    widthRender (in, sr, P (R"({"width":0,"keep":false})"), &cc);
+    REQUIRE (cc.size() >= 999);
+    CHECK (cc[500] > 0.99f);                                          // width 0: mono, fully correlated
+    widthRender (in, sr, P (R"({"width":1,"keep":false})"), &cc);
+    CHECK (std::abs (cc[500]) < 0.3f);                                // uncorrelated noise stays near 0
+}

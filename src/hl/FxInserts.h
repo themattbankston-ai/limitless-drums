@@ -11,7 +11,10 @@ double pultecMag (const juce::var& p, double f);
     their static gain); band >= 0 gives that one band alone. */
 double insertCurveDb (const juce::String& type, const juce::var& p, double f, int band = -1);
 Chs pultecRender (const Chs& chs, double sr, const juce::var& p);
-Chs widthRender (const Chs& chs, double sr, const juce::var& p);
+/** Horizon: mid/side width. "highFrom" (Hz, 0 = off) splits the side signal (complementary, so the bands sum back
+    exactly) and "highWidth" sets the width above it. corrCurve: the output's L/R correlation per GR_RATE block
+    (over a 30 ms window), -1..1. */
+Chs widthRender (const Chs& chs, double sr, const juce::var& p, F32* corrCurve = nullptr);
 double corrOf (const Chs& chs);
 /** The gate. "flip" ducks instead (closes on the hits); "listen" outputs the filtered key, to set the key filters by ear.
     grCurve: the attenuation, dB >= 0 per GR_RATE block. */

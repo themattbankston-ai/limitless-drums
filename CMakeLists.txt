@@ -139,6 +139,8 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_eyes.jpg
         assets/ui/plugins/skull_plate.jpg
         assets/ui/plugins/vise_plate.jpg
+        assets/ui/plugins/horizon_plate.jpg
+        assets/ui/plugins/horizon_lever.png
         assets/ui/plugins/prism_plate.jpg
         assets/ui/plugins/ember_plate.jpg
         assets/ui/plugins/ember_hot.jpg
@@ -168,6 +170,7 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_skull.png
         assets/fonts/BlackOpsOne-Regular.ttf
         assets/fonts/Cinzel-Bold.ttf
+        assets/fonts/BebasNeue-Regular.ttf
         assets/fonts/Oswald-SemiBold.ttf
         assets/irlib.json
         assets/libref.json

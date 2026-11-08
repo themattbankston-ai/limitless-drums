@@ -2855,6 +2855,9 @@ namespace pw
         out.resize (n / 2);
         for (size_t i = 0; i < n / 2; ++i) out[i] = 20 * std::log10 (std::abs (a[i]) * 4.0f / (float) n + 1e-9f);
     }
+    static Font bebas (float s) { return fontOf (BinaryData::BebasNeueRegular_ttf, BinaryData::BebasNeueRegular_ttfSize, s); }
+    static const Img horizonLever { LD_IMG (horizon_lever_png) };
+    static const float horizonLeverBox[4] = { 1680, 460, 1865, 524 };
     static const Img sawBlur[8] = { { LD_IMG (skull_sawb_0_jpg) }, { LD_IMG (skull_sawb_1_jpg) }, { LD_IMG (skull_sawb_2_jpg) }, { LD_IMG (skull_sawb_3_jpg) },
                                     { LD_IMG (skull_sawb_4_jpg) }, { LD_IMG (skull_sawb_5_jpg) }, { LD_IMG (skull_sawb_6_jpg) }, { LD_IMG (skull_sawb_7_jpg) } };
 }
@@ -2922,6 +2925,14 @@ struct Studio::PluginWindow : visage::Frame
         if (v.type == "gate") return portRange (key);
         if (v.type == "pultec") return emberRange (key);
         if (v.type == "eq") return prismRange (key);
+        if (v.type == "width")
+        {
+            if (key == "width") return { "width", 0, 2, false, true };
+            if (key == "bassMono") return { "bassMono", 0, 500, false, true };
+            if (key == "highWidth") return { "highWidth", 0, 2, false, true };
+            if (key == "highFrom") return { "highFrom", 1000, 10000, true, true };
+            return { "", 0, 1, false, false };
+        }
         const auto m = model();
         if (key == "mix") return { "mix", 0, 1, false, true };
         if (key == "out") return { "out", -24, 24, false, true };
@@ -2948,7 +2959,7 @@ struct Studio::PluginWindow : visage::Frame
         static const std::map<std::string, double> d { { "decap.drive", 3 }, { "devil.crush", 4 }, { "devil.darkness", 2 }, { "decap.lowcut", 20 }, { "decap.highcut", 20000 }, { "mix", 1 },
             { "dist.input", 5 }, { "dist.attack", 5 }, { "dist.release", 5 }, { "76.input", 6.2 }, { "76.attack", 3 }, { "76.release", 3 },
             { "fair.thresh", 5 }, { "fair.tc", 2 }, { "thr", -40 }, { "range", -40 }, { "hyst", 4 }, { "atk", 0.3 }, { "hold", 40 }, { "rel", 120 }, { "look", 1.5 },
-            { "hpf", 20 }, { "lpf", 20000 }, { "lfBoost", 0 }, { "lfAtten", 0 }, { "bw", 5 }, { "hfBoost", 0 }, { "hfAtten", 0 }, { "drive", 1 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
+            { "hpf", 20 }, { "lpf", 20000 }, { "width", 1 }, { "bassMono", 120 }, { "highFrom", 3000 }, { "lfBoost", 0 }, { "lfAtten", 0 }, { "bw", 5 }, { "hfBoost", 0 }, { "hfAtten", 0 }, { "drive", 1 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
         auto i = d.find (path); if (i != d.end()) return i->second;
         // Prism's bands: "bands.<n>.<what>"
         auto ends = [&] (const char* e) { const std::string se (e); return path.size() > se.size() && path.compare (path.size() - se.size(), se.size(), se) == 0; };
@@ -2976,6 +2987,12 @@ struct Studio::PluginWindow : visage::Frame
     {
         const auto R = rangeOf (key); const double x = valueAt (key, pos);
         if (! R.on) return "off";
+        if (v.type == "width")
+        {
+            if (R.path == "width" || R.path == "highWidth") return draw::fmt ("%.0f %%", x * 100);
+            if (R.path == "bassMono") return x < 20 ? std::string ("off") : draw::fmt ("%.0f Hz", x);
+            if (R.path == "highFrom") return draw::fmt ("%.1f kHz", x / 1000);
+        }
         if (v.type == "eq")
         {
             auto ends = [&] (const char* e) { const std::string se (e); return R.path.size() > se.size() && R.path.compare (R.path.size() - se.size(), se.size(), se) == 0; };
@@ -4255,6 +4272,239 @@ struct Studio::PluginWindow : visage::Frame
         return {};
     }
 
+    // ---------------------------------------------------------------- Horizon (width)
+    float corrNow = 1, sweepH = 0, leverLive = NAN;
+    double highW() const { return v.get ("highWidth", v.get ("width", 1)); }
+    /** The take's correlation: the average over the blocks where there's sound. */
+    float takeCorr() const
+    {
+        if (! v.gr || v.gr->empty()) return 1;
+        double s = 0; long n = 0;
+        for (float c : *v.gr) if (c < 0.999f) { s += c; ++n; }
+        return n ? (float) (s / n) : 1.0f;
+    }
+    void hlbl (Canvas& c, const std::string& t, float px, float py, float size, unsigned col = 0xe00a0b0d, float ls = 1.6f, float z = 0)
+    { labelLS (c, t, px, py, z, pw::bebas (S (size)), col, ls); }
+    void hnix (Canvas& c, float px, float py, const std::string& t, float w)
+    {
+        const auto p = P (px, py);
+        c.setColor (0xff03080a); c.roundedRectangle (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3));
+        c.setColor (0x404ff0ff); c.roundedRectangleBorder (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3), S (1));
+        glowLabel (c, t, px, py, 0, monoBold (S (10.5f)), 0xff4ff0ff, w);
+    }
+    void whitePtr (Canvas& c, float px, float py, float r, float pos)
+    {
+        const float a = 0.75f * 3.14159265f + 1.5f * 3.14159265f * pos; const auto cc = P (px, py, 0.28f);
+        const float x0 = cc.x + std::cos (a) * S (r) * 0.2f, y0 = cc.y + std::sin (a) * S (r) * 0.2f, x1 = cc.x + std::cos (a) * S (r) * 0.95f, y1 = cc.y + std::sin (a) * S (r) * 0.95f;
+        c.setBlendMode (visage::BlendMode::Add); c.setColor (0x4d00c8ff); c.segment (x0, y0, x1, y1, S (6), true); c.setBlendMode (visage::BlendMode::Alpha);
+        c.setColor (0xffffffff); c.segment (x0, y0, x1, y1, S (2.6f), true);
+    }
+    void drawHorizon (Canvas& c)
+    {
+        const float fw = S (FW), fh = S (FH), bx = BX(), by = BY(), pi = 3.14159265f, A0 = 0.75f * pi, ASP = 1.5f * pi;
+        const unsigned CY = 0xff4ff0ff;
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (horizon_plate_jpg), bx, by, fw, fh);
+        const double wid = std::isfinite (leverLive) ? leverLive * 2.0 : v.get ("width", 1);
+        const double hiW = highW(), bass = v.get ("bassMono", 120), split = v.get ("highFrom", 0) > 0 ? v.get ("highFrom", 3000) : 3000;
+        const bool splitOn = v.get ("highFrom", 0) > 0;
+        hlbl (c, "HORIZON", 150, 54, 24, 0xfff2f4f7, 6, 0.02f);
+        // ---- radar: rings, crosshair, sweep, and the stereo cloud of what's playing
+        {
+            const float cx = 150, cy = 238, r = 94, z = -0.08f;
+            const auto o = P (cx, cy, z);
+            c.setColor (0x80001e22); c.circle (o.x - S (r), o.y - S (r), S (2 * r));
+            c.setColor (0x294ff0ff);
+            for (float kk : { 0.33f, 0.66f, 1.0f }) c.arc (o.x - S (r * kk), o.y - S (r * kk), S (2 * r * kk), S (1), 0, pi, false);
+            for (int i = 0; i < 4; ++i) { const float a = i * pi / 4; c.segment (o.x - std::cos (a) * S (r), o.y - std::sin (a) * S (r), o.x + std::cos (a) * S (r), o.y + std::sin (a) * S (r), S (1), false); }
+            c.setBlendMode (visage::BlendMode::Add);
+            for (int j = 0; j < 8; ++j)
+            {
+                const float a = sweepH - j * 0.05f;
+                c.setColor (Color (CY).withAlpha (0.10f * (8 - j) / 8));
+                c.triangle (o.x, o.y, o.x + std::cos (a) * S (r), o.y + std::sin (a) * S (r), o.x + std::cos (a - 0.06f) * S (r), o.y + std::sin (a - 0.06f) * S (r));
+            }
+            // the cloud: each sample's mid up, side across (with the width applied)
+            if (studio.playing)
+            {
+                for (size_t ti = 0; ti < studio.data.tracks.size(); ++ti)
+                {
+                    if (v.who >= 0 && (int) ti != v.who) continue;
+                    const auto& tr = studio.data.tracks[ti];
+                    if (! tr.wave || ! tr.wave->a || tr.wave->a->size() < 2) continue;
+                    const auto& A = *tr.wave->a; const double sr = tr.wave->sampleRate;
+                    const long s0 = (long) (studio.playhead * sr) - 1200;
+                    float pk = 1e-4f;
+                    for (long q = 0; q < 1200; ++q) { const long m = s0 + q; if (m >= 0 && m < (long) A[0].size()) pk = std::max ({ pk, std::abs (A[0][(size_t) m]), std::abs (A[1][(size_t) m]) }); }
+                    c.setColor (Color (CY).withAlpha (0.22f));
+                    for (long q = 0; q < 1200; q += 2)
+                    {
+                        const long m = s0 + q; if (m < 0 || m >= (long) A[0].size()) continue;
+                        const float L = A[0][(size_t) m] / pk, R = A[1][(size_t) m] / pk;
+                        const float mid = 0.5f * (L + R), sd = 0.5f * (L - R) * (float) wid;
+                        float x = sd * 0.9f, y = -mid * 0.9f; const float d = std::hypot (x, y); if (d > 0.98f) { x *= 0.98f / d; y *= 0.98f / d; }
+                        c.fill (o.x + x * S (r), o.y + y * S (r), S (1.6f), S (1.6f));
+                    }
+                }
+            }
+            c.setBlendMode (visage::BlendMode::Alpha);
+            struct L4 { const char* t; float dx, dy; };
+            for (auto [t, dx, dy] : { L4 { "M", 0, -0.82f }, L4 { "L", -0.6f, -0.6f }, L4 { "R", 0.6f, -0.6f }, L4 { "S", 0.84f, 0 } })
+                label (c, t, cx + dx * r, cy + dy * r, z, pw::bebas (S (11)), 0x994ff0ff, 20);
+            hlbl (c, "STEREO FIELD", cx, cy + r * 1.16f + 16, 13, 0xe00a0b0d, 2.2f);
+        }
+        // ---- the horizon display: width by frequency
+        {
+            const float x0 = 330, y0 = 70, w0 = 430, h0 = 220, z = -0.12f;
+            const auto a = P (x0, y0, z), b = P (x0 + w0, y0 + h0, z);
+            c.saveState(); c.trimClampBounds (a.x, a.y, b.x - a.x, b.y - a.y);
+            c.setColor (Brush::linear (visage::Gradient (Color (0xff030614), Color (0xff0b2236), Color (0xff0f3a48), Color (0xff020407)), Point (0, a.y), Point (0, b.y)));
+            c.fill (a.x, a.y, b.x - a.x, b.y - a.y);
+            auto FXh = [&] (double f) { return x0 + (float) (std::log10 (f / 20) / 3) * w0; };
+            const float top = y0 + 18, bot = y0 + h0 - 22;
+            auto Wy = [&] (double w) { return bot - (float) (w / 2) * (bot - top); };
+            for (double f : { 100.0, 1000.0, 10000.0 })
+            {
+                const auto q = P (FXh (f), top, z); c.setColor (0x1a78c8e6); c.fill (q.x, q.y, 1, S ((bot - top) * 0.972f));
+                label (c, f >= 1000 ? draw::fmt ("%.0fk", f / 1000) : std::string ("100"), FXh (f), bot + 11, z, pw::bebas (S (11)), 0x8c96d2eb, 40);
+            }
+            for (float xx = x0; xx < x0 + w0; xx += 10) { const auto q = P (xx, Wy (1), z); c.setColor (0x4d96d2eb); c.fill (q.x, q.y, S (5), 1); }
+            label (c, "100%", x0 + w0 - 22, Wy (1) - 9, z, pw::bebas (S (11)), 0x9996d2eb, 40);
+            labelLS (c, "WIDTH BY FREQUENCY", x0 + 70, top - 4, z, pw::bebas (S (11)), 0x9996d2eb, 1.5f);
+            if (bass >= 20)
+            {
+                const float bm = FXh (bass); const auto q0 = P (x0, top, z), q1 = P (bm, bot, z);
+                c.setColor (0x0affffff); c.fill (q0.x, q0.y, q1.x - q0.x, q1.y - q0.y);
+                if (bm - x0 > 40) labelLS (c, "MONO", x0 + (bm - x0) / 2, top + 12, z, pw::bebas (S (11)), 0x80dcebf5, 1.5f);
+            }
+            auto wf = [&] (double f)
+            {
+                const double up = splitOn ? 1 / (1 + std::exp (-std::log2 (f / split) * 5)) : 0, w = wid + (hiW - wid) * up;
+                return bass >= 20 ? w / (1 + std::exp (-std::log2 (f / bass) * 7)) : w;
+            };
+            if (splitOn)
+            {
+                const float xs = FXh (split);
+                for (float yy = top; yy < bot; yy += 7) { const auto q = P (xs, yy, z); c.setColor (0x5996d2eb); c.fill (q.x, q.y, 1, S (3)); }
+                labelLS (c, "HIGHS", xs + 28, bot - 12, z, pw::bebas (S (11)), 0x8cdcebf5, 1.5f);
+            }
+            visage::Path fill, line;
+            { const auto q = P (x0, bot, z); fill.moveTo (q.x, q.y); }
+            for (int i = 0; i <= (int) w0; i += 2)
+            {
+                const double f = 20 * std::pow (1000.0, i / (double) w0);
+                const auto q = P (x0 + i, std::max (top - 10, Wy (wf (f))), z);
+                fill.lineTo (q.x, q.y); if (i == 0) line.moveTo (q.x, q.y); else line.lineTo (q.x, q.y);
+            }
+            { const auto q = P (x0 + w0, bot, z); fill.lineTo (q.x, q.y); } fill.close();
+            c.setColor (Brush::linear (Color (0x594ff0ff), Color (0x054ff0ff), Point (0, P (0, top, z).y), Point (0, P (0, bot, z).y))); c.fill (fill);
+            c.setBlendMode (visage::BlendMode::Add); c.setColor (0x4d00c8ff); c.stroke (line, 0, 0, width(), height(), S (7)); c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (0xffc8fbff); c.stroke (line, 0, 0, width(), height(), S (2.4f));
+            c.restoreState();
+        }
+        // ---- the slip ball: correlation
+        {
+            const float cx = 545, cy = 338, w = 300, h = 34, z = -0.1f;
+            const auto a = P (cx - w / 2, cy - h / 2, z);
+            c.setColor (0xb3040608); c.roundedRectangle (a.x, a.y, S (w), S (h * 0.972f), S (5));
+            visage::Path tube;
+            for (int i = 0; i <= 40; ++i) { const float t = i / 40.0f, x = cx - w / 2 + 14 + (w - 28) * t, y = cy + 6 - std::sin (t * pi) * 8; const auto q = P (x, y, z); if (i == 0) tube.moveTo (q.x, q.y); else tube.lineTo (q.x, q.y); }
+            c.setColor (0x1fffffff); c.stroke (tube, 0, 0, width(), height(), S (20));
+            c.setColor (0x14ffffff); c.stroke (tube, 0, 0, width(), height(), S (12));
+            for (float t : { -0.5f, 0.5f }) { const auto q = P (cx + t * 24, cy - 12, z); c.setColor (0x99ffffff); c.fill (q.x, q.y, S (1.4f), S (22)); }
+            const float corr = corrNow, t = (corr + 1) / 2, bxp = cx - w / 2 + 14 + (w - 28) * t, byp = cy + 6 - std::sin (t * pi) * 8;
+            const auto bq = P (bxp, byp, z);
+            c.setColor (0xff050506); c.circle (bq.x - S (8), bq.y - S (8), S (16));
+            c.setColor (0xff4a4f58); c.circle (bq.x - S (6), bq.y - S (7), S (8));
+            c.setColor (0xff6a6f78); c.circle (bq.x - S (5), bq.y - S (6), S (4));
+            const float tc = takeCorr();
+            const bool risk = tc < 0.2f && v.on;
+            if (risk)
+            {
+                c.setBlendMode (visage::BlendMode::Add);
+                const auto r0 = P (cx - w / 2 - 3, cy - h / 2 - 3, 0.04f);
+                c.setColor (0x4dffae00); c.roundedRectangleBorder (r0.x - S (3), r0.y - S (3), S (w + 12), S (h + 12), S (8), S (6));
+                c.setColor (0xe6ffae00); c.roundedRectangleBorder (r0.x, r0.y, S (w + 6), S (h + 6), S (6), S (2));
+                c.setBlendMode (visage::BlendMode::Alpha);
+            }
+            hlbl (c, "-1", cx - w / 2 - 24, cy, 14); hlbl (c, "+1", cx + w / 2 + 24, cy, 14);
+            const std::string ct = (studio.playing ? corr : tc) >= 0 ? draw::fmt ("+%.2f", studio.playing ? corr : tc) : draw::fmt ("%.2f", studio.playing ? corr : tc);
+            if (risk) { labelLS (c, "MONO RISK  -  CORRELATION " + draw::fmt (tc >= 0 ? "+%.2f" : "%.2f", tc), cx, cy + h / 2 + 24, 0, pw::bebas (S (13)), 0xffffae00, 2);
+                        c.setBlendMode (visage::BlendMode::Add); labelLS (c, "MONO RISK  -  CORRELATION " + draw::fmt (tc >= 0 ? "+%.2f" : "%.2f", tc), cx, cy + h / 2 + 24, 0, pw::bebas (S (13)), 0x80ff8a00, 2); c.setBlendMode (visage::BlendMode::Alpha); }
+            else hlbl (c, "CORRELATION  " + ct, cx, cy + h / 2 + 24, 13, 0xe00a0b0d, 2);
+        }
+        // ---- the throttle: scale, then the lever at the width
+        {
+            const float tx = 882, ty = 100, tw = 16, th = 312, cx = tx + tw / 2;
+            const char* sc[5] = { "200", "150", "100", "50", "0" };
+            for (int i = 0; i < 5; ++i)
+            {
+                const float y = ty + th * i / 4.0f;
+                label (c, sc[i], tx - 18, y, 0.2f, pw::bebas (S (12)), 0xffe8ecf1, 30);
+                const auto q = P (tx - 6, y, 0.2f); c.setColor (0x99e8ecf1); c.fill (q.x, q.y, S (5), S (1.4f));
+            }
+            hlbl (c, "WIDTH", cx, ty - 38, 15, 0xe00a0b0d, 3);
+            hlbl (c, "WIDE", cx + 22, ty - 10, 10, 0xb3e8ecf1, 1.2f, 0.2f);
+            hlbl (c, "MONO", cx + 22, ty + th + 10, 10, 0xb3e8ecf1, 1.2f, 0.2f);
+            const float lever = (float) std::clamp (wid / 2, 0.0, 1.0);
+            const float dy = S ((0.5f - lever) * th * 0.98163f / 1.01f);
+            const auto* lb = pw::horizonLeverBox; const float sx = fw / 1960, sy = fh / 1088;
+            c.setColor (0xffffffff);
+            c.image (pw::horizonLever.d, pw::horizonLever.n, bx + lb[0] * sx, by + lb[1] * sy + dy, (lb[2] - lb[0]) * sx, (lb[3] - lb[1]) * sy);
+        }
+        // ---- bass mono
+        {
+            const float px = 150, py = 462, pos = posOf ("bassMono");
+            ticks (c, px, py, 44, 49, 11, 0xe00a0b0d, 1.3f);
+            hlbl (c, "OFF", px + std::cos (A0) * 56, py + std::sin (A0) * 54, 11); hlbl (c, "500", px + std::cos (A0 + ASP) * 56, py + std::sin (A0 + ASP) * 54, 11);
+            whitePtr (c, px, py, 28, pos);
+            hlbl (c, "BASS MONO", px, py - 62, 15, 0xe00a0b0d, 3);
+            hnix (c, px, py + 66, text ("bassMono", pos), 70);
+        }
+        // ---- high width and the crossover
+        {
+            const float hx[2] = { 393, 507 };
+            const float hp[2] = { (float) std::clamp (hiW / 2, 0.0, 1.0), splitOn ? posOf ("highFrom") : (float) (std::log10 (3000.0 / 1000)) };
+            const std::string ht[2] = { draw::fmt ("%.0f %%", hiW * 100), splitOn ? text ("highFrom", hp[1]) : std::string ("off") };
+            const char* hn[2] = { "HIGH WIDTH", "HIGHS FROM" }; const char* e0[2] = { "0", "1k" }; const char* e1[2] = { "200", "10k" };
+            for (int i = 0; i < 2; ++i)
+            {
+                const float px = hx[i], py = 466, pos = dragKey == (i ? "highFrom" : "highWidth") && std::isfinite (liveV) ? liveV : hp[i];
+                ticks (c, px, py, 40, 45, 11, 0xe00a0b0d, 1.3f);
+                hlbl (c, e0[i], px + std::cos (A0) * 52, py + std::sin (A0) * 50, 11); hlbl (c, e1[i], px + std::cos (A0 + ASP) * 52, py + std::sin (A0 + ASP) * 50, 11);
+                whitePtr (c, px, py, 24, pos);
+                hlbl (c, hn[i], px, py - 54, 13, 0xe00a0b0d, 2);
+                hnix (c, px, py + 56, std::isfinite (liveV) && dragKey == (i ? "highFrom" : "highWidth") ? text (i ? "highFrom" : "highWidth", pos) : ht[i], 70);
+            }
+        }
+        // ---- KEEP LOUDNESS annunciator
+        {
+            const float x = 577, y = 444, w = 150, h = 44; const bool on = v.get ("keep", 1) > 0.5;
+            if (on)
+            {
+                const auto a = P (x + 2, y + 2, 0.12f);
+                c.setBlendMode (visage::BlendMode::Add);
+                c.setColor (Brush::linear (Color (0x598dffb0), Color (0x268dffb0), Point (0, a.y), Point (0, a.y + S (h - 4))));
+                c.roundedRectangle (a.x, a.y, S (w - 4), S ((h - 4) * 0.972f), S (3));
+                c.setBlendMode (visage::BlendMode::Alpha);
+            }
+            if (on) glowLabel (c, "KEEP LOUDNESS", x + w / 2, y + h / 2, 0.12f, pw::bebas (S (17)), 0xffeaffef, w);
+            else label (c, "KEEP LOUDNESS", x + w / 2, y + h / 2, 0.12f, pw::bebas (S (17)), 0x59c8d2cd, w);
+        }
+        // ---- the width read-out under the throttle
+        glowLabel (c, draw::fmt ("%.0f %%", wid * 100), 890, 474, -0.1f, monoBold (S (20)), CY, 110);
+        if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffe8ecf1); draw::text (c, "BYPASSED", pw::bebas (S (34)), Font::kCenter, bx, by, fw, fh); }
+    }
+    std::string horizonAt (Point q) const
+    {
+        auto in = [&] (float x, float y, float w, float h, float z = 0.1f) { const auto a = P (x, y, z); return q.x >= a.x && q.x < a.x + S (w) && q.y >= a.y && q.y < a.y + S (h); };
+        if (in (840, 90, 100, 340, 0.2f)) return "lever";
+        if (in (577, 444, 150, 44, 0.12f)) return "keep";
+        for (auto [k, x, y] : { std::tuple<const char*, float, float> { "bassMono", 150, 462 }, { "highWidth", 393, 466 }, { "highFrom", 507, 466 } })
+        { const auto p = P (x, y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (34)) return k; }
+        return {};
+    }
+
     void draw (Canvas& c) override
     {
         // shadow, chrome, title bar
@@ -4264,7 +4514,7 @@ struct Studio::PluginWindow : visage::Frame
         c.roundedRectangle (0, 0, width(), S (38), S (10));
         c.setColor (0xff1a1a1e); c.fill (0, S (20), width(), S (18));
         c.setColor (0x99000000); c.fill (0, S (37), width(), 1);
-        const unsigned col = v.type == "eq" ? BANDCOL[std::min (selBand, 5)] : v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : v.type == "pultec" ? 0xffffb35a : 0xffff6a2a;
+        const unsigned col = v.type == "width" ? 0xff4ff0ff : v.type == "eq" ? BANDCOL[std::min (selBand, 5)] : v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : v.type == "pultec" ? 0xffffb35a : 0xffff6a2a;
         // bypass power
         {
             const float px = S (22), py = S (19), r = S (6.5f);
@@ -4284,6 +4534,7 @@ struct Studio::PluginWindow : visage::Frame
         else if (v.type == "gate") drawPort (c);
         else if (v.type == "pultec") drawEmber (c);
         else if (v.type == "eq") drawPrism (c);
+        else if (v.type == "width") drawHorizon (c);
         else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
     }
 
@@ -4297,6 +4548,7 @@ struct Studio::PluginWindow : visage::Frame
             return {};
         }
         if (v.type == "eq") return const_cast<PluginWindow*> (this)->prismAt (q);
+        if (v.type == "width") return horizonAt (q);
         if (v.type == "pultec")
         {
             for (auto& ct : emberCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
@@ -4359,6 +4611,13 @@ struct Studio::PluginWindow : visage::Frame
                 else send ("set:" + cmodel() + ".ratio", std::stod (R.vals[(size_t) nx]));
                 return;
             }
+        }
+        if (v.type == "width")
+        {
+            if (key == "keep") { send ("set:keep", v.get ("keep", 1) > 0.5 ? 0 : 1); return; }
+            if (key == "lever") { dragKey = "lever"; dragY0 = q.y; dragV0 = (float) std::clamp (v.get ("width", 1) / 2, 0.0, 1.0); leverLive = dragV0; return; }
+            if (key == "highWidth" && e.repeatClickCount() < 2) { dragKey = key; dragY0 = q.y; dragV0 = (float) std::clamp (highW() / 2, 0.0, 1.0); liveV = dragV0; return; }
+            if (key == "highFrom" && e.repeatClickCount() >= 2) { send ("set:highFrom", 0); return; }   // double-click: no split
         }
         if (v.type == "eq")
         {
@@ -4461,12 +4720,24 @@ struct Studio::PluginWindow : visage::Frame
             redraw();
             return;
         }
+        if (dragKey == "lever")
+        {
+            leverLive = std::clamp (dragV0 + (dragY0 - e.position.y) / S (312 * 0.972f), 0.0f, 1.0f);
+            redraw(); return;
+        }
         if (dragKey.empty()) return;
         liveV = std::clamp (dragV0 + (dragY0 - e.position.y) / S (220), 0.0f, 1.0f);
         redraw();
     }
     void mouseUp (const visage::MouseEvent&) override
     {
+        if (dragKey == "lever")
+        {
+            if (std::isfinite (leverLive) && std::abs (leverLive - dragV0) > 1e-4f) send ("set:width", std::round (leverLive * 200) / 100);
+            leverLive = NAN; dragKey.clear(); return;
+        }
+        if (v.type == "width" && (dragKey == "highWidth" || dragKey == "highFrom") && std::isfinite (liveV) && std::abs (liveV - dragV0) > 1e-4f && v.get ("highFrom", 0) <= 0)
+            send ("set:highFrom", 3000);   // the first touch of either turns the split on
         if (! dragKey.empty() && std::isfinite (liveV) && std::abs (liveV - dragV0) > 1e-4f)
         {
             const auto R = rangeOf (dragKey);
@@ -4510,6 +4781,20 @@ struct Studio::PluginWindow : visage::Frame
                     flick[i] += ((lv > 0.02f ? n : 0.0f) - flick[i]) * (float) std::min (1.0, dt * 10);
                 }
             }
+            redraw();
+            return;
+        }
+        if (v.type == "width")
+        {
+            float tgt = 1;
+            if (studio.playing && v.gr && ! v.gr->empty())
+            {
+                const long q = std::clamp ((long) (studio.playhead * 1000), 0L, (long) v.gr->size() - 1);
+                tgt = (*v.gr)[(size_t) q];
+            }
+            else tgt = takeCorr();
+            corrNow += (tgt - corrNow) * (float) std::min (1.0, dt * 6);
+            sweepH += (float) dt * 2.4f;
             redraw();
             return;
         }

@@ -122,3 +122,14 @@ if os.path.isdir(ed):
 prd = os.path.join(src, 'prism')
 if os.path.isdir(prd):
     jpg(Image.open(os.path.join(prd, 'prism.png')).convert('RGBA'), 'prism_plate')
+
+# ---------------------------------------------------------------- Horizon
+hd = os.path.join(src, 'horizon')
+if os.path.isdir(hd):
+    src0 = src; src = hd
+    jpg(load('horizon_plate.png'), 'horizon_plate')
+    lev = load('horizon_lever.png'); bb = lev.split()[3].getbbox()
+    png(lev.crop(bb), 'horizon_lever')
+    with open(os.path.join(dst, 'horizon_lever_box.txt'), 'w') as fh: fh.write('%d %d %d %d\n' % bb)
+    print('lever box', bb)
+    src = src0

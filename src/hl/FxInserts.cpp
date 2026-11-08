@@ -153,7 +153,7 @@ Chs pultecRender (const Chs& chs, double sr, const juce::var& p)
 }
 
 // ---------------------------------------------------------------- Width
-Chs widthRender (const Chs& chs, double sr, const juce::var& p)
+Chs widthRender (const Chs& chs, double sr, const juce::var& p, F32* corrCurve)
 {
     if (chs.size() < 2) return chs;
     const auto& L = chs[0];
@@ -170,11 +170,33 @@ Chs widthRender (const Chs& chs, double sr, const juce::var& p)
         Sd = convolve (Sd, magToKernel (magGrid (sr, N, [&] (double f) { return 1 / std::sqrt (1 + std::pow (fc / f, 8)); }), N, true));
     }
     const double w = clampD (nn (p, "width", 1), 0, 2.5);
+    // width by frequency: the side's highs (above highFrom) get their own width
+    const double hf = orr (p, "highFrom", 0), hw = clampD (nn (p, "highWidth", w), 0, 2.5);
+    if (hf > 0 && std::abs (hw - w) > 1e-9)
+    {
+        const size_t N = kernN (sr, true);
+        // Linkwitz-Riley low part (24 dB/oct), the high part is what's left, so low + high is the side exactly
+        const F32 lo = convolve (Sd, magToKernel (magGrid (sr, N, [&] (double f) { return 1 / (1 + std::pow (f / hf, 4)); }), N, true));
+        for (size_t q = 0; q < n; ++q) Sd[q] = (float) ((double) lo[q] * w + ((double) Sd[q] - lo[q]) * hw);
+    }
+    const double ws = hf > 0 && std::abs (hw - w) > 1e-9 ? 1.0 : w;   // the width still to apply (already in Sd when split)
     double pm = 0, ps = 0;
     for (size_t q = 0; q < n; ++q) { pm += (double) M[q] * M[q]; ps += (double) Sd[q] * Sd[q]; }
-    const double c = ! isFalse (p, "keep") && pm + ps0 > 0 ? std::sqrt ((pm + ps0) / (pm + w * w * ps + 1e-30)) : 1;
+    const double c = ! isFalse (p, "keep") && pm + ps0 > 0 ? std::sqrt ((pm + ps0) / (pm + ws * ws * ps + 1e-30)) : 1;
     F32 oL (n), oR (n);
-    for (size_t q = 0; q < n; ++q) { const double m = M[q] * c, s = Sd[q] * w * c; oL[q] = (float) (m + s); oR[q] = (float) (m - s); }
+    for (size_t q = 0; q < n; ++q) { const double m = M[q] * c, s = Sd[q] * ws * c; oL[q] = (float) (m + s); oR[q] = (float) (m - s); }
+    if (corrCurve)
+    {
+        const size_t B = std::max<size_t> (1, (size_t) std::lround (sr / GR_RATE)), win = (size_t) (0.03 * sr);
+        corrCurve->assign ((n + B - 1) / B, 1.0f);
+        for (size_t b = 0; b < corrCurve->size(); ++b)
+        {
+            const size_t e = std::min (n, b * B + B), s0 = e > win ? e - win : 0;
+            double a = 0, x = 0, y = 0;
+            for (size_t q = s0; q < e; ++q) { a += (double) oL[q] * oR[q]; x += (double) oL[q] * oL[q]; y += (double) oR[q] * oR[q]; }
+            (*corrCurve)[b] = x * y > 1e-14 ? (float) (a / std::sqrt (x * y)) : 1.0f;
+        }
+    }
     return { oL, oR };
 }
 

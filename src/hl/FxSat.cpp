@@ -510,7 +510,7 @@ Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const Insert
             const auto type = str (s, "type");
             if (type == "eq") y = eqRender (y, sr, p);
             else if (type == "pultec") y = pultecRender (y, sr, p);
-            else if (type == "width") y = widthRender (y, sr, p);
+            else if (type == "width") y = widthRender (y, sr, p, o.grCurves ? &(*o.grCurves)[slot] : nullptr);
             else if (type == "gate")
             {
                 const auto kt = p.getProperty ("keyT", juce::var());

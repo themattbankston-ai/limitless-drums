@@ -2,3 +2,4 @@
 - DejaVu Sans Mono: Bitstream Vera / DejaVu license (free to use and embed)
 - Cinzel (Cinzel-Bold.ttf, a static 700 instance of Cinzel[wght]): SIL Open Font License 1.1, Natanael Gama.
 - Oswald (Oswald-SemiBold.ttf, a static 600 instance of Oswald[wght]): SIL Open Font License 1.1, Vernon Adams and contributors.
+- Bebas Neue (BebasNeue-Regular.ttf): SIL Open Font License 1.1, Dharma Type.
