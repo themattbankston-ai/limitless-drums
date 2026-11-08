@@ -543,7 +543,7 @@ ui::StudioModel::SongView buildSongView (const EngineState& es)
     }
     v.avgMoveMs = v.moved ? (float) (mv / v.moved * 1000) : 0;
     for (auto& p : hl::findProblems (A, set)) v.problems.push_back ({ p.pos / S.sr, p.kind, p.text });
-    v.tempoMode = set.tempoMode; v.tightness = (float) set.tightness; v.swing = (float) set.swing; v.keepFeel = set.keepFeel; v.hatsOnly = set.swingHatsOnly;
+    v.tempoMode = set.tempoMode; v.consistency = (float) set.consistency; v.tightness = (float) set.tightness; v.swing = (float) set.swing; v.keepFeel = set.keepFeel; v.hatsOnly = set.swingHatsOnly;
     v.division = set.division; v.bpmScale = (float) set.bpmScale; v.kitBleed = (float) S.kitBleed;
     return v;
 }

@@ -702,6 +702,11 @@ MixRender renderMix (const Session& S)
     // Song mode: tightening and swing, every mic cut at the same places so phase is untouched
     if (S.mode == "kit" && S.song.an.done)
     {
+        if (S.song.set.consistency > 0)
+        {
+            std::vector<std::string> names; for (auto& tr : S.tracks) names.push_back (tr.mic + " " + tr.name);
+            applyConsistency (M.dn, names, S.song.an, S.song.set.consistency);
+        }
         const auto E = planEdits (S.song.an, S.song.set);
         if (! E.empty()) parallelFor ((size_t) nT, [&] (size_t t) { M.dn[t] = applyEdits (M.dn[t], E, sr); });
     }
@@ -1577,7 +1582,7 @@ juce::var settingsToVar (const Session& S)
     {
         auto sg = obj(); const auto& ss = S.song.set;
         put (sg, "tempoMode", juce::String (ss.tempoMode)); put (sg, "tightness", ss.tightness); put (sg, "swing", ss.swing); put (sg, "keepFeel", ss.keepFeel);
-        put (sg, "swingHatsOnly", ss.swingHatsOnly); put (sg, "division", ss.division); put (sg, "bpmScale", ss.bpmScale); put (sg, "flatBpm", ss.flatBpm);
+        put (sg, "swingHatsOnly", ss.swingHatsOnly); put (sg, "division", ss.division); put (sg, "bpmScale", ss.bpmScale); put (sg, "flatBpm", ss.flatBpm); put (sg, "consistency", ss.consistency);
         put (st, "song", sg);
     }
     juce::Array<juce::var> tracks;
@@ -1661,7 +1666,7 @@ void applySettings (Session& S, const juce::var& st)
         const auto& sg = st["song"]; auto& ss = S.song.set;
         ss.tempoMode = s_ (sg, "tempoMode", ss.tempoMode.c_str()); ss.tightness = nn (sg, "tightness", 0); ss.swing = nn (sg, "swing", 0);
         ss.keepFeel = ! sg.hasProperty ("keepFeel") || truthy (sg, "keepFeel"); ss.swingHatsOnly = truthy (sg, "swingHatsOnly");
-        ss.division = (int) nn (sg, "division", 16); ss.bpmScale = nn (sg, "bpmScale", 1); ss.flatBpm = nn (sg, "flatBpm", 0);
+        ss.division = (int) nn (sg, "division", 16); ss.bpmScale = nn (sg, "bpmScale", 1); ss.flatBpm = nn (sg, "flatBpm", 0); ss.consistency = nn (sg, "consistency", 0);
     }
     if (auto* tracks = st["tracks"].getArray())
         for (auto& t : S.tracks)

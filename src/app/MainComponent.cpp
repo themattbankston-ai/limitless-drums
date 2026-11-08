@@ -1433,8 +1433,12 @@ void MainComponent::updateHeader()
             h.status[1] = S.song.an.done ? juce::String (avg, 1).toStdString() + " BPM" : std::string ("NOT YET");
             h.done[1] = S.song.an.done;
             h.status[3] = "SAMPLES ONLY"; h.done[3] = false;
-            h.status[5] = S.kitBleed > 0.05 ? "BLEED -" + juce::String ((int) std::lround (S.kitBleed)).toStdString() + " dB" : std::string ("OFF");
-            h.done[5] = S.kitBleed > 0.05;
+            {
+                const bool bl = S.kitBleed > 0.05, co = S.song.set.consistency > 0.005;
+                h.status[5] = bl && co ? std::string ("BLEED + EVEN") : bl ? "BLEED -" + juce::String ((int) std::lround (S.kitBleed)).toStdString() + " dB"
+                            : co ? "EVEN " + juce::String ((int) std::lround (S.song.set.consistency * 100)).toStdString() + " %" : std::string ("OFF");
+                h.done[5] = bl || co;
+            }
         }
         h.exportReady = es->mix && (lv || S.mode == "kit");
         static const EngineState* countedFor = nullptr; static size_t files = 0;
@@ -1863,6 +1867,7 @@ void MainComponent::onSongAction (const std::string& a, double v)
         change ([to] (hl::Session& s) { s.song.set.bpmScale = to; }, to == 1.0 ? "Tempo as detected." : to < 1 ? "Half time." : "Double time.");
         return;
     }
+    if (a == "cons") { change ([v] (hl::Session& s) { s.song.set.consistency = std::clamp (v, 0.0, 1.0); }, v <= 0 ? juce::String ("Consistency off: every hit as played.") : "Consistency: " + juce::String ((int) std::lround (v * 100)) + " %."); return; }
     if (a == "tight") { change ([v] (hl::Session& s) { s.song.set.tightness = std::clamp (v, 0.0, 1.0); }, "Tightness: " + juce::String ((int) std::lround (v * 100)) + " %."); return; }
     if (a == "swing") { change ([v] (hl::Session& s) { s.song.set.swing = std::clamp (v, 0.0, 1.0); }, v <= 0 ? juce::String ("Swing off.") : "Swing: " + juce::String ((int) std::lround (v * 100)) + " %."); return; }
     if (a.rfind ("div:", 0) == 0) { const int d = std::stoi (a.substr (4)); change ([d] (hl::Session& s) { s.song.set.division = d; }, d == 8 ? "Grid: eighths." : d == 12 ? "Grid: eighth-note triplets." : "Grid: sixteenths."); return; }

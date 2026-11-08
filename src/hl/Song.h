@@ -34,6 +34,7 @@ struct SongSettings
     int division = 16;                  ///< the grid: 8, 12 (eighth triplets) or 16
     double bpmScale = 1;                ///< 2 or 0.5 when the detection picked double or half time
     double flatBpm = 0;                 ///< flatten at this tempo (0: the song's average)
+    double consistency = 0;             ///< 0..1: evens each drum's hit-to-hit level on its close mics (accents and ghosts kept)
 };
 
 struct SongAnalysis
@@ -64,6 +65,10 @@ std::vector<SongEdit> planEdits (const SongAnalysis&, const SongSettings&);
     equal-power crossfades. Length unchanged. */
 Chs applyEdits (const Chs& chs, const std::vector<SongEdit>& edits, double sr);
 F32 applyEdits (const F32& x, const std::vector<SongEdit>& edits, double sr);
+/** Consistency: on each drum's own close mics, every hit's level pulled toward the level of the hits around it by
+    `amount` (at most 6 dB), between that hit and the drum's next one. Ghost notes, flams and real accents (more than
+    6 dB from their neighbours) are left as played. tracks/names: every mic and its name, in the analysis' timeline. */
+void applyConsistency (std::vector<Chs>& tracks, const std::vector<std::string>& names, const SongAnalysis&, double amount);
 /** Where a hit ends up after the edits. */
 long movedPos (long pos, const std::vector<SongEdit>& edits);
 

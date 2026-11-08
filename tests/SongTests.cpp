@@ -196,3 +196,39 @@ TEST_CASE ("Song mode: mics with names that say nothing still give hits and a te
     const auto Z = analyseSong (silent, { "Kick", "Snare", "OH" }, S.sr);
     CHECK (Z.hits.empty()); CHECK (planEdits (Z, SongSettings { "smooth", 1.0 }).empty());
 }
+
+TEST_CASE ("Song mode: Consistency evens the snare and leaves ghost notes alone")
+{
+    const auto dir = juce::File (juce::SystemStats::getEnvironmentVariable ("LD_SONG", "/home/claude/songtest/song60"));
+    if (! dir.isDirectory()) return;
+    auto S = loadSong (dir);
+    const auto A = analyseSong (S.monos, S.names, S.sr);
+    size_t top = 0; for (size_t i = 0; i < S.names.size(); ++i) if (S.names[i] == "Snare Top") top = i;
+    auto spread = [&] (const std::vector<Chs>& tr)
+    {
+        std::vector<double> l;
+        for (auto& h : A.hits)
+        {
+            if (h.drum != Drum::snare || h.ghost || h.flam) continue;
+            double pk = 0; for (long q = h.pos; q < h.pos + 1300 && q < (long) tr[top][0].size(); ++q) pk = std::max (pk, (double) std::abs (tr[top][0][(size_t) q]));
+            l.push_back (20 * std::log10 (pk + 1e-9));
+        }
+        double m = 0; for (double v : l) m += v; m /= (double) l.size();
+        double s = 0; for (double v : l) s += (v - m) * (v - m);
+        return std::sqrt (s / (double) l.size());
+    };
+    auto tr = S.chs;
+    const double before = spread (tr);
+    applyConsistency (tr, S.names, A, 1.0);
+    const double after = spread (tr);
+    WARN ("snare level spread: " << before << " dB before, " << after << " dB after");
+    CHECK (after < before * 0.7);
+    // a ghost note's level is untouched
+    for (auto& h : A.hits)
+        if (h.drum == Drum::snare && h.ghost)
+        {
+            double a = 0, b = 0; for (long q = h.pos; q < h.pos + 600; ++q) { a += std::abs (S.chs[top][0][(size_t) q]); b += std::abs (tr[top][0][(size_t) q]); }
+            CHECK (std::abs (a - b) < a * 0.02);
+            break;
+        }
+}

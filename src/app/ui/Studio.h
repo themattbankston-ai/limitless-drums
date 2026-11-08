@@ -149,7 +149,7 @@ struct StudioModel
         std::vector<Problem> problems;
         int counts[6] {};                          ///< hits per drum (kick, snare, tom, hat, cymbal, other)
         std::string tempoMode = "smooth";
-        float tightness = 0, swing = 0, avgBpm = 0, bpmScale = 1, kitBleed = 0;
+        float tightness = 0, swing = 0, avgBpm = 0, bpmScale = 1, kitBleed = 0, consistency = 0;
         bool keepFeel = true, hatsOnly = false;
         int division = 16, moved = 0;
         float avgMoveMs = 0;

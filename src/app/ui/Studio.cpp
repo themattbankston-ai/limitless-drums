@@ -1822,6 +1822,7 @@ struct Studio::Rack : visage::Frame
         if (id == "tight") return g.tightness;
         if (id == "swing") return g.swing;
         if (id == "bleed") return g.kitBleed / 24;
+        if (id == "cons") return g.consistency;
         return 0;
     }
     void drawSong (Canvas& c)
@@ -1920,9 +1921,12 @@ struct Studio::Rack : visage::Frame
         c.setColor (0xff8b9099);
         draw::text (c, "Kick, snare and toms ease down between", bodyFont (S (10)), Font::kCenter, X (16), Y (196), S (286), S (14));
         draw::text (c, "their own hits. Overheads and rooms are never touched.", bodyFont (S (10)), Font::kCenter, X (16), Y (212), S (286), S (14));
-        plate (c, 10, 270, 298, 120, "CONSISTENCY", "NEXT");
-        draw::text (c, "Evening out hit-to-hit level per drum,", bodyFont (S (10)), Font::kCenter, X (16), Y (310), S (286), S (14));
-        draw::text (c, "and reinforcing from your own kit, come next.", bodyFont (S (10)), Font::kCenter, X (16), Y (326), S (286), S (14));
+        plate (c, 10, 270, 298, 250, "CONSISTENCY", g.consistency > 0.005f ? draw::fmt ("%.0f %% EVENED", g.consistency * 100) : std::string ("AS PLAYED"));
+        bigKnob (c, 159, 372, 40, songVal ("cons"), 0xff2ee6ff, "CONSISTENCY", songVal ("cons") < 0.005f ? std::string ("off") : draw::fmt ("%.0f %%", songVal ("cons") * 100));
+        c.setColor (0xff8b9099);
+        draw::text (c, "Kick, snare and toms: each hit's level pulled", bodyFont (S (10)), Font::kCenter, X (16), Y (456), S (286), S (14));
+        draw::text (c, "toward its neighbours. Ghosts and accents stay.", bodyFont (S (10)), Font::kCenter, X (16), Y (472), S (286), S (14));
+        draw::text (c, "Reinforcing from your own kit comes next.", bodyFont (S (9.5f)), Font::kCenter, X (16), Y (496), S (286), S (14));
     }
     void drawExport (Canvas& c)
     {
@@ -1966,6 +1970,7 @@ struct Studio::Rack : visage::Frame
         std::string id;
         if (studio.step() == Step::hits) { if (near (88, 312, 44)) id = "tight"; else if (near (230, 312, 36)) id = "swing"; }
         else if (near (159, 112, 50)) id = "bleed";
+        else if (near (159, 372, 50)) id = "cons";
         if (id.empty()) return;
         if (e.repeatClickCount() >= 2) { fire (id, 0); return; }
         songDrag = id; songDragY0 = y; songDragV0 = songVal (id); songLive = songDragV0;

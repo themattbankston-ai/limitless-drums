@@ -501,6 +501,50 @@ long movedPos (long pos, const std::vector<SongEdit>& E)
     return pos + s;
 }
 
+// ---------------------------------------------------------------- consistency
+void applyConsistency (std::vector<Chs>& tracks, const std::vector<std::string>& names, const SongAnalysis& A, double amount)
+{
+    if (amount <= 0 || ! A.done) return;
+    const double sr = A.sr;
+    const long win = (long) (0.03 * sr), fade = (long) (0.002 * sr);
+    for (Drum d : { Drum::kick, Drum::snare, Drum::tom })
+    {
+        std::vector<size_t> mics;
+        for (size_t t = 0; t < names.size() && t < tracks.size(); ++t) if (drumOfMic (names[t]) == d) mics.push_back (t);
+        if (mics.empty()) continue;
+        std::vector<long> pos; std::vector<double> lev; std::vector<bool> keep;
+        for (auto& h : A.hits)
+        {
+            if (h.drum != d) continue;
+            double pk = 0;
+            for (auto t : mics) for (auto& x : tracks[t]) for (long q = h.pos; q < std::min ((long) x.size(), h.pos + win); ++q) pk = std::max (pk, (double) std::abs (x[(size_t) q]));
+            pos.push_back (h.pos); lev.push_back (20 * std::log10 (pk + 1e-9)); keep.push_back (h.ghost || h.flam);
+        }
+        const size_t n = pos.size();
+        if (n < 4) continue;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (keep[i]) continue;
+            std::vector<double> nb;
+            for (size_t j = i >= 6 ? i - 6 : 0; j < std::min (n, i + 7); ++j) if (! keep[j]) nb.push_back (lev[j]);
+            std::nth_element (nb.begin(), nb.begin() + (long) nb.size() / 2, nb.end());
+            const double med = nb[nb.size() / 2], off = med - lev[i];
+            if (std::abs (off) > 6) continue;   // an accent (or a deliberate soft hit): as played
+            const double g = std::pow (10.0, std::clamp (amount * off, -6.0, 6.0) / 20);
+            if (std::abs (g - 1) < 1e-4) continue;
+            const long a = std::max (0L, pos[i] - fade), e = i + 1 < n ? pos[i + 1] - fade : pos[i] + (long) (0.5 * sr);
+            for (auto t : mics)
+                for (auto& x : tracks[t])
+                    for (long q = a; q < std::min ((long) x.size(), e + fade); ++q)
+                    {
+                        // fade in over the first 2 ms, out over the last 2 ms before the next hit
+                        const double w = std::min ({ 1.0, (double) (q - a) / (double) fade, (double) (e + fade - q) / (double) fade });
+                        x[(size_t) q] = (float) ((double) x[(size_t) q] * (1 + (g - 1) * std::max (0.0, w)));
+                    }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- problems
 std::vector<SongProblem> findProblems (const SongAnalysis& A, const SongSettings& S)
 {
