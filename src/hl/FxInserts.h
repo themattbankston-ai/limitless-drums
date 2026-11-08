@@ -10,7 +10,9 @@ double pultecMag (const juce::var& p, double f);
 Chs pultecRender (const Chs& chs, double sr, const juce::var& p);
 Chs widthRender (const Chs& chs, double sr, const juce::var& p);
 double corrOf (const Chs& chs);
-Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs = nullptr);
+/** The gate. "flip" ducks instead (closes on the hits); "listen" outputs the filtered key, to set the key filters by ear.
+    grCurve: the attenuation, dB >= 0 per GR_RATE block. */
+Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs = nullptr, F32* grCurve = nullptr);
 
 struct CompModel
 {

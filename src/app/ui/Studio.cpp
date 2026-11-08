@@ -2835,6 +2835,9 @@ namespace pw
                                      { LD_IMG (skull_saw_4_jpg) }, { LD_IMG (skull_saw_5_jpg) }, { LD_IMG (skull_saw_6_jpg) }, { LD_IMG (skull_saw_7_jpg) } };
     static const Img viseRam { LD_IMG (vise_ram_png) };
     static const float viseRamBox[4] = { 729, 54, 1231, 313 };   // in the 1960 x 1088 render
+    static Font cinzel (float s) { return fontOf (BinaryData::CinzelBold_ttf, BinaryData::CinzelBold_ttfSize, s); }
+    static const Img portGate { LD_IMG (port_gate_png) }, portArch { LD_IMG (port_arch_png) };
+    static const float portGateBox[4] = { 690, 197, 1270, 675 }, portArchBox[4] = { 663, 131, 1297, 688 };
     static const Img sawBlur[8] = { { LD_IMG (skull_sawb_0_jpg) }, { LD_IMG (skull_sawb_1_jpg) }, { LD_IMG (skull_sawb_2_jpg) }, { LD_IMG (skull_sawb_3_jpg) },
                                     { LD_IMG (skull_sawb_4_jpg) }, { LD_IMG (skull_sawb_5_jpg) }, { LD_IMG (skull_sawb_6_jpg) }, { LD_IMG (skull_sawb_7_jpg) } };
 }
@@ -2897,6 +2900,7 @@ struct Studio::PluginWindow : visage::Frame
     Range rangeOf (const std::string& key) const
     {
         if (v.type == "comp") return viseRange (key);
+        if (v.type == "gate") return portRange (key);
         const auto m = model();
         if (key == "mix") return { "mix", 0, 1, false, true };
         if (key == "out") return { "out", -24, 24, false, true };
@@ -2922,7 +2926,8 @@ struct Studio::PluginWindow : visage::Frame
     {
         static const std::map<std::string, double> d { { "decap.drive", 3 }, { "devil.crush", 4 }, { "devil.darkness", 2 }, { "decap.lowcut", 20 }, { "decap.highcut", 20000 }, { "mix", 1 },
             { "dist.input", 5 }, { "dist.attack", 5 }, { "dist.release", 5 }, { "76.input", 6.2 }, { "76.attack", 3 }, { "76.release", 3 },
-            { "fair.thresh", 5 }, { "fair.tc", 2 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
+            { "fair.thresh", 5 }, { "fair.tc", 2 }, { "thr", -40 }, { "range", -40 }, { "hyst", 4 }, { "atk", 0.3 }, { "hold", 40 }, { "rel", 120 }, { "look", 1.5 },
+            { "hpf", 20 }, { "lpf", 20000 }, { "160.thresh", -27 }, { "chan.thresh", -24 }, { "chan.attack", 10 }, { "chan.release", 120 }, { "scHpf", 20 } };
         auto i = d.find (path); return i == d.end() ? 0.0 : i->second;
     }
     float posOf (const std::string& key) const
@@ -2943,6 +2948,14 @@ struct Studio::PluginWindow : visage::Frame
     {
         const auto R = rangeOf (key); const double x = valueAt (key, pos);
         if (! R.on) return "off";
+        if (v.type == "gate")
+        {
+            if (R.path == "thr" || R.path == "range" || R.path == "hyst") return draw::fmt ("%.0f dB", x);
+            if (R.path == "atk" || R.path == "look") return draw::fmt (x < 10 ? "%.1f ms" : "%.0f ms", x);
+            if (R.path == "hold" || R.path == "rel") return draw::fmt ("%.0f ms", x);
+            if (R.path == "hpf") return x <= 20.5 ? std::string ("off") : x < 1000 ? draw::fmt ("%.0f Hz", x) : draw::fmt ("%.1f kHz", x / 1000);
+            if (R.path == "lpf") return x >= 19900 ? std::string ("off") : draw::fmt (x < 10000 ? "%.1f kHz" : "%.0f kHz", x / 1000);
+        }
         if (v.type == "comp")
         {
             if (R.path == "scHpf") return x <= 20.5 ? std::string ("off") : draw::fmt ("%.0f Hz", x);
@@ -3441,6 +3454,197 @@ struct Studio::PluginWindow : visage::Frame
         if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xfff0e2b0); draw::text (c, "BYPASSED", pw::stencil (S (28)), Font::kCenter, bx, by, fw, fh); }
     }
 
+    // ---------------------------------------------------------------- Portcullis
+    Range portRange (const std::string& key) const
+    {
+        if (key == "thr") return { "thr", -60, 0, false, true };
+        if (key == "range") return { "range", -80, 0, false, true };
+        if (key == "hyst") return { "hyst", 0, 12, false, true };
+        if (key == "atk") return { "atk", 0.02, 50, true, true };
+        if (key == "hold") return { "hold", 0, 500, false, true };
+        if (key == "rel") return { "rel", 1, 2000, true, true };
+        if (key == "look") return { "look", 0, 10, false, true };
+        if (key == "hpf") return { "hpf", 20, 2000, true, true };
+        if (key == "lpf") return { "lpf", 1000, 20000, true, true };
+        return { "", 0, 1, false, false };
+    }
+    /** RATIO: "gate" (shut) or an expander, 1.5:1 to 8:1. */
+    static const std::vector<double>& portRatios() { static const std::vector<double> r { 0, 1.5, 2, 3, 4, 6, 8 }; return r; }
+    int portRatioIndex() const { const double r = v.get ("ratio", 0); int b = 0; for (size_t i = 0; i < portRatios().size(); ++i) if (std::abs (portRatios()[i] - r) < std::abs (portRatios()[(size_t) b] - r)) b = (int) i; return b; }
+    float openNow = 0;
+    float openTarget() const
+    {
+        // how far open the gate is under the playhead: its attenuation against its range
+        if (! v.on) return 1;
+        if (! v.gr || v.gr->empty()) return 0;
+        const double rg = std::max (1.0, -v.get ("range", -40));
+        // playing: under the playhead; stopped: the most open in the 300 ms after it, so the hit there shows
+        const long a = (long) (studio.playhead * 1000), b = a + (studio.playing ? 1 : 300);
+        float att = 1e9f;
+        for (long q = std::max (0L, a); q < std::min ((long) v.gr->size(), b); ++q) att = std::min (att, (*v.gr)[(size_t) q]);
+        if (att > 1e8f) return 0;
+        return (float) std::clamp (1.0 - att / rg, 0.0, 1.0);
+    }
+    void carved (Canvas& c, const std::string& t, float px, float py, float size, float ls, float z = 0.045f)
+    {
+        labelLS (c, t, px, py + 1.1f, z, pw::cinzel (S (size)), 0x38ffecd2, ls);
+        labelLS (c, t, px, py, z, pw::cinzel (S (size)), 0xeb060504, ls);
+    }
+    void litC (Canvas& c, const std::string& t, float px, float py, float size, unsigned col, float ls, float z = 0.045f)
+    {
+        labelLS (c, t, px, py, z, pw::cinzel (S (size)), col, ls);
+        c.setBlendMode (visage::BlendMode::Add);
+        labelLS (c, t, px, py, z, pw::cinzel (S (size)), Color (col).withAlpha (0.5f).toARGB(), ls);
+        c.setBlendMode (visage::BlendMode::Alpha);
+    }
+    void gnix (Canvas& c, float px, float py, const std::string& t, float w)
+    {
+        const auto p = P (px, py);
+        c.setColor (0xff030806); c.roundedRectangle (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3));
+        c.setColor (0x406dffb0); c.roundedRectangleBorder (p.x - S (w) / 2, p.y - S (9), S (w), S (18), S (3), S (1));
+        glowLabel (c, t, px, py, 0, monoBold (S (10.5f)), 0xff6dffb0, w);
+    }
+    void gptr (Canvas& c, float px, float py, float z, float r, float a)
+    {
+        const auto cc = P (px, py, z);
+        const float x0 = cc.x + std::cos (a) * S (r) * 0.2f, y0 = cc.y + std::sin (a) * S (r) * 0.2f, x1 = cc.x + std::cos (a) * S (r) * 0.95f, y1 = cc.y + std::sin (a) * S (r) * 0.95f;
+        c.setBlendMode (visage::BlendMode::Add); c.setColor (0x591aff7a); c.segment (x0, y0, x1, y1, S (7), true); c.setBlendMode (visage::BlendMode::Alpha);
+        c.setColor (0xff6dffb0); c.segment (x0, y0, x1, y1, S (2.6f), true);
+    }
+    static const std::vector<Ctl>& portCtls()
+    {
+        static const std::vector<Ctl> c = {
+            { "thr", 120, 212, 44, 0 }, { "range", 100, 452, 21, 0 }, { "ratio", 230, 452, 21, 4 }, { "hyst", 360, 452, 21, 0 }, { "atk", 490, 452, 21, 0 },
+            { "hold", 620, 452, 21, 0 }, { "rel", 750, 452, 21, 0 }, { "look", 880, 452, 21, 0 }, { "hpf", 820, 252, 22, 0 }, { "lpf", 912, 252, 22, 0 } };
+        return c;
+    }
+    void drawPort (Canvas& c)
+    {
+        const float fw = S (FW), fh = S (FH), bx = BX(), by = BY(), pi = 3.14159265f, sx = fw / 1960, sy = fh / 1088;
+        const unsigned GRN = 0xff6dffb0;
+        c.setColor (0xffffffff);
+        c.image (LD_IMG (port_plate_jpg), bx, by, fw, fh);
+        const float open = openNow;
+        // ---- behind the gate: the hits, bright where the gate let them through
+        const float x0 = 340, x1 = 640, ys = 182, yb = 338, ry = 76, zs = -0.12f;
+        {
+            const auto a = P (x0, ys - ry, zs), b = P (x1, yb, zs);
+            c.saveState(); c.trimClampBounds (a.x, a.y, b.x - a.x, b.y - a.y);
+            c.setColor (0xf2070b09); c.fill (a.x, a.y, b.x - a.x, b.y - a.y);
+            c.setColor (0x0d6dffb0); for (int i = 1; i < 8; ++i) { const auto q = P (x0 + 300 * i / 8.0f, 80, zs); c.fill (q.x, a.y, 1, b.y - a.y); }
+            const float mid = (ys + yb) / 2 + 8;
+            const double span = 1.2, t0 = studio.playhead - (studio.playing ? 1.0 : 0.05);
+            const double rg = std::max (1.0, -v.get ("range", -40));
+            for (int i = 0; i < 300; ++i)
+            {
+                const double ta = t0 + span * i / 300, tb = t0 + span * (i + 1) / 300;
+                float pk = 0;
+                for (size_t ti = 0; ti < studio.data.tracks.size(); ++ti)
+                {
+                    if (v.who >= 0 && (int) ti != v.who) continue;
+                    const auto& tr = studio.data.tracks[ti];
+                    const long b0 = (long) (ta * tr.blocksPerSecond), b1 = std::max (b0 + 1, (long) (tb * tr.blocksPerSecond));
+                    for (long q = std::max (0L, b0); q < std::min ((long) tr.peaks.size(), b1); ++q) pk = std::max (pk, tr.peaks[(size_t) q]);
+                }
+                const float db = pk > 1e-6f ? 20 * std::log10 (pk) : -120;
+                const float hh = std::clamp ((db + 60) / 60, 0.0f, 1.0f) * 56;
+                bool on = false;
+                if (v.gr && ! v.gr->empty()) { const long q = std::clamp ((long) (ta * 1000), 0L, (long) v.gr->size() - 1); on = (*v.gr)[(size_t) q] < rg * 0.5; }
+                const auto q0 = P (x0 + i, mid - hh, zs), q1 = P (x0 + i, mid + hh, zs);
+                if (on) { c.setColor (0x146dffb0); c.fill (q0.x, a.y, S (1.2f), b.y - a.y); }
+                c.setColor (on ? 0xeb96ffc8 : 0x59788c82); c.fill (q0.x, q0.y, S (1.2f), q1.y - q0.y);
+            }
+            // the threshold, dashed, both sides
+            const float th = std::clamp (((float) v.get ("thr", -40) + 60) / 60, 0.0f, 1.0f) * 56;
+            for (float yy : { mid - th, mid + th })
+                for (float xx = x0; xx < x1; xx += 12)
+                {
+                    const auto q = P (xx, yy, zs);
+                    c.setColor (0x40ffe27a); c.fill (q.x, q.y - S (2), S (7), S (4));
+                    c.setColor (0xffffe27a); c.fill (q.x, q.y - S (0.7f), S (7), S (1.4f));
+                }
+            c.restoreState();
+        }
+        // ---- the portcullis, raised by how open the gate is, then the arch's stones over it
+        {
+            const auto top = P (0, (ys - ry - 6) - 2);
+            const float lift = S (open * 200 * 0.98163f / 1.01f);
+            const auto* gb = pw::portGateBox;
+            c.saveState(); c.trimClampBounds (bx, top.y, fw, fh);
+            c.setColor (0x8c000000); c.image (pw::portGate.d, pw::portGate.n, bx + gb[0] * sx + S (6), by + gb[1] * sy - lift + S (8), (gb[2] - gb[0]) * sx, (gb[3] - gb[1]) * sy);
+            c.setColor (0xffffffff); c.image (pw::portGate.d, pw::portGate.n, bx + gb[0] * sx, by + gb[1] * sy - lift, (gb[2] - gb[0]) * sx, (gb[3] - gb[1]) * sy);
+            c.restoreState();
+            const auto* ab = pw::portArchBox;
+            c.image (pw::portArch.d, pw::portArch.n, bx + ab[0] * sx, by + ab[1] * sy, (ab[2] - ab[0]) * sx, (ab[3] - ab[1]) * sy);
+        }
+        // ---- the lanterns: green when it's open, red when it's shut
+        c.setBlendMode (visage::BlendMode::Add);
+        c.setColor (Color (0xffffffff).withAlpha (std::clamp ((open - 0.3f) / 0.4f, 0.0f, 1.0f)));
+        c.image (LD_IMG (port_open_jpg), bx, by, fw, fh);
+        c.setColor (Color (0xffffffff).withAlpha (std::clamp ((0.7f - open) / 0.4f, 0.0f, 1.0f) * (v.on ? 1.0f : 0.0f)));
+        c.image (LD_IMG (port_closed_jpg), bx, by, fw, fh);
+        c.setBlendMode (visage::BlendMode::Alpha);
+        if (open > 0.5f) litC (c, "OPEN", 262, 212, 12, GRN, 1.5f); else carved (c, "OPEN", 262, 212, 12, 1.5f);
+        if (open < 0.5f && v.on) litC (c, "CLOSED", 722, 212, 12, 0xffff6a5a, 1.5f); else carved (c, "CLOSED", 722, 212, 12, 1.5f);
+        // ---- THRESH
+        {
+            const float pos = posOf ("thr"), A0 = 0.75f * pi, ASP = 1.5f * pi;
+            ticks (c, 120, 212, 66, 70, 25, 0xcc040403, 1.4f);
+            const char* tl[7] = { "-60", "-50", "-40", "-30", "-20", "-10", "0" };
+            for (int i = 0; i < 7; ++i) { const float a = A0 + ASP * i / 6; carved (c, tl[i], 120 + std::cos (a) * 79, 212 + std::sin (a) * 79, 9.5f, 0.2f, 0.03f); }
+            const auto o = P (120, 212); const float R = S (64);
+            c.setBlendMode (visage::BlendMode::Add);
+            c.setColor (0x4d1aff7a); c.arc (o.x - R - S (4), o.y - R - S (4), 2 * R + S (8), S (8), -0.75f * pi + ASP * pos / 2, ASP * pos / 2, true);
+            c.setBlendMode (visage::BlendMode::Alpha);
+            c.setColor (GRN); c.arc (o.x - R - S (1.5f), o.y - R - S (1.5f), 2 * R + S (3), S (3), -0.75f * pi + ASP * pos / 2, ASP * pos / 2, true);
+            gptr (c, 120, 212, 0.29f, 44 * 0.6f, A0 + ASP * pos);
+            carved (c, "THRESH", 120, 100, 13, 3);
+            gnix (c, 120, 320, text ("thr", pos), 80);
+        }
+        // ---- the row
+        const char* keys[7] = { "range", "ratio", "hyst", "atk", "hold", "rel", "look" };
+        const char* names[7] = { "RANGE", "RATIO", "HYST", "ATTACK", "HOLD", "RELEASE", "LOOK-AHEAD" };
+        for (int i = 0; i < 7; ++i)
+        {
+            const float px = 100 + i * 130, KY = 452;
+            float pos; std::string t;
+            if (i == 1) { const int ri = portRatioIndex(); pos = ri / 6.0f; t = ri == 0 ? std::string ("gate") : draw::fmt ("%.1f : 1", portRatios()[(size_t) ri]); }
+            else { pos = posOf (keys[i]); t = text (keys[i], pos); }
+            ticks (c, px, KY, 34, 38, i == 1 ? 7 : 11, 0xb3040403, 1.2f);
+            gptr (c, px, KY, 0.29f, 21 * 0.6f, 0.75f * pi + 1.5f * pi * pos);
+            carved (c, names[i], px, KY - 48, 11, 1.2f);
+            gnix (c, px, KY + 48, t, 74);
+        }
+        // ---- the key
+        carved (c, "KEY SOURCE", 858, 50, 11, 2);
+        {
+            const int kt = (int) v.get ("keyT", -1);
+            std::string ks = "Self";
+            if (kt >= 0 && kt < (int) studio.data.tracks.size()) ks = studio.data.tracks[(size_t) kt].name;
+            if (ks.size() > 14) ks = ks.substr (0, 13) + ".";
+            glowLabel (c, ks, 850, 92, 0.06f, monoBold (S (12)), GRN, 130);
+            label (c, "v", 918, 92, 0.06f, monoBold (S (9)), 0xb36dffb0, 20);
+        }
+        const char* kb[2] = { "LISTEN", "FLIP" };
+        for (int i = 0; i < 2; ++i)
+        {
+            const bool on = v.get (i == 0 ? "listen" : "flip", 0) > 0.5;
+            const float px = 790 + i * 82 + 33, py = 132 + 13;
+            if (on) litC (c, kb[i], px, py, 11, GRN, 1.5f, 0.08f); else carved (c, kb[i], px, py, 11, 1.5f, 0.08f);
+        }
+        const char* kn[2] = { "KEY HPF", "KEY LPF" }; const char* kk[2] = { "hpf", "lpf" };
+        for (int i = 0; i < 2; ++i)
+        {
+            const float px = i == 0 ? 820 : 912, pos = posOf (kk[i]);
+            ticks (c, px, 252, 35, 39, 11, 0xb3040403, 1.2f);
+            gptr (c, px, 252, 0.29f, 22 * 0.6f, 0.75f * pi + 1.5f * pi * pos);
+            carved (c, kn[i], px, 204, 10.5f, 1.2f);
+            gnix (c, px, 298, text (kk[i], pos), 70);
+        }
+        if (v.get ("listen", 0) > 0.5) glowLabel (c, "LISTENING TO THE KEY", 490, 360, 0.02f, monoBold (S (10)), 0xffffe27a, 300);
+        if (! v.on) { c.setColor (0x8c000000); c.fill (bx, by, fw, fh); c.setColor (0xffe8e0d0); draw::text (c, "BYPASSED", pw::cinzel (S (28)), Font::kCenter, bx, by, fw, fh); }
+    }
+
     void draw (Canvas& c) override
     {
         // shadow, chrome, title bar
@@ -3450,7 +3654,7 @@ struct Studio::PluginWindow : visage::Frame
         c.roundedRectangle (0, 0, width(), S (38), S (10));
         c.setColor (0xff1a1a1e); c.fill (0, S (20), width(), S (18));
         c.setColor (0x99000000); c.fill (0, S (37), width(), 1);
-        const unsigned col = v.type == "comp" ? 0xffffb21a : 0xffff6a2a;
+        const unsigned col = v.type == "comp" ? 0xffffb21a : v.type == "gate" ? 0xff6dffb0 : 0xffff6a2a;
         // bypass power
         {
             const float px = S (22), py = S (19), r = S (6.5f);
@@ -3467,6 +3671,7 @@ struct Studio::PluginWindow : visage::Frame
         c.setColor (0x99e6e6eb); draw::text (c, "\xe2\x9c\x95", uiFont (S (12)), Font::kCenter, width() - S (40), S (9), S (26), S (20));
         if (v.type == "sat") drawSkull (c);
         else if (v.type == "comp") drawVise (c);
+        else if (v.type == "gate") drawPort (c);
         else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
     }
 
@@ -3477,6 +3682,15 @@ struct Studio::PluginWindow : visage::Frame
         {
             for (int i = 0; i < 5; ++i) { const auto mp = modelPos (i); const auto p = P (mp.x, mp.y); if (std::abs (q.x - p.x) < S (34) && std::abs (q.y - p.y) < S (11)) return "cm:" + std::to_string (i); }
             for (auto& ct : viseCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
+            return {};
+        }
+        if (v.type == "gate")
+        {
+            for (auto& ct : portCtls()) { const auto p = P (ct.x, ct.y, 0.2f); if (std::hypot (q.x - p.x, q.y - p.y) < S (std::max (ct.r * 1.25f, 22.0f))) return ct.key; }
+            auto in = [&] (float x, float y, float w, float h) { const auto a = P (x, y, 0.06f); return q.x >= a.x && q.x < a.x + S (w) && q.y >= a.y && q.y < a.y + S (h); };
+            if (in (783, 77, 150, 30)) return "key";
+            if (in (790, 132, 66, 26)) return "listen";
+            if (in (872, 132, 66, 26)) return "flip";
             return {};
         }
         if (v.type != "sat") return {};
@@ -3525,6 +3739,21 @@ struct Studio::PluginWindow : visage::Frame
                 const int n = (int) R.vals.size(), nx = (ratioIndex() + (e.isRightButton() ? n - 1 : 1)) % n;
                 if (R.str) { if (studio.onMix) studio.onMix ("plugstr:" + cmodel() + ".ratio:" + R.vals[(size_t) nx], 0); }
                 else send ("set:" + cmodel() + ".ratio", std::stod (R.vals[(size_t) nx]));
+                return;
+            }
+        }
+        if (v.type == "gate")
+        {
+            if (key == "listen" || key == "flip") { send ("set:" + key, v.get (key, 0) > 0.5 ? 0 : 1); return; }
+            if (key == "ratio")
+            {
+                const int n = (int) portRatios().size(), nx = (portRatioIndex() + (e.isRightButton() ? n - 1 : 1)) % n;
+                send ("set:ratio", portRatios()[(size_t) nx]); return;
+            }
+            if (key == "key")
+            {
+                const auto a = P (783, 77, 0.06f);
+                if (studio.onMixMenu) studio.onMixMenu ("plugkey", a.x + positionInWindow().x, a.y + S (30) + positionInWindow().y, S (150), S (22));
                 return;
             }
         }
@@ -3577,6 +3806,13 @@ struct Studio::PluginWindow : visage::Frame
     void advance (double dt)
     {
         if (! isVisible()) return;
+        if (v.type == "gate")
+        {
+            const float tgt = openTarget();
+            openNow += (tgt - openNow) * (float) std::min (1.0, dt * (tgt > openNow ? 25.0 : 8.0));
+            redraw();
+            return;
+        }
         if (v.type == "comp")
         {
             // the needle and the ram: quick down, slower back, like a real meter

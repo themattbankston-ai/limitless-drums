@@ -1829,6 +1829,7 @@ void MainComponent::onMixAction (const std::string& a, double v)
             }
             auto* o = node.getDynamicObject(); if (! o) return;
             const juce::Identifier leaf (parts[parts.size() - 1]);
+            if (path == "keyT" && val < 0) { o->removeProperty (leaf); return; }
             if (isStr) o->setProperty (leaf, juce::String (sval));
             else if (o->getProperty (leaf).isBool()) o->setProperty (leaf, val > 0.5);
             else o->setProperty (leaf, val);
@@ -1840,13 +1841,22 @@ void MainComponent::onMixAction (const std::string& a, double v)
                 { "decap.tone", "Tone" }, { "devil.darkness", "Darkness" }, { "saturn.tone", "Tone" }, { "fatso.warmth", "Warmth" },
                 { "decap.lowcut", "Low cut" }, { "decap.highcut", "High cut" }, { "mix", "Mix" }, { "out", "Output" },
                 { "decap.punish", "Destroy" }, { "decap.thump", "Boom" }, { "decap.steep", "Sploosh" }, { "auto", "Auto gain" },
-                { "model", "Model" }, { "decap.style", "Style" }, { "saturn.style", "Style" }, { "fatso.comp", "Comp" } };
+                { "model", "Model" }, { "decap.style", "Style" }, { "saturn.style", "Style" }, { "fatso.comp", "Comp" },
+                // The Vise
+                { "dist.input", "Input" }, { "76.input", "Input" }, { "fair.input", "Input" }, { "160.thresh", "Threshold" }, { "chan.thresh", "Threshold" },
+                { "dist.attack", "Attack" }, { "76.attack", "Attack" }, { "chan.attack", "Attack" }, { "fair.thresh", "Threshold" },
+                { "dist.release", "Release" }, { "76.release", "Release" }, { "chan.release", "Release" }, { "fair.tc", "Time constant" },
+                { "dist.ratio", "Ratio" }, { "76.ratio", "Ratio" }, { "160.ratio", "Ratio" }, { "chan.ratio", "Ratio" }, { "scHpf", "Side-chain HPF" },
+                // Portcullis
+                { "thr", "Threshold" }, { "range", "Range" }, { "ratio", "Ratio" }, { "hyst", "Hysteresis" }, { "atk", "Attack" }, { "hold", "Hold" },
+                { "rel", "Release" }, { "look", "Look-ahead" }, { "hpf", "Key HPF" }, { "lpf", "Key LPF" }, { "listen", "Key listen" }, { "flip", "Flip" }, { "keyT", "Key" } };
             const auto& arr = t < 0 ? S.busIns : S.tracks[(size_t) t].strip.inserts;
             const juce::String plug (insertDisplayName (arr[k]["type"].toString()));
             const auto n = names.count (path) ? names.at (path) : path;
             juce::String val2;
             if (isStr) val2 = juce::String (sval).toUpperCase();
-            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto") val2 = val > 0.5 ? "on" : "off";
+            else if (path == "decap.punish" || path == "decap.thump" || path == "decap.steep" || path == "auto" || path == "listen" || path == "flip") val2 = val > 0.5 ? "on" : "off";
+            else if (path == "keyT") val2 = val < 0 ? juce::String ("self") : juce::String (S.tracks[(size_t) (int) val].mic);
             else if ((path == "decap.lowcut" || path == "decap.highcut") && val == 0) val2 = "off";
             else if (path == "mix") val2 = juce::String (juce::roundToInt (val * 100)) + " %";
             else val2 = juce::String (val, 1);
@@ -1943,6 +1953,19 @@ void MainComponent::onMixMenu (const std::string& what, float x, float y, float 
             refreshModel(); refreshMix(); updateHeader();
             setNotice (juce::String (u ? "R2: " : "R1: ") + labels[r - 1] + ".");
             rerender();
+        });
+        return;
+    }
+    if (what == "plugkey")
+    {
+        // the gate's key: itself, or another mic
+        if (plugT < -1) return;
+        m.addItem (1, "Self", true);
+        for (int t = 0; t < (int) S.tracks.size(); ++t) if (t != plugT) m.addItem (t + 2, juce::String (S.tracks[(size_t) t].mic));
+        m.showMenuAsync (opts, [this] (int r)
+        {
+            if (r <= 0) return;
+            onMixAction ("plug:set:keyT", r == 1 ? -1.0 : (double) (r - 2));
         });
         return;
     }

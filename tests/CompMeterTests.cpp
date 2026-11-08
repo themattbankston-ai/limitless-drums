@@ -4,6 +4,7 @@
 #include "../src/app/Engine.h"
 #include "../src/hl/Prep.h"
 #include "../src/hl/FxSat.h"
+#include "../src/hl/FxInserts.h"
 
 static juce::var ins (const char* type, const char* p)
 {
@@ -50,4 +51,25 @@ TEST_CASE ("Compressor gain-reduction curves")
     const auto M3 = ld::hl::renderMix (S3);
     REQUIRE (M3.gr.count ("bus:0"));
     CHECK (peakOf (M3.gr.at ("bus:0")) > 0.5f);
+}
+
+TEST_CASE ("Gate: attenuation curve, flip and listen")
+{
+    using namespace ld::hl;
+    const double sr = 48000;
+    F32 x ((size_t) sr, 0.0f);
+    for (size_t q = 0; q < 2400; ++q) x[q + 12000] = (float) (0.8 * std::sin (q * 0.2));   // one burst at 0.25 s, silence elsewhere
+    for (size_t q = 0; q < x.size(); ++q) x[q] += (float) (0.0005 * std::sin (q * 0.37));  // a little bleed
+    const Chs in { x };
+    auto P = [] (const char* extra) { return juce::JSON::parse (juce::String (R"({"thr":-30,"range":-40,"ratio":0,"atk":0.3,"hold":20,"rel":50,"hyst":4,"look":1.5,"hpf":20,"lpf":20000)") + extra + "}"); };
+    F32 g1, g2;
+    gateRender (in, sr, P (""), nullptr, &g1);
+    gateRender (in, sr, P (R"(,"flip":true)"), nullptr, &g2);
+    REQUIRE (g1.size() >= 990); REQUIRE (g2.size() == g1.size());
+    CHECK (g1[100] > 30);  CHECK (g1[255] < 1);     // closed in the silence, open on the burst
+    CHECK (g2[220] < 1);   CHECK (g2[255] > 30);    // flipped: the other way round (it starts closed and opens in the silence)
+    const auto L = gateRender (in, sr, P (R"(,"listen":true,"hpf":2000)"));
+    REQUIRE (L.size() == 1);
+    double a = 0, b = 0; for (size_t q = 12000; q < 14400; ++q) { a += std::abs (L[0][q]); b += std::abs (x[q]); }
+    CHECK (a < b);   // the key filter took the low end out
 }

@@ -181,7 +181,15 @@ static void biquadInPlace (F32& x, double f, bool hp, double sr)
     for (auto& s : x) { const double v = s, y = b0 * v + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = v; y2 = y1; y1 = y; s = (float) y; }
 }
 
-Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs)
+F32 grBlocks (const F32& gdb, double sr)
+{
+    const size_t B = std::max<size_t> (1, (size_t) std::lround (sr / GR_RATE));
+    F32 r ((gdb.size() + B - 1) / B, 0.0f);
+    for (size_t q = 0; q < gdb.size(); ++q) r[q / B] = std::max (r[q / B], -gdb[q]);
+    return r;
+}
+
+Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs, F32* grCurve)
 {
     const Chs& kc = keyChs ? *keyChs : chs;
     const size_t n = chs[0].size();
@@ -190,6 +198,14 @@ Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs
     const double hpf = orr (p, "hpf", 0), lpf = orr (p, "lpf", 0);
     if (hpf > 20) biquadInPlace (key, hpf, true, sr);
     if (lpf != 0 && lpf < sr / 2.2) biquadInPlace (key, lpf, false, sr);
+    if (truthy (p, "listen"))
+    {
+        // the key as the gate hears it, on every channel
+        Chs res; for (size_t c = 0; c < chs.size(); ++c) res.push_back (key);
+        if (grCurve) grCurve->assign ((size_t) std::ceil ((double) n * GR_RATE / sr), 0.0f);
+        return res;
+    }
+    const bool flip = truthy (p, "flip");
     const auto e = envDb (key, sr, 0.05, 8);
     const double thr = nn (p, "thr", -40), hy = nn (p, "hyst", 4), range = std::min (0.0, nn (p, "range", -40));
     const double ratio = nn (p, "ratio", 0) > 1.05 ? nn (p, "ratio", 0) : 0;
@@ -199,11 +215,16 @@ Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs
     long hc = 0;
     for (size_t q = 0; q < n; ++q)
     {
-        if (ratio != 0) { tgt[q] = (float) (e[q] >= thr ? 0 : std::max (range, (e[q] - thr) * (ratio - 1))); continue; }
+        if (ratio != 0)
+        {
+            const double d = e[q] >= thr ? 0 : std::max (range, (e[q] - thr) * (ratio - 1));
+            tgt[q] = (float) (flip ? range - d : d);
+            continue;
+        }
         if (e[q] >= thr) { open = true; hc = hold; }
         else if (open && e[q] < thr - hy) { if (hc > 0) --hc; else open = false; }
         else if (open && hc < hold) hc = hold;
-        tgt[q] = (float) (open ? 0 : range);
+        tgt[q] = (float) ((open != flip) ? 0 : range);
     }
     const double aA = std::exp (-1 / (std::max (0.02, nn (p, "atk", 0.3)) * sr / 1000)), aR = std::exp (-1 / (std::max (1.0, nn (p, "rel", 120)) * sr / 1000));
     F32 g (n);
@@ -211,8 +232,15 @@ Chs gateRender (const Chs& chs, double sr, const juce::var& p, const Chs* keyChs
     for (size_t q = 0; q < n; ++q)
     {
         const double t = tgt[std::min (n - 1, q + (size_t) look)];
-        v = t > v ? aA * v + (1 - aA) * t : aR * v + (1 - aR) * t;
+        // the gate's attack is how fast it reacts to a hit: opening normally, closing when flipped
+        const bool fast = flip ? t < v : t > v;
+        v = fast ? aA * v + (1 - aA) * t : aR * v + (1 - aR) * t;
         g[q] = (float) dbl (v);
+    }
+    if (grCurve)
+    {
+        F32 gd (n); for (size_t q = 0; q < n; ++q) gd[q] = (float) (20 * std::log10 (std::max (1e-9, (double) g[q])));
+        *grCurve = grBlocks (gd, sr);
     }
     Chs res;
     for (auto& x : chs) { F32 y (n); for (size_t q = 0; q < n; ++q) y[q] = (float) ((double) x[q] * g[q]); res.push_back (std::move (y)); }
@@ -313,14 +341,6 @@ F32 compGainCurve (const F32& det, double sr, const CompModel& o, double scHpf)
         g[q] = (float) v;
     }
     return g;
-}
-
-F32 grBlocks (const F32& gdb, double sr)
-{
-    const size_t B = std::max<size_t> (1, (size_t) std::lround (sr / GR_RATE));
-    F32 r ((gdb.size() + B - 1) / B, 0.0f);
-    for (size_t q = 0; q < gdb.size(); ++q) r[q / B] = std::max (r[q / B], -gdb[q]);
-    return r;
 }
 
 Chs compRender (const Chs& chs, double sr, const juce::var& p, const std::vector<long>* ons, std::vector<F64>* grOut, F32* grCurve)

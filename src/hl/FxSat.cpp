@@ -516,7 +516,7 @@ Chs insRender (const Chs& chs, double sr, const juce::var& inserts, const Insert
                 const auto kt = p.getProperty ("keyT", juce::var());
                 const Chs* key = nullptr;
                 if (! kt.isVoid() && o.keys.count ((int) kt)) key = &o.keys.at ((int) kt);
-                y = gateRender (y, sr, p, key);
+                y = gateRender (y, sr, p, key, o.grCurves ? &(*o.grCurves)[slot] : nullptr);
             }
             else if (type == "comp") y = compRender (y, sr, p, o.ons.empty() ? nullptr : &o.ons, compGr, o.grCurves ? &(*o.grCurves)[slot] : nullptr);
             else if (type == "sat") y = satRender (y, sr, p);

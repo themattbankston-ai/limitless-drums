@@ -139,6 +139,11 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_eyes.jpg
         assets/ui/plugins/skull_plate.jpg
         assets/ui/plugins/vise_plate.jpg
+        assets/ui/plugins/port_plate.jpg
+        assets/ui/plugins/port_open.jpg
+        assets/ui/plugins/port_closed.jpg
+        assets/ui/plugins/port_gate.png
+        assets/ui/plugins/port_arch.png
         assets/ui/plugins/vise_beacon.jpg
         assets/ui/plugins/vise_ram.png
         assets/ui/plugins/skull_saw_0.jpg
@@ -159,6 +164,7 @@ if(LD_BUILD_APP)
         assets/ui/plugins/skull_sawb_7.jpg
         assets/ui/plugins/skull_skull.png
         assets/fonts/BlackOpsOne-Regular.ttf
+        assets/fonts/Cinzel-Bold.ttf
         assets/irlib.json
         assets/libref.json
         assets/logo/lockup-horizontal-night.svg

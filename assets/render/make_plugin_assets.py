@@ -80,3 +80,31 @@ if os.path.isdir(vd):
     with open(os.path.join(dst, 'vise_ram_box.txt'), 'w') as fh: fh.write('%d %d %d %d %d %d\n' % (*bb, *ram.size))
     print('ram box', bb)
     src = src0
+
+# ---------------------------------------------------------------- Portcullis
+pd = os.path.join(src, 'port')
+if os.path.isdir(pd):
+    src0 = src; src = pd
+    plate, gate = load('port_plate.png'), load('port_gate.png')
+    jpg(plate, 'port_plate')
+    jpg(add_layer(load('port_plate_open.png'), plate), 'port_open')
+    jpg(add_layer(load('port_plate_closed.png'), plate), 'port_closed')
+    bb = gate.split()[3].getbbox()
+    png(gate.crop(bb), 'port_gate')
+    with open(os.path.join(dst, 'port_gate_box.txt'), 'w') as fh: fh.write('%d %d %d %d %d %d\n' % (*bb, *gate.size))
+    print('gate box', bb)
+    # the arch's stones around the opening, cut from the plate: drawn over the raised gate so its bars stay behind the arch
+    from PIL import ImageDraw
+    k = plate.size[0] / 980
+    def P(px, py, z=0): return ((980 / 2 + (px - 980 / 2) * SX) * k, (544 / 2 + (py - 544 / 2) * SY - z * 100 * math.sin(math.radians(11)) / 1.01) * k)
+    x0, x1, ys, yb, ry, grow = 340, 640, 182, 338, 76, 6
+    cx, rx = (x0 + x1) / 2, (x1 - x0) / 2 + grow
+    pts = [P(x0 - grow, yb + grow)] + [P(cx + math.cos(math.pi + math.pi * i / 48) * rx, ys + math.sin(math.pi + math.pi * i / 48) * (ry + grow)) for i in range(49)] + [P(x1 + grow, yb + grow)]
+    top = P(0, ys - ry - grow - 40)[1]
+    box = (int(P(x0 - grow - 4, 0)[0]), int(top), int(P(x1 + grow + 4, 0)[0]) + 1, int(P(0, yb + grow + 2)[1]) + 1)
+    mask = Image.new('L', plate.size, 255); ImageDraw.Draw(mask).polygon(pts, fill=0)
+    corners = plate.copy(); corners.putalpha(mask)
+    png(corners.crop(box), 'port_arch')
+    with open(os.path.join(dst, 'port_arch_box.txt'), 'w') as fh: fh.write('%d %d %d %d\n' % box)
+    print('arch box', box)
+    src = src0
