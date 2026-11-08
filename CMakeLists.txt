@@ -221,6 +221,7 @@ if(LD_BUILD_TESTS)
     tests/VerbSendTests.cpp
     tests/StandardTests.cpp
     tests/CompMeterTests.cpp
+    tests/MemoryProbe.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
         tests/WaveTests.cpp

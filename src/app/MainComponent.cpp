@@ -3,8 +3,20 @@
 #include "hl/Detect.h"
 #include "hl/FxSat.h"
 #include "hl/FxInserts.h"
+#if defined (__GLIBC__)
+ #include <malloc.h>
+#endif
 #include "BinaryData.h"
 #include <thread>
+
+/** Hands memory the renders freed back to the system. glibc keeps freed blocks in each thread's arena, and the
+    renders run on worker threads, so without this a session's footprint only ever grows. */
+static void releaseFreedMemory()
+{
+   #if defined (__GLIBC__)
+    malloc_trim (0);
+   #endif
+}
 
 namespace ld
 {
@@ -499,6 +511,7 @@ void MainComponent::rerender()
             sp->refreshModel();
             sp->refreshPlugin();
             sp->updateHeader();
+            releaseFreedMemory();
         });
     }).detach();
 }
@@ -676,6 +689,7 @@ void MainComponent::startPrep()
             sp->refreshModel();
             sp->refreshPlugin();
             sp->updateHeader();
+            releaseFreedMemory();
             sp->setNotice ("Ready. Every hit is on the level standard. File > Export writes the samples.");
             sp->storeInLibrary();
         });

@@ -780,8 +780,10 @@ MixRender renderMix (const Session& S)
         const std::lock_guard<std::mutex> lk (grLock);
         for (auto& [k, c] : grs) M.gr[std::to_string (t) + ":" + std::to_string (k)] = std::move (c);
     });
+    // memory: tone isn't needed past the inserts, and ins only feeds the shared room; move rather than copy
+    std::vector<Chs>().swap (M.tone);
+    if (roomLive (S)) M.bus = M.ins; else M.bus = std::move (M.ins);
     // the bus: its EQs on every channel; its compressor driven by the whole sum, one gain curve on every channel
-    M.bus = M.ins;
     if (busLive (S))
     {
         auto& cur = M.bus;
@@ -843,12 +845,14 @@ MixRender renderMix (const Session& S)
         }
         M.room = roomRender (send, sr, S.room.p);
     }
-    // phase EQ
-    M.proc = M.bus;
+    // phase EQ. Where a track has none, its bus stage moves into proc (bus left empty, see busOf) instead of copying
+    M.proc.assign ((size_t) nT, {});
     parallelFor ((size_t) nT, [&] (size_t t)
     {
         const auto& tr = S.tracks[t];
-        if (! tr.ap.empty()) for (auto& x : M.proc[t]) x = applyAllpass (x, sr, tr.ap);
+        if (tr.ap.empty()) { M.proc[t] = std::move (M.bus[t]); M.bus[t].clear(); return; }
+        M.proc[t] = M.bus[t];
+        for (auto& x : M.proc[t]) x = applyAllpass (x, sr, tr.ap);
     });
     // the two reverb units: every channel's R1/R2 send (post-fader, panned, mute/solo respected) and the drum bus send
     // (the channel sum before any return, so nothing feeds back), each into a 100 % wet reverb, stereo return
@@ -957,7 +961,7 @@ LevelResult measureLevels (const Session& S, const MixRender& M)
     for (int t = 0; t < (int) S.tracks.size(); ++t)
     {
         auto tr = levelTrack (S, t);
-        tr.ch = M.bus[(size_t) t];
+        tr.ch = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];   // bus is empty where proc took it over
         tr.raw = S.tracks[(size_t) t].ch;
         if (t != S.refIdx && ! S.onsets.empty()) tr.arrivalMs = E.arrOf (t) / S.sr * 1000;
         lt.push_back (std::move (tr));
