@@ -1362,7 +1362,7 @@ void MainComponent::updateHeader()
             // Song mode: Edit & Tempo, Clean; Tune is for samples
             const auto bp = hl::bpmOf (hl::gridBeats (S.song.an, S.song.set));
             double avg = 0; for (double b : bp) avg += b; if (! bp.empty()) avg /= (double) bp.size();
-            h.status[1] = S.song.an.done ? juce::String (avg, 1).toStdString() + " BPM" + (S.song.set.tightness > 0 ? " \xc2\xb7 TIGHT" : "") : std::string ("NOT YET");
+            h.status[1] = S.song.an.done ? juce::String (avg, 1).toStdString() + " BPM" : std::string ("NOT YET");
             h.done[1] = S.song.an.done;
             h.status[3] = "SAMPLES ONLY"; h.done[3] = false;
             h.status[5] = S.kitBleed > 0.05 ? "BLEED -" + juce::String ((int) std::lround (S.kitBleed)).toStdString() + " dB" : std::string ("OFF");
