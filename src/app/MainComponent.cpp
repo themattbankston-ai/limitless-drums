@@ -1484,6 +1484,7 @@ bool MainComponent::handleKey (const visage::KeyEvent& k)
     using KC = visage::KeyCode;
     const auto code = k.keyCode();
     if (newSession.isOpen()) return true;   // the window takes its own keys
+    if (code == KC::Escape && plugT >= -1) { plugT = -2; refreshPlugin(); return true; }   // Escape closes the plugin window
     if (! k.isMainModifier() && ! k.isAltDown() && ! k.isShiftDown() && code >= KC::Number1 && code <= KC::Number6)
     {
         if (studio.onPad) studio.onPad ((int) code - (int) KC::Number1);
