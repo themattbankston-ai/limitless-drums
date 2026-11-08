@@ -1,20 +1,78 @@
 # Overnight build, 7–8 Nov 2026
 
-Working notes for the morning summary (kept up to date through the night).
+Notes for the morning, kept up to date through the night.
 
 ## Built
-- Plugin windows in the app, all six, wired to the real processing:
-  Skull Cutter, The Vise, Portcullis, Ember, Prism, Horizon.
-- Engine: compressor gain-reduction curves, gate attenuation curves + Listen + Flip, width-by-frequency split,
-  correlation curve / mono risk, insert EQ curves for the windows.
-- Memory: malloc_trim after renders, stages moved instead of copied.
-- Song mode: hits, tempo (Keep/Smooth/Flatten, half/double), Tightness, Swing, Keep Feel, grid 1/8, 1/16, 1/8T,
-  problem finder, MIDI tempo map + performance, mixer applies to songs, drum bus + reverb return export, Clean (bleed).
-- Undo/redo for mixer, plugin, Song, Clean and Export changes.
-- Export step panel.
+- **Plugin windows**: all six are in the app and wired to the real processing: Skull Cutter, The Vise, Portcullis,
+  Ember, Prism and Horizon.
+  - The Vise ram moves with gain reduction.
+  - Portcullis gate opens with attenuation.
+  - Prism shows a live spectrum and the EQ curve.
+  - Horizon shows correlation.
+  - Escape closes any of them.
+- **Engine**:
+  - Compressor gain-reduction curves.
+  - Gate attenuation curves, plus Listen and Flip.
+  - Width by frequency, plus a correlation curve and mono-risk reading.
+  - Insert EQ curves for the windows.
+- **Third-party plugins (VST3, plus AU on the Mac)**:
+  - "Find my plugins" scans for them; a plugin that crashes the scan is skipped next time.
+  - They work as inserts, rendered offline with their latency removed.
+  - Their own editor opens in a window, and changes to it are undoable.
+- **Song mode**:
+  - Edit & Tempo:
+    - Hits and tempo detection.
+    - Tempo modes Keep, Smooth and Flatten, plus Half time and Double time.
+    - Tightness, Swing and Keep Feel.
+    - Grid of 1/8, 1/16 or 1/8 triplets.
+    - Problem finder.
+    - Grid, hits and moved-from marks on the waveform.
+  - Clean: Bleed control, and **Consistency**, which evens kick, snare and tom hit levels while leaving ghost notes
+    and accents as played.
+  - Export:
+    - Every mic at full length.
+    - Drum bus, with reverb returns as separate files or printed into the bus.
+    - Tempo Map.mid and Drums (MIDI).mid.
+  - The mixer applies to songs.
+  - Playback runs from the playhead and includes the reverb returns.
+- **Undo/redo**: covers mixer, plugin, Song, Clean and Export changes.
+
+## QA done
+- **Monkey tests** (random clicks, drags and keys for 15–30 minutes each) were run on the sample session, the
+  60-second song, the 4-minute song and every plugin window. Two crashes were found and fixed:
+  - Clicking a console insert before the mixer existed.
+  - Running out of memory on the 4-minute song: heavy jobs now run one at a time.
+- **Layout check**: run with `LD_LAYOUT_CHECK=1`. Every label in all six windows is checked for labels running
+  into each other. All six were clean at their defaults and through random mode and value changes.
+- **Escape**: it only closed plugin windows when JUCE had keyboard focus. That's fixed.
+- **Saved projects lost the mix**: a project file held only the edit, so reopening it lost the mixer, inserts and
+  Song/Clean/Export settings. These now go into the project and its autosave.
+  - Pressing Auto Prep again also reset the whole mix. It now keeps it.
+- **Out of memory on the 4-minute song** (10 mics, monkey test): three causes, all fixed.
+  - Every re-render copied all the session's audio (565 MB) first. Copies now share the recordings.
+  - Auto Prep held the old mix while building the new one. The old one is now freed first.
+  - On Linux, glibc kept freed buffers resident. Large buffers now go back to the system straight away; macOS
+    already does this.
+
+## Correction
+- Last night I said the memory cleanup would halve memory by storing audio as 32-bit instead of 64-bit. The audio was
+  already 32-bit, so that part was wrong.
+- The real saving came from freeing memory after renders and moving stages instead of copying them. Steady memory
+  on the sample session went from 2.2 GB to 1.15 GB.
+
+## Rough or unapproved
+- **Song mode screens**: Edit & Tempo, Clean and Export were built without an approved mockup.
+- **Reverb renders**: a 4-minute song with a reverb send takes about 6–9 s to re-render on this 2-core machine.
+  Without one it takes about 1 s.
+- **Audible playback**: this machine has no audio device, so I couldn't listen. The offline playback tests pass.
 
 ## Known gaps
-- Third-party AU/VST3 hosting not started.
-- Song mode: no AAF import, comping, reinforcement, consistency, click removal, sections, tap/draw tempo.
-- Tone/Shape/Reference are off in Song mode (they work per sampled hit).
-- A 4-minute song with a reverb send takes ~6 s to re-render on this 2-core machine.
+- **Song mode**:
+  - Not built: AAF import, comping, reinforcement from your own kit, click removal, sections, tap or draw tempo,
+    dragging the tempo line.
+  - Tone, Shape and Reference are off in Song mode (they work per sampled hit).
+- **Inserts on the drum bus**: everything except the compressor runs on each mic separately, not on the summed bus.
+  The export is one file per mic, so a non-linear plugin on the sum can't be split back out. The bus compressor is
+  driven by the sum and applies one gain curve to every mic.
+- **Not built**: versions/snapshots, performance analyser, batch processing, and mockups for the Hits and Session
+  steps.

@@ -1307,7 +1307,7 @@ HitStems renderHitStems (const Session& S, const MixRender& M, const LevelResult
         const auto keep = attackKeep (S, ratio, 1, S.sr);
         const long preOut = (long) jsRound ((on - r.start) / (keep.keepN ? 1.0 : step)), outLen = std::max (1L, (long) jsRound ((double) (r.end - r.start) / step));
         const long lo = r.start + (long) std::floor (lag), hi = r.end + (long) std::ceil (lag);
-        const auto& src = o.processed ? M.proc[(size_t) t] : S.tracks[(size_t) t].ch;
+        const auto& src = o.processed ? M.proc[(size_t) t] : S.tracks[(size_t) t].ch.get();
         Chs s;
         for (auto& x : src) s.push_back (fit (renderTuned (x, on, preOut, outLen, lag, pol, gainAt (t), step, lo, hi, 0, o.taps, keep), len));
         h.stems.push_back (std::move (s));

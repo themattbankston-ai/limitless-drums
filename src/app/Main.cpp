@@ -1,5 +1,8 @@
 #include "MainComponent.h"
 #include "core/Session.h"
+#if defined (__GLIBC__)
+ #include <malloc.h>
+#endif
 
 namespace ld
 {
@@ -12,6 +15,11 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
+       #if defined (__GLIBC__)
+        // audio buffers (1 MB and up) straight from and back to the system: without this glibc raises its threshold
+        // after the first frees and keeps hundreds of MB of freed renders resident (macOS already behaves this way)
+        mallopt (M_MMAP_THRESHOLD, 1 << 20);
+       #endif
         engine = std::make_unique<tracktion::Engine> ("Limitless Drums", std::make_unique<SyncUIBehaviour>(), nullptr);
         window = std::make_unique<Window> (getApplicationName(), *engine);
         openFromCommandLine (commandLine);

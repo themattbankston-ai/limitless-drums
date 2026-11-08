@@ -63,3 +63,28 @@ TEST_CASE ("Song render timing probe", "[.perf]")
     S.tracks[0].strip.r1 = -10; timeIt ("tightened + R1 send");
     S.song.set.tightness = 0; timeIt ("R1 send only");
 }
+
+TEST_CASE ("Song memory probe", "[.mem]")
+{
+    const auto dir = juce::File (juce::SystemStats::getEnvironmentVariable ("LD_SONG", "/home/claude/songtest/song240"));
+    if (! dir.isDirectory()) return;
+    ld::hl::setReverbLibrary (juce::JSON::parse (juce::File (LD_SOURCE_DIR).getChildFile ("assets/irlib.json")));
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::vector<juce::File> fv (files.begin(), files.end());
+    ld::TakeOptions o; o.drum = "kit";
+    auto hwm = [] { std::ifstream f ("/proc/self/status"); std::string l; while (std::getline (f, l)) if (l.rfind ("VmHWM:", 0) == 0) return std::stol (l.substr (6)) / 1024; return -1L; };
+    auto resetHwm = [] { std::ofstream ("/proc/self/clear_refs") << "5"; };
+    auto st = ld::prepareTake (fv, dir.getFileName(), o);
+    auto& S = st->session;
+    size_t raw = 0; for (auto& t : S.tracks) for (auto& x : t.ch) raw += x.capacity() * 4;
+    WARN ("after prepare: RSS " << rssMb() << " MB, peak " << hwm() << " MB; raw audio " << raw / 1048576 << " MB in " << S.tracks.size() << " tracks");
+    resetHwm();
+    S.song.set.tightness = 0.8; S.song.set.consistency = 0.5; S.tracks[0].strip.r1 = -10;
+    st->mix = ld::hl::renderMix (S);
+    auto& M = *st->mix;
+    WARN ("first render: RSS " << rssMb() << " MB, peak " << hwm() << " MB; kept MB: dn " << bytesOf (M.dn) / 1048576 << " tone " << bytesOf (M.tone) / 1048576
+          << " ins " << bytesOf (M.ins) / 1048576 << " bus " << bytesOf (M.bus) / 1048576 << " proc " << bytesOf (M.proc) / 1048576);
+    resetHwm();
+    { auto M2 = ld::hl::renderMix (S); WARN ("second render while the first is held: peak " << hwm() << " MB"); }
+    WARN ("after: RSS " << rssMb() << " MB");
+}

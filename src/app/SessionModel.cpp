@@ -104,7 +104,7 @@ ui::StudioModel buildStudioModel (te::Edit& edit, const std::vector<MicRole>& ro
             // Hitline's own mic name ("Room Close", not the file's "RmCls.cm6"), and its colour from that name
             const auto& tr = S->tracks[(size_t) map[i]];
             mono = tr.mono; info.stereo = tr.ch.size() > 1;
-            wave->a = std::shared_ptr<const ui::Wave::Chans> (esp, &tr.ch);
+            wave->a = tr.ch.share();
             wave->sampleRate = S->sr;
             info.name = tr.mic;
             const auto r = classifyMic (juce::String (S->drum == "kit" ? std::string() : S->drum + " ") + juce::String (tr.mic));   // "Top" alone is ambiguous: "Snare Top"

@@ -101,6 +101,9 @@ private:
 public:
     /** Undo for the engine's settings (mix, plugins, Song mode): a deep copy of them, and putting one back. */
     juce::var settingsSnapshot() const;
+    /** Writes the engine's settings (mixer, inserts, Song, Clean, Export) into the edit, so a saved project and its
+        autosave carry them, and marks the project changed. */
+    void stampSettings();
     void restoreSettings (const juce::var&);
 private:
     void recordChange (const juce::var& before, const juce::String& what);

@@ -14,6 +14,21 @@
 
 /** Hands memory the renders freed back to the system. glibc keeps freed blocks in each thread's arena, and the
     renders run on worker threads, so without this a session's footprint only ever grows. */
+/** LD_MEMLOG=1: the resident memory at each heavy job, on stderr (for the stress tests). */
+static void memLog (const char* what)
+{
+    static const bool on = std::getenv ("LD_MEMLOG") != nullptr;
+    if (! on) return;
+    long kb = -1;
+    if (auto* f = std::fopen ("/proc/self/status", "r"))
+    {
+        char l[256];
+        while (std::fgets (l, sizeof l, f)) if (std::strncmp (l, "VmRSS:", 6) == 0) { kb = std::atol (l + 6); break; }
+        std::fclose (f);
+    }
+    std::fprintf (stderr, "MEM %.3f %ld MB %s\n", juce::Time::getMillisecondCounterHiRes() / 1000, kb / 1024, what);
+}
+
 static void releaseFreedMemory()
 {
    #if defined (__GLIBC__)
@@ -73,7 +88,6 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
     studio.onAutoPrep = [this]
     {
         if (! edit || prepping) return;
-        if (renderBusy) { setNotice ("Finishing the render first; press Auto Prep again in a moment."); return; }   // one heavy job at a time
         startPrep();
     };
     studio.onUndo = [this] { undo (false); };
@@ -396,6 +410,8 @@ void MainComponent::showEdit (std::unique_ptr<te::Edit> newEdit, std::vector<Mic
         d->setProperty ("drum", juce::String (takeOptions.drum)); d->setProperty ("artic", juce::String (takeOptions.artic));
         d->setProperty ("vel", takeOptions.vel); d->setProperty ("rr", takeOptions.rr);
         edit->state.setProperty (key, juce::JSON::toString (o, true), nullptr);
+        static const juce::Identifier skey ("ldSettings");
+        if (edit->state.hasProperty (skey)) takeOptions.settings = juce::JSON::parse (edit->state[skey].toString());
     }
     edit->resetChangedStatus();
     edit->getUndoManager().clearUndoHistory();
@@ -513,9 +529,11 @@ void MainComponent::rerender()
     const int gen = ++renderGeneration;
     auto copy = std::make_shared<hl::Session> (engineState->session);
     if (copy->mode == "kit") for (auto& t : copy->tracks) hl::F32().swap (t.mono);   // a song's render doesn't read the monos: half a copy less
+    memLog ("render start");
     std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
     {
         auto mix = std::make_shared<hl::MixRender> (hl::renderMix (*copy));
+        memLog ("render done (both mixes held)");
         auto lv = std::make_shared<std::optional<hl::LevelResult>>();
         if (copy->mode != "kit") *lv = hl::measureLevels (*copy, *mix);
         juce::MessageManager::callAsync ([sp, st, gen, mix, lv]
@@ -532,6 +550,7 @@ void MainComponent::rerender()
             sp->refreshPlugin();
             sp->updateHeader();
             releaseFreedMemory();
+            memLog ("render swapped in");
         });
     }).detach();
 }
@@ -664,17 +683,25 @@ void MainComponent::onAlignMenu (const std::string& which, float x, float y, flo
 void MainComponent::startPrep()
 {
     if (! edit) return;
+    if (exporting) { setNotice ("Finishing the export first; press Auto Prep again in a moment."); return; }
+    if (renderBusy) { setNotice ("Finishing the render first; press Auto Prep again in a moment."); return; }   // one heavy job at a time
     const auto files = editFiles (*edit);
     if (files.empty() || std::any_of (files.begin(), files.end(), [] (auto& f) { return ! f.existsAsFile(); })) return;
     const int gen = ++prepGeneration;
     const auto folder = files[0].getParentDirectory().getFileName();
     setNotice (juce::CharPointer_UTF8 ("Finding the hits and lining up the mics\xe2\x80\xa6"));
     prepping = true;
-    if (audition) audition->setEngine (nullptr);
+    if (audition) { audition->stop(); audition->setEngine (nullptr); }
+    // the old mix isn't shown or played while preparing; free it now rather than holding two mixes at the peak
+    if (engineState && engineState->mix) { engineState->mix.reset(); engineState->levels.reset(); refreshModel(); refreshPlugin(); releaseFreedMemory(); }
     updateHeader();
-    std::thread ([files, folder, gen, opts = takeOptions, sp = juce::Component::SafePointer<MainComponent> (this)]
+    auto opts = takeOptions;
+    if (engineState && ! engineState->session.tracks.empty()) opts.settings = settingsSnapshot();   // Auto Prep again keeps the mix, Song and Clean settings
+    std::thread ([files, folder, gen, opts, sp = juce::Component::SafePointer<MainComponent> (this)]
     {
+        memLog ("prep start");
         std::shared_ptr<EngineState> st = prepareTake (files, folder, opts);
+        memLog ("prep done");
         juce::MessageManager::callAsync ([sp, st, gen]
         {
             if (sp == nullptr || sp->prepGeneration != gen) return;
@@ -1021,6 +1048,7 @@ void MainComponent::saveProject (bool saveAs, std::function<void (bool)> done)
         f = f.withFileExtension (project::extension);
         project::storeRoles (*edit, currentRoles);
         const auto oldAutosave = project::autosaveFileFor (projectFile, sessionKey);
+        stampSettings();
         const bool ok = project::save (*edit, f);
         if (ok)
         {
@@ -1081,6 +1109,15 @@ void MainComponent::recordChange (const juce::var& before, const juce::String& w
     auto& um = edit->getUndoManager();
     um.beginNewTransaction (what);
     um.perform (new SettingsChange (*this, before, settingsSnapshot()), what);
+    stampSettings();
+}
+
+void MainComponent::stampSettings()
+{
+    if (! edit || ! engineState || engineState->session.tracks.empty()) return;
+    static const juce::Identifier key ("ldSettings");
+    const auto s = juce::JSON::toString (hl::settingsToVar (engineState->session), true);
+    if (edit->state[key].toString() != s) edit->state.setProperty (key, s, nullptr);
 }
 
 void MainComponent::restoreSettings (const juce::var& v)
@@ -1088,6 +1125,7 @@ void MainComponent::restoreSettings (const juce::var& v)
     if (! engineState || v.isVoid()) return;
     if (audition) audition->stop();
     hl::applySettings (engineState->session, juce::JSON::parse (juce::JSON::toString (v, true)));
+    stampSettings();
     refreshModel(); refreshMix(); updateHeader();
     rerender();
 }
@@ -1319,7 +1357,9 @@ void MainComponent::startPhrase (const std::string& m)
         pushConsole();
         long len = 0; for (auto& t : S.tracks) len = std::max (len, t.len);
         songFrom = studio.playhead < len / S.sr - 0.5 ? std::max (0.0, studio.playhead) : 0.0;
+        memLog ("song play start");
         audition->playSong (songFrom, 60);
+        memLog ("song play built");
         songPlaying = true;
         return;
     }
@@ -1558,6 +1598,7 @@ void MainComponent::timerCallback()
         if (++autosaveTicks >= 60 * 30)   // every 30 s
         {
             autosaveTicks = 0;
+            stampSettings();
             project::autosave (*edit, project::autosaveFileFor (projectFile, sessionKey));
         }
     }

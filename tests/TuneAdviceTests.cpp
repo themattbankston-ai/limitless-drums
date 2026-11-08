@@ -48,7 +48,7 @@ TEST_CASE ("Tuning advice")
         for (auto& tr : S.tracks)
         {
             // the drum's own envelope on low-passed noise: a dead thud with no note in it
-            for (auto& c : tr.ch)
+            for (auto& c : tr.ch.mut())
             {
                 float lp = 0;
                 for (size_t i = 0; i < c.size(); ++i) { lp += 0.08f * ((rnd.nextFloat() * 2 - 1) - lp); c[i] = std::abs (c[i]) > 1e-4f ? lp * 4 * std::abs (c[i]) : 0.0f; }

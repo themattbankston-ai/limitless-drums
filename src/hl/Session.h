@@ -48,10 +48,33 @@ struct Strip
 
 struct LrFix { double lag = 0; int pol = 1; bool kept = false; };
 
+/** A recording shared between copies of a session (copying a session for a background render doesn't copy the audio).
+    Reading is const and never copies; mut() gives a private copy first if another session still shares it. */
+class SharedChs
+{
+public:
+    SharedChs() = default;
+    SharedChs (Chs c) : p (std::make_shared<Chs> (std::move (c))) {}
+    SharedChs& operator= (Chs c) { p = std::make_shared<Chs> (std::move (c)); return *this; }
+    const Chs& get() const { static const Chs none; return p ? *p : none; }
+    operator const Chs&() const { return get(); }
+    Chs& mut() { if (! p) p = std::make_shared<Chs>(); else if (p.use_count() > 1) p = std::make_shared<Chs> (*p); return *p; }
+    size_t size() const { return get().size(); }
+    bool empty() const { return get().empty(); }
+    const F32& operator[] (size_t i) const { return get()[i]; }
+    Chs::const_iterator begin() const { return get().begin(); }
+    Chs::const_iterator end() const { return get().end(); }
+    const F32& front() const { return get().front(); }
+    /** The buffer itself, kept alive for as long as the caller holds it (a waveform view, say). */
+    std::shared_ptr<const Chs> share() const { return p ? std::shared_ptr<const Chs> (p) : std::make_shared<const Chs>(); }
+private:
+    std::shared_ptr<Chs> p;
+};
+
 struct SessionTrack
 {
     std::string mic, name;
-    Chs ch;                           ///< the recording
+    SharedChs ch;                     ///< the recording (shared between session copies; mut() to change it)
     F32 mono;
     long len = 0;
     std::string alignTo = "lead";
