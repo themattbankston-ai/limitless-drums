@@ -1,3 +1,4 @@
+#include <thread>
 #include "FxSat.h"
 #include "FxInserts.h"
 #include "Fft.h"
@@ -459,12 +460,17 @@ Chs verbWet (const Chs& chs, double sr, const juce::var& p)
     const auto [IL, IR] = verbIR (p, sr);
     if (IL.empty()) return Chs (chs.size(), F32 (chs.empty() ? 0 : chs[0].size(), 0.0f));
     const bool st = chs.size() > 1;
-    F32 L = convolve (chs[0], irKernel (IL)), R;
-    if (st) R = convolve (chs[1], irKernel (IR));
     const double hp = orr (p, "hpf", 0), lp = orr (p, "lpf", 0);
     auto filt = [&] (F32 y) { if (hp > 20) y = hpN (y, hp, sr, 2); if (lp > 0 && lp < 19900) y = lpN (y, lp, sr, 2); return y; };
-    L = filt (L);
-    if (st) R = filt (R);
+    // left and right each on their own thread, the reverb and its filters (identical result, half the wait)
+    F32 L, R;
+    if (st)
+    {
+        std::thread right ([&] { R = filt (convolve (chs[1], irKernel (IR))); });
+        L = filt (convolve (chs[0], irKernel (IL)));
+        right.join();
+    }
+    else L = filt (convolve (chs[0], irKernel (IL)));
     if (st && nn (p, "width", 1) != 1)
     {
         const double w = clampD (nn (p, "width", 1), 0, 2);
