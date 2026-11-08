@@ -232,3 +232,25 @@ TEST_CASE ("Song mode: Consistency evens the snare and leaves ghost notes alone"
             break;
         }
 }
+
+TEST_CASE ("Song mode: the problem finder leaves rolls, triplet fills and tempo changes alone")
+{
+    SongAnalysis A; A.done = true; A.sr = 48000;
+    const double bt = 60.0 / 130;
+    for (int b = 0; b < 64; ++b) A.beats.push_back (b * bt);
+    for (int b = 64; b < 100; ++b) A.beats.push_back (A.beats.back() + 60.0 / 154);   // a new section at 154 BPM
+    auto add = [&] (double t, Drum d) { SongHit h; h.pos = (long) (t * A.sr); h.drum = d; h.vel = 0.8f; A.hits.push_back (h); };
+    for (int b = 0; b < 100; ++b) add (A.beats[(size_t) b], b % 2 ? Drum::snare : Drum::kick);
+    // a 16th-triplet snare roll into beat 9 (77 ms apart)
+    for (int k = 1; k <= 4; ++k) add (A.beats[9] - k * bt / 6, Drum::snare);
+    // one real double: two snare hits 25 ms apart, alone
+    add (A.beats[21] + 0.025, Drum::snare);
+    std::sort (A.hits.begin(), A.hits.end(), [] (auto& a, auto& b) { return a.pos < b.pos; });
+    SongSettings S; S.tempoMode = "keep";
+    const auto P = findProblems (A, S);
+    int doubles = 0, offs = 0, rush = 0;
+    for (auto& p : P) { doubles += p.kind == "double"; offs += p.kind == "off"; rush += p.kind == "rush" || p.kind == "drag"; }
+    CHECK (doubles == 1);   // the real one, not the roll
+    CHECK (offs == 0);      // the triplets inside the roll aren't "off the grid"
+    CHECK (rush == 0);      // 130 -> 154 BPM is a new section, not rushing
+}

@@ -32,6 +32,7 @@ struct SongSettings
     bool keepFeel = true;               ///< ghost notes and flams only move a little
     bool swingHatsOnly = false;
     int division = 16;                  ///< the grid: 8, 12 (eighth triplets) or 16
+    bool divisionAuto = true;           ///< the grid follows the analysis' suggestion until it's picked by hand
     double bpmScale = 1;                ///< 2 or 0.5 when the detection picked double or half time
     double flatBpm = 0;                 ///< flatten at this tempo (0: the song's average)
     double consistency = 0;             ///< 0..1: evens each drum's hit-to-hit level on its close mics (accents and ghosts kept)
@@ -43,6 +44,7 @@ struct SongAnalysis
     std::vector<SongHit> hits;          ///< every hit, in time order
     std::vector<double> beats;          ///< seconds, the beats as the drummer played them
     int downbeat = 0;                   ///< which beat (0..3) starts the bars
+    int suggestedDivision = 16;         ///< 12 when the hits sit on triplets (a shuffle, 6/8 or 12/8 feel), else 16
     double sr = 44100;
 };
 
