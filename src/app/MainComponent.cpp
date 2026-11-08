@@ -70,7 +70,12 @@ MainComponent::MainComponent (te::Engine& e) : engine (e)
     studio.onSong = [this] (const std::string& a, double v) { onSongAction (a, v); };
     studio.onMixMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onMixMenu (w, x, y, ww, h); };
     studio.onTuneMenu = [this] (const std::string& w, float x, float y, float ww, float h) { onTuneMenu (w, x, y, ww, h); };
-    studio.onAutoPrep = [this] { if (edit && ! prepping) startPrep(); };
+    studio.onAutoPrep = [this]
+    {
+        if (! edit || prepping) return;
+        if (renderBusy) { setNotice ("Finishing the render first; press Auto Prep again in a moment."); return; }   // one heavy job at a time
+        startPrep();
+    };
     studio.onUndo = [this] { undo (false); };
     studio.onRedo = [this] { undo (true); };
     studio.onPrevHit = [this] { stepHit (-1); };
@@ -503,7 +508,7 @@ void MainComponent::rerender()
 {
     if (! engineState) return;
     // dragging a knob sends a stream of changes: render one at a time, then once more with the latest state
-    if (renderBusy) { renderPending = true; ++renderGeneration; return; }
+    if (renderBusy || prepping) { renderPending = true; ++renderGeneration; return; }   // one heavy job at a time (memory)
     renderBusy = true; renderPending = false;
     const int gen = ++renderGeneration;
     auto copy = std::make_shared<hl::Session> (engineState->session);
@@ -677,7 +682,7 @@ void MainComponent::startPrep()
             sp->adoptEngineOrder();
             sp->refreshModel();
             const auto& S = st->session;
-            if (! st->prepared) sp->prepping = false;
+            if (! st->prepared) { sp->prepping = false; if (sp->renderPending) { sp->renderPending = false; sp->rerender(); } }
             sp->updateHeader();
             if (! st->errors.empty()) sp->setNotice (juce::String (st->errors.front()));
             else if (! st->prepared) sp->setNotice (juce::String (st->advice.empty() ? "Couldn't find the hits." : st->advice));
@@ -708,6 +713,7 @@ void MainComponent::startPrep()
             sp->setNotice (st->session.mode == "kit" ? "Ready. Hits and tempo found: Edit tightens the timing; File > Export writes the tracks and the tempo map."
                                                      : "Ready. Every hit is on the level standard. File > Export writes the samples.");
             sp->storeInLibrary();
+            if (sp->renderPending) { sp->renderPending = false; sp->rerender(); }   // a change made while preparing
         });
     }).detach();
 }
@@ -1313,7 +1319,7 @@ void MainComponent::startPhrase (const std::string& m)
         pushConsole();
         long len = 0; for (auto& t : S.tracks) len = std::max (len, t.len);
         songFrom = studio.playhead < len / S.sr - 0.5 ? std::max (0.0, studio.playhead) : 0.0;
-        audition->playSong (songFrom);
+        audition->playSong (songFrom, 60);
         songPlaying = true;
         return;
     }
