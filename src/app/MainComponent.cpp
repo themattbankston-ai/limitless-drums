@@ -1524,6 +1524,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& k)
 {
     // Keys reach here only when the GPU view doesn't have focus; route them the same way.
     if (newSession.isOpen()) return k == juce::KeyPress::escapeKey ? (newSession.close(), true) : true;
+    if (k == juce::KeyPress::escapeKey && plugT >= -1) { plugT = -2; refreshPlugin(); return true; }   // Escape closes the plugin window
     const auto mods = k.getModifiers();
     int vm = 0;
     if (mods.isCommandDown()) vm |= visage::kModifierCmd;

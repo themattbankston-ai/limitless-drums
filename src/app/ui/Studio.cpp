@@ -1,6 +1,7 @@
 #include <chrono>
 #include "Studio.h"
 #include <complex>
+#include <set>
 #include "Draw.h"
 
 #include <algorithm>
@@ -3173,9 +3174,38 @@ struct Studio::PluginWindow : visage::Frame
         return { BX() + (FW / 2 + (px - FW / 2) / 1.01f) * k, BY() + (FH / 2 + (py - FH / 2) * 0.98163f / 1.01f - z * 100 * 0.190809f / 1.01f) * k };
     }
     float S (float x) const { return x * k; }
+    // ---- the layout check (LD_LAYOUT_CHECK=1): every label's ink box this frame; anything closer than 5 px (or
+    // overlapping a read-out) is printed once, so the recurring "labels running into each other" can't come back unseen
+    struct Box { float x0, y0, x1, y1; std::string what; };
+    std::vector<Box> boxes; bool checkLayout = std::getenv ("LD_LAYOUT_CHECK") != nullptr;
+    std::set<std::string> reported;
+    void noteBox (float cx, float cy, float w, float h, const std::string& what)
+    {
+        if (! checkLayout || what.empty() || w <= 0) return;
+        for (auto& b : boxes) if (std::abs (b.x0 - (cx - w / 2)) < S (2) && std::abs (b.y0 - (cy - h / 2)) < S (2) && b.what == what) return;   // drawn twice (glow, engraving shadow)
+        boxes.push_back ({ cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, what });
+    }
+    void reportLayout()
+    {
+        if (! checkLayout) return;
+        if (reported.insert ("checked " + v.type).second) std::fprintf (stderr, "LAYOUT-CHECKED %s: %d labels\n", v.type.c_str(), (int) boxes.size());
+        const float gap = S (3);   // a little less than 5 panel px: the boxes are ink-ish, not exact
+        for (size_t i = 0; i < boxes.size(); ++i)
+            for (size_t j = i + 1; j < boxes.size(); ++j)
+            {
+                const auto& a = boxes[i]; const auto& b = boxes[j];
+                const bool apart = a.x1 + gap <= b.x0 || b.x1 + gap <= a.x0 || a.y1 + gap <= b.y0 || b.y1 + gap <= a.y0;
+                const bool nested = (a.x0 >= b.x0 && a.x1 <= b.x1 && a.y0 >= b.y0 && a.y1 <= b.y1) || (b.x0 >= a.x0 && b.x1 <= a.x1 && b.y0 >= a.y0 && b.y1 <= a.y1);
+                if (apart || nested) continue;
+                const auto key = v.type + ": '" + a.what + "' and '" + b.what + "'";
+                if (reported.insert (key).second) std::fprintf (stderr, "LAYOUT %s are too close\n", key.c_str());
+            }
+        boxes.clear();
+    }
     void label (Canvas& c, const std::string& t, float px, float py, float z, const Font& f, unsigned col, float boxW = 160, float boxH = 24)
     {
         const auto p = P (px, py, z);
+        if (checkLayout) noteBox (p.x, p.y, std::min (S (boxW), textWidth (f, t)), f.capitalHeight() > 0 ? f.capitalHeight() * 1.25f : S (10), t);
         c.setColor (col);
         draw::text (c, t, f, Font::kCenter, p.x - S (boxW) / 2, p.y - S (boxH) / 2, S (boxW), S (boxH));
     }
@@ -3562,6 +3592,14 @@ struct Studio::PluginWindow : visage::Frame
     }
     void labelLS (Canvas& c, const std::string& t, float px, float py, float z, const Font& f, unsigned col, float ls)
     {
+        if (checkLayout)
+        {
+            const auto u = visage::String::convertToUtf32 (t); float tw = 0;
+            for (char32_t ch : u) tw += f.stringWidth (std::u32string (1, ch));
+            tw += S (ls) * (float) (u.size() - 1);
+            const auto q = P (px, py, z);
+            noteBox (q.x, q.y, tw, f.capitalHeight() > 0 ? f.capitalHeight() * 1.25f : S (10), t);
+        }
         const auto u = visage::String::convertToUtf32 (t);
         float tw = 0; std::vector<float> w;
         for (char32_t ch : u) { w.push_back (f.stringWidth (std::u32string (1, ch))); tw += w.back(); }
@@ -4818,6 +4856,7 @@ struct Studio::PluginWindow : visage::Frame
         const std::string title = v.type == "sat" ? "SKULL CUTTER" : v.type == "comp" ? "THE VISE" : v.type == "gate" ? "PORTCULLIS" : v.type == "pultec" ? "EMBER" : v.type == "eq" ? "PRISM" : v.type == "width" ? "HORIZON" : v.type;
         draw::text (c, title, boldFont (S (13)), Font::kCenter, 0, S (9), width(), S (20));
         c.setColor (0x99e6e6eb); draw::text (c, "\xe2\x9c\x95", uiFont (S (12)), Font::kCenter, width() - S (40), S (9), S (26), S (20));
+        boxes.clear();
         if (v.type == "sat") drawSkull (c);
         else if (v.type == "comp") drawVise (c);
         else if (v.type == "gate") drawPort (c);
@@ -4825,6 +4864,7 @@ struct Studio::PluginWindow : visage::Frame
         else if (v.type == "eq") drawPrism (c);
         else if (v.type == "width") drawHorizon (c);
         else { c.setColor (0xff8b9099); draw::text (c, "This plugin's window is next.", uiFont (S (14)), Font::kCenter, BX(), BY(), S (FW), S (FH)); }
+        reportLayout();
     }
 
     // ---- interaction
