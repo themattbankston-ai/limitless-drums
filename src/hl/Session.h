@@ -86,6 +86,10 @@ struct ExportSettings
     std::string tailMode = "natural"; ///< natural, next, fade
     double tailFloor = -90, maxLenS = 8, fadeOutMs = 40, fadeInMs = 0.5, tailDb = -70, ceilDb = -1;
     std::string trim = "off";
+    /** Whole-kit takes: also write the drum bus (a stereo mix of every mic as the mixer has it), and the reverb
+        returns as their own files ("separate") or printed into the bus ("print"). */
+    bool kitBus = true;
+    std::string verbs = "separate";
 };
 
 struct RoomSettings { bool on = false; double ret = 0; juce::var p; };

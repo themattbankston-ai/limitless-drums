@@ -82,7 +82,7 @@ bool insLive (const juce::var& s)
 }
 bool insActive (const Session& S, int t)
 {
-    if (S.mode == "kit") return false;
+    // (Song mode uses the mixer too)
     const auto& st = S.tracks[(size_t) t].strip;
     if (auto* a = st.inserts.getArray()) for (auto& s : *a) if (insLive (s)) return true;
     return st.trim != 0;
@@ -556,7 +556,7 @@ bool trackFxOn (const Session& S, int t)
 }
 bool busLive (const Session& S)
 {
-    if (S.mode == "kit") return false;
+    // (Song mode uses the mixer too)
     if (auto* a = S.busIns.getArray()) for (auto& s : *a) if (insLive (s)) return true;
     return false;
 }
@@ -566,7 +566,7 @@ static double busVerbSendOf (const Session& S, int k) { return k == 0 ? S.busR1 
 bool refEnvLive (const Session& S) { return refEnvOn (S); }
 bool verbLive (const Session& S, int k)
 {
-    if (S.mode == "kit") return false;
+    // (Song mode uses the mixer too)
     if (busVerbSendOf (S, k) > -59.5) return true;
     for (auto& tr : S.tracks) if (verbSendOf (tr, k) > -59.5) return true;
     return false;
@@ -718,49 +718,50 @@ MixRender renderMix (const Session& S)
         M.tone = M.dn;
         if (S.kitBleed != 0)
             parallelFor ((size_t) nT, [&] (size_t t) { if (isCloseKind (S.tracks[t])) M.tone[t] = bleedGate (M.dn[t], sr, S.kitBleed); });
-        M.ins = M.bus = M.tone;
-        M.proc = M.bus;
-        parallelFor ((size_t) nT, [&] (size_t t) { const auto& tr = S.tracks[t]; if (! tr.ap.empty()) for (auto& x : M.proc[t]) x = applyAllpass (x, sr, tr.ap); });
-        return M;
+        // Song mode: the mixer still applies (inserts, the bus, the reverbs); Tone and Shape work per sampled hit and
+        // don't apply to a performance
     }
-    // tone and shape, then tame
-    M.tone = M.dn;
-    ToneEngine E (S, M.scan);
-    if (! S.onsets.empty() && S.mode != "kit" && fxOn (S))
+    // tone and shape, then tame (one-shot sessions)
+    if (! kit) M.tone = M.dn;
+    if (! kit)
     {
-        const auto ends = regionEnds (S);
-        const bool cym = E.isCymbal();
-        parallelFor ((size_t) nT, [&] (size_t ti)
+        ToneEngine E (S, M.scan);
+        if (! S.onsets.empty() && S.mode != "kit" && fxOn (S))
         {
-            const int t = (int) ti;
-            const auto x = fxMono (M.dn[(size_t) t]);
-            ResScanOptions o;
-            if (cym) { o.lo = 900; o.hi = 15000; o.lenMs = 900; o.skipMs = 20; o.consistency = 0.6; }
-            else
+            const auto ends = regionEnds (S);
+            const bool cym = E.isCymbal();
+            parallelFor ((size_t) nT, [&] (size_t ti)
             {
-                o.lo = S.drum == "kick" ? 180 : 250; o.hi = 14000; o.lenMs = 700; o.skipMs = 12; o.ring = true; o.autoProtect = true;
-                o.f0hi = S.drum == "kick" ? 120 : 400;
-                if (S.tinfo) o.protect = { S.tinfo->medF, 1.59 * S.tinfo->medF };
-            }
-            MixRender::Scan sc;
-            for (size_t k = 0; k < S.onsets.size(); ++k)
+                const int t = (int) ti;
+                const auto x = fxMono (M.dn[(size_t) t]);
+                ResScanOptions o;
+                if (cym) { o.lo = 900; o.hi = 15000; o.lenMs = 900; o.skipMs = 20; o.consistency = 0.6; }
+                else
+                {
+                    o.lo = S.drum == "kick" ? 180 : 250; o.hi = 14000; o.lenMs = 700; o.skipMs = 12; o.ring = true; o.autoProtect = true;
+                    o.f0hi = S.drum == "kick" ? 120 : 400;
+                    if (S.tinfo) o.protect = { S.tinfo->medF, 1.59 * S.tinfo->medF };
+                }
+                MixRender::Scan sc;
+                for (size_t k = 0; k < S.onsets.size(); ++k)
+                {
+                    sc.bands.push_back (bandSpec (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k] + 64)));
+                    sc.env.push_back (envStats (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k])));
+                }
+                sc.res = resScan (x, S.onsets, ends, sr, o);
+                M.scan[(size_t) t] = std::move (sc);
+            });
+            std::vector<FxPlan> plans ((size_t) nT);
+            for (int t = 0; t < nT; ++t) if (trackFxOn (S, t)) plans[(size_t) t] = E.plan (t);
+            parallelFor ((size_t) nT, [&] (size_t t) { if (trackFxOn (S, (int) t)) M.tone[t] = fxRenderMulti (M.dn[t], sr, plans[t]); });
+            bool tame = false;
+            for (int t = 0; t < nT; ++t) if (E.moves (t).tame > 0) tame = true;
+            if (tame)
             {
-                sc.bands.push_back (bandSpec (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k] + 64)));
-                sc.env.push_back (envStats (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k])));
+                std::vector<Chs> rawCopy = M.tone;   // chTRaw where rendered, else the cleaned audio
+                std::vector<Chs*> ptr; for (auto& c : rawCopy) ptr.push_back (&c);
+                runTame (S, E, M, ptr);
             }
-            sc.res = resScan (x, S.onsets, ends, sr, o);
-            M.scan[(size_t) t] = std::move (sc);
-        });
-        std::vector<FxPlan> plans ((size_t) nT);
-        for (int t = 0; t < nT; ++t) if (trackFxOn (S, t)) plans[(size_t) t] = E.plan (t);
-        parallelFor ((size_t) nT, [&] (size_t t) { if (trackFxOn (S, (int) t)) M.tone[t] = fxRenderMulti (M.dn[t], sr, plans[t]); });
-        bool tame = false;
-        for (int t = 0; t < nT; ++t) if (E.moves (t).tame > 0) tame = true;
-        if (tame)
-        {
-            std::vector<Chs> rawCopy = M.tone;   // chTRaw where rendered, else the cleaned audio
-            std::vector<Chs*> ptr; for (auto& c : rawCopy) ptr.push_back (&c);
-            runTame (S, E, M, ptr);
         }
     }
     // channel inserts
@@ -1246,6 +1247,38 @@ int writeKit (const Session& S, const MixRender& M, const std::function<void (co
         sink (path, encodeWav (chs, srOut, S.exp.bits));
         ++n;
     }
+    // the drum bus and the reverb returns, full length, on the same timeline as the mics
+    if (S.exp.kitBus && std::abs (k - 1) < 1e-9)
+    {
+        HitStems h;
+        long len = 0;
+        for (int t = 0; t < (int) S.tracks.size(); ++t)
+        {
+            const auto& tr = S.tracks[(size_t) t];
+            Chs chs; for (auto& x : M.proc[(size_t) t]) chs.push_back (renderSeg (x, 0, tr.len, lagOf (S, t), polR (S, t), 1, true));
+            len = std::max (len, tr.len);
+            h.stems.push_back (std::move (chs));
+        }
+        h.len = len;
+        auto fit = [len] (Chs c) { for (auto& x : c) x.resize ((size_t) len, 0.0f); return c; };
+        if (! M.room.empty()) h.room = fit (M.room);
+        const bool print = S.exp.verbs == "print";
+        if (print) for (int r = 0; r < 2; ++r) if (! M.rev[(size_t) r].empty()) h.rev[(size_t) r] = fit (M.rev[(size_t) r]);
+        const auto lr = mixToStereo (S, h);
+        const auto dir = fillTokens (S, "{ARTIC}/", 0, std::nullopt);
+        sink (dir + "Drum Bus.wav", encodeWav ({ lr.first, lr.second }, srOut, S.exp.bits)); ++n;
+        if (! print)
+        {
+            const double bus = S.busMute ? 0 : S.busFader <= -60 ? 0 : std::pow (10.0, S.busFader / 20);
+            for (int r = 0; r < 2; ++r)
+            {
+                if (M.rev[(size_t) r].size() != 2) continue;
+                Chs rv = fit (M.rev[(size_t) r]);
+                for (auto& x : rv) for (auto& v : x) v = (float) ((double) v * bus);
+                sink (dir + (r ? "R2 Return.wav" : "R1 Return.wav"), encodeWav (rv, srOut, S.exp.bits)); ++n;
+            }
+        }
+    }
     return n;
 }
 
@@ -1520,6 +1553,7 @@ juce::var settingsToVar (const Session& S)
     auto e = obj(); const auto& ex = S.exp;
     put (e, "mode", juce::String (ex.mode)); put (e, "template", juce::String (ex.hitTemplate)); put (e, "fullTemplate", juce::String (ex.fullTemplate));
     put (e, "kitTemplate", juce::String (ex.kitTemplate)); put (e, "bits", ex.bits); put (e, "rate", juce::String (ex.rate)); put (e, "tailMode", juce::String (ex.tailMode));
+    put (e, "kitBus", ex.kitBus); put (e, "verbs", juce::String (ex.verbs));
     put (e, "tailFloor", ex.tailFloor); put (e, "maxLenS", ex.maxLenS); put (e, "fadeOutMs", ex.fadeOutMs); put (e, "fadeInMs", ex.fadeInMs);
     put (e, "tailDb", ex.tailDb); put (e, "trim", juce::String (ex.trim)); put (e, "ceilDb", ex.ceilDb);
     put (st, "exp", e);
@@ -1588,6 +1622,8 @@ void applySettings (Session& S, const juce::var& st)
         ex.mode = s_ (e, "mode", ex.mode.c_str()); ex.hitTemplate = s_ (e, "template", ex.hitTemplate.c_str()); ex.fullTemplate = s_ (e, "fullTemplate", ex.fullTemplate.c_str());
         ex.kitTemplate = s_ (e, "kitTemplate", ex.kitTemplate.c_str()); ex.bits = (int) nn (e, "bits", ex.bits); ex.rate = s_ (e, "rate", ex.rate.c_str());
         ex.tailMode = s_ (e, "tailMode", ex.tailMode.c_str()); ex.tailFloor = nn (e, "tailFloor", ex.tailFloor); ex.maxLenS = nn (e, "maxLenS", ex.maxLenS);
+        if (e.hasProperty ("kitBus")) ex.kitBus = truthy (e, "kitBus");
+        ex.verbs = s_ (e, "verbs", ex.verbs.c_str());
         ex.fadeOutMs = nn (e, "fadeOutMs", ex.fadeOutMs); ex.fadeInMs = nn (e, "fadeInMs", ex.fadeInMs); ex.tailDb = nn (e, "tailDb", ex.tailDb);
         ex.trim = s_ (e, "trim", ex.trim.c_str()); ex.ceilDb = nn (e, "ceilDb", ex.ceilDb);
     }

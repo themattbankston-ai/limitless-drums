@@ -2792,10 +2792,21 @@ struct Studio::Rack : visage::Frame
             c.setColor (labCol); draw::text (c, lab, boldFont (S (kn.r < 10 ? 6 : 6.8f)), Font::kCenter, X (kn.x - 30), Y (ly), S (60), S (9));
             c.setColor (valCol); draw::text (c, mixValueText (i, mixValueOf (i, n)), monoBold (S (kn.r < 10 ? 6.5f : 7.8f)), Font::kCenter, X (kn.x - 30), Y (ly + (kn.r < 10 ? 8 : 9)), S (60), S (9));
         }
+    
+        // Song mode: Tone and Shape work per sampled hit; on a performance they're off (the mixer, reverbs and the
+        // plugins all apply)
+        if (isSong())
+        {
+            c.setColor (0xd90a0b0e); c.roundedRectangle (X (6), Y (4), S (306), S (476 * projY), S (8));
+            c.setColor (0xffc8ccd4); draw::text (c, "Tone, Shape and Reference", boldFont (S (13)), Font::kCenter, X (6), Y (210), S (306), S (18));
+            c.setColor (0xff8b9099); draw::text (c, "work on sampled hits, so they're off for songs.", bodyFont (S (10.5f)), Font::kCenter, X (6), Y (232), S (306), S (16));
+            draw::text (c, "The mixer, reverbs and plugins all apply.", bodyFont (S (10.5f)), Font::kCenter, X (6), Y (250), S (306), S (16));
+        }
     }
 
     void mixDown (float x, float y, const visage::MouseEvent& e)
     {
+        if (isSong() && y < 480) return;   // Tone, Shape and Reference are off for songs
         const auto& V = studio.data.mix;
         if (! V.valid || ! studio.onMix) return;
         for (int i = 1; i < nMKnobs; ++i)

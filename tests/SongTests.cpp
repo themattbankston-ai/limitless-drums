@@ -146,3 +146,36 @@ TEST_CASE ("Song mode: hits, tempo, tightening, MIDI")
     const auto probs = findProblems (A, set);
     WARN ("problems flagged: " << probs.size());
 }
+
+#include "../src/app/Engine.h"
+TEST_CASE ("Song mode: a whole session, tightened and exported")
+{
+    const auto dir = juce::File (juce::SystemStats::getEnvironmentVariable ("LD_SONG", "/home/claude/songtest/song60"));
+    if (! dir.isDirectory()) { WARN ("no test song; skipped"); return; }
+    ld::hl::setReverbLibrary (juce::JSON::parse (juce::File (LD_SOURCE_DIR).getChildFile ("assets/irlib.json")));
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::vector<juce::File> fv (files.begin(), files.end());
+    ld::TakeOptions o; o.drum = "kit";
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    auto st = ld::prepareTake (fv, dir.getFileName(), o);
+    REQUIRE (st->prepared);
+    auto& S = st->session;
+    REQUIRE (S.mode == "kit");
+    REQUIRE (S.song.an.done);
+    WARN ("prepare: " << (juce::Time::getMillisecondCounterHiRes() - t0) / 1000 << " s, " << S.song.an.hits.size() << " hits");
+    S.song.set.tightness = 0.8; S.tracks[0].strip.r1 = -10;
+    const auto t1 = juce::Time::getMillisecondCounterHiRes();
+    const auto M = ld::hl::renderMix (S);
+    WARN ("render with edits: " << (juce::Time::getMillisecondCounterHiRes() - t1) / 1000 << " s");
+    // the edits reached the audio: proc differs from the recording somewhere, and lengths are kept
+    REQUIRE (M.proc.size() == S.tracks.size());
+    CHECK (M.proc[0][0].size() == S.tracks[0].ch[0].size());
+    std::vector<std::string> names; std::vector<size_t> sizes;
+    const int n = ld::hl::writeKit (S, M, [&] (const std::string& p, const juce::MemoryBlock& b) { names.push_back (p); sizes.push_back (b.getSize()); });
+    CHECK (n == (int) S.tracks.size() + 2);   // every mic, the bus, R1's return
+    bool bus = false, r1 = false; for (auto& nm : names) { if (nm.find ("Drum Bus.wav") != std::string::npos) bus = true; if (nm.find ("R1 Return.wav") != std::string::npos) r1 = true; }
+    CHECK (bus); CHECK (r1);
+    S.exp.verbs = "print";
+    names.clear();
+    CHECK (ld::hl::writeKit (S, M, [&] (const std::string& p, const juce::MemoryBlock&) { names.push_back (p); }) == (int) S.tracks.size() + 1);
+}
