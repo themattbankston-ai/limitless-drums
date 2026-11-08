@@ -1922,6 +1922,30 @@ struct Studio::Rack : visage::Frame
         draw::text (c, "Evening out hit-to-hit level per drum,", bodyFont (S (10)), Font::kCenter, X (16), Y (310), S (286), S (14));
         draw::text (c, "and reinforcing from your own kit, come next.", bodyFont (S (10)), Font::kCenter, X (16), Y (326), S (286), S (14));
     }
+    void drawExport (Canvas& c)
+    {
+        skeys.clear();
+        const auto& x = studio.data.exp;
+        c.setColor (0xff0c0d10); c.fill (0, 0, width(), height());
+        plate (c, 10, 10, 298, 120, "EXPORT", x.ready ? std::string ("READY") : std::string ("NOT YET"));
+        skey (c, "export", isSong() ? "EXPORT THE SONG" : "EXPORT THE SAMPLES", 24, 40, 270, 40, x.ready, x.ready, 0xffff4fb0);
+        c.setColor (0xff8b9099);
+        draw::text (c, x.ready ? (isSong() ? std::string ("Every mic full length, as you hear it.") : std::to_string (x.files) + " files: every hit, every mic, on its level.")
+                               : std::string ("Run Auto Prep first."), bodyFont (S (10)), Font::kCenter, X (16), Y (94), S (286), S (14));
+        plate (c, 10, 138, 298, 76, "FORMAT");
+        skey (c, "bits:24", "24-BIT", 24, 166, 130, 30, x.bits == 24, true, 0xffff4fb0);
+        skey (c, "bits:32", "32-BIT FLOAT", 164, 166, 130, 30, x.bits == 32, true, 0xffff4fb0);
+        if (isSong())
+        {
+            plate (c, 10, 222, 298, 176, "ALSO WRITE");
+            skey (c, "bus", "DRUM BUS", 24, 250, 270, 28, x.kitBus, true, 0xffff4fb0);
+            c.setColor (0xff8b9099); draw::text (c, "REVERBS", boldFont (S (8.5f)), Font::kLeft, X (24), Y (292), S (80), S (12));
+            skey (c, "verbs:separate", "AS THEIR OWN FILES", 24, 308, 130, 28, x.verbs != "print", x.kitBus, 0xffff4fb0);
+            skey (c, "verbs:print", "PRINTED IN THE BUS", 164, 308, 130, 28, x.verbs == "print", x.kitBus, 0xffff4fb0);
+            draw::text (c, "Tempo Map.mid and Drums (MIDI).mid always come along,", bodyFont (S (9.5f)), Font::kCenter, X (16), Y (350), S (286), S (14));
+            draw::text (c, "so Pro Tools lines everything else up.", bodyFont (S (9.5f)), Font::kCenter, X (16), Y (366), S (286), S (14));
+        }
+    }
     const SKey* skeyAt (float x, float y) const
     {
         for (auto& k2 : skeys) if (x >= k2.x && x < k2.x + k2.w && y >= k2.y && y < k2.y + k2.h) return &k2;
@@ -1959,6 +1983,7 @@ struct Studio::Rack : visage::Frame
         c.setColor (0xffffffff);
         if (isSong() && studio.step() == Step::hits) { drawSong (c); return; }
         if (isSong() && studio.step() == Step::level) { drawClean (c); return; }
+        if (studio.step() == Step::exportStep) { drawExport (c); return; }
         if (studio.step() == Step::align) { drawAlign (c); return; }
         if (studio.step() == Step::tune) { drawTune (c); return; }
         if (studio.step() == Step::mix) { drawMix (c); return; }
@@ -2917,7 +2942,7 @@ struct Studio::Rack : visage::Frame
     {
         studio.requestKeyboardFocus();
         const float dx = panelX (e.position.x), dy = panelY (e.position.y);
-        if (isSong() && (studio.step() == Step::hits || studio.step() == Step::level)) { songDown (dx, dy, e); return; }
+        if ((isSong() && (studio.step() == Step::hits || studio.step() == Step::level)) || studio.step() == Step::exportStep) { songDown (dx, dy, e); return; }
         if (studio.step() == Step::align) { alignDown (dx, dy); return; }
         if (studio.step() == Step::tune) { tuneDown (dx, dy, e); return; }
         if (studio.step() == Step::mix) { mixDown (dx, dy, e); return; }

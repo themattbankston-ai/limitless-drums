@@ -154,6 +154,8 @@ struct StudioModel
         int division = 16, moved = 0;
         float avgMoveMs = 0;
     } song;
+    /** The Export step's choices. */
+    struct ExportView { int bits = 32; bool kitBus = true; std::string verbs = "separate"; int files = 0; bool ready = false; } exp;
 };
 
 /** An open plugin window: which slot, its type, and its settings flattened to paths ("decap.drive"). */

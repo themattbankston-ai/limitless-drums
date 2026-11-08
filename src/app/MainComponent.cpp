@@ -461,6 +461,13 @@ void MainComponent::refreshModel()
     if (engineState) m.tune = buildTuneView (*engineState, studio.selectedHit);
     if (engineState) m.mix = buildMixView (*engineState, mixSel, studio.selectedHit, refAudio.empty() ? nullptr : &refAudio, refName);
     if (engineState) m.song = buildSongView (*engineState);
+    if (engineState)
+    {
+        const auto& S = engineState->session;
+        m.exp.bits = S.exp.bits; m.exp.kitBus = S.exp.kitBus; m.exp.verbs = S.exp.verbs;
+        m.exp.ready = engineState->mix && (S.mode == "kit" || (engineState->levels && engineState->levels->valid));
+        m.exp.files = (int) hl::exportList (S).size();
+    }
     mixHit = studio.selectedHit;
     tuneHit = studio.selectedHit;
     alignMic = m.align.mic; alignHit = studio.selectedHit;
@@ -1821,6 +1828,10 @@ void MainComponent::onSongAction (const std::string& a, double v)
     if (a == "feel") { change ([] (hl::Session& s) { s.song.set.keepFeel = ! s.song.set.keepFeel; }, S.song.set.keepFeel ? "Keep Feel off: ghost notes and flams tighten too." : "Keep Feel on: ghost notes and flams stay loose."); return; }
     if (a == "hats") { change ([] (hl::Session& s) { s.song.set.swingHatsOnly = ! s.song.set.swingHatsOnly; }, S.song.set.swingHatsOnly ? "Swing on everything." : "Swing on the hats only."); return; }
     if (a == "bleed") { change ([v] (hl::Session& s) { s.kitBleed = std::clamp (v, 0.0, 24.0); }, v <= 0 ? juce::String ("Bleed control off.") : "Bleed: close mics down " + juce::String ((int) std::lround (v)) + " dB between their own hits."); return; }
+    if (a == "export") { exportTake(); return; }
+    if (a.rfind ("bits:", 0) == 0) { const int b = std::stoi (a.substr (5)); change ([b] (hl::Session& s) { s.exp.bits = b; }, b == 24 ? "Export: 24-bit." : "Export: 32-bit float."); return; }
+    if (a == "bus") { change ([] (hl::Session& s) { s.exp.kitBus = ! s.exp.kitBus; }, S.exp.kitBus ? "Export: no drum bus." : "Export: with the drum bus."); return; }
+    if (a.rfind ("verbs:", 0) == 0) { const auto m = a.substr (6); change ([m] (hl::Session& s) { s.exp.verbs = m; }, m == "print" ? "Export: reverbs printed into the bus." : "Export: reverbs as their own files."); return; }
     if (a == "reanalyse")
     {
         if (audition) audition->stop();
