@@ -50,6 +50,9 @@ public:
         loudness match), then plays; the rest renders ahead of the playhead. */
     void play (std::vector<PlayEvent>, const Options&);
     void stop();
+    /** Song mode: the whole performance from `from` seconds (at most maxLen), every mic as recorded (A) and processed
+        (B, with the edits, the mixer and the reverb returns), on the live console. */
+    void playSong (double from, double maxLen = 120);
     bool isPlaying() const { return playing.load(); }
     /** The Mix step's reference vs mix: the reference's hit, then this hit through the mix, at the same loudness. */
     void playReference (const hl::Chs& ref, int hit);

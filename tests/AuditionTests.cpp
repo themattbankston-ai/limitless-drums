@@ -107,3 +107,42 @@ TEST_CASE ("The pair plays as recorded or aligned whichever side the A/B switch 
     CHECK (e > 1e-6);
     CHECK (d / e < 1e-3);
 }
+
+TEST_CASE ("Song mode playback: the performance from the playhead, with the reverb return")
+{
+    const auto dir = juce::File (juce::SystemStats::getEnvironmentVariable ("LD_SONG", "/home/claude/songtest/song60"));
+    if (! dir.isDirectory()) { WARN ("no test song; skipped"); return; }
+    ld::hl::setReverbLibrary (juce::JSON::parse (juce::File (LD_SOURCE_DIR).getChildFile ("assets/irlib.json")));
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav");
+    std::vector<juce::File> fv (files.begin(), files.end());
+    ld::TakeOptions o; o.drum = "kit";
+    auto st = ld::prepareTake (fv, dir.getFileName(), o);
+    REQUIRE (st->prepared);
+    st->session.song.set.tightness = 0.5;
+    for (auto& t : st->session.tracks) t.strip.r1 = -6;
+    ld::renderAndMeasure (*st);
+    juce::AudioDeviceManager dm;
+    ld::Audition au (dm);
+    au.setEngine (st);
+    std::vector<float> L (1024), R (1024);
+    auto energyOf = [&] (double seconds)
+    {
+        double e = 0;
+        for (int b = 0; b < (int) (seconds * 48000 / 1024); ++b) { au.renderBlock (L.data(), R.data(), 1024, 48000); for (float v : L) e += (double) v * v; }
+        return e;
+    };
+    au.playSong (10, 4);
+    REQUIRE (au.isPlaying());
+    const double e1 = energyOf (2);
+    CHECK (e1 > 1);
+    CHECK (au.position() > 1.9);
+    CHECK (au.phraseEnd() > 3.9); CHECK (au.phraseEnd() < 4.1);
+    // the reverb return is in it: the same stretch with every send off sounds different
+    au.stop();
+    for (auto& t : st->session.tracks) t.strip.r1 = -60;
+    ld::renderAndMeasure (*st);
+    au.setEngine (st);
+    au.playSong (10, 4);
+    const double e2 = energyOf (2);
+    CHECK (std::abs (e1 - e2) > e2 * 0.01);   // the returns changed what you hear
+}

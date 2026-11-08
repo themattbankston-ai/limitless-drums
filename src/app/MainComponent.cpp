@@ -1302,6 +1302,17 @@ void MainComponent::startPhrase (const std::string& m)
     if (! engineState || ! engineState->mix) { setNotice ("Still preparing the take."); return; }
     const auto& S = engineState->session;
     const int sel = std::max (0, studio.selectedHit);
+    if (S.mode == "kit")
+    {
+        // Song mode: play the performance from the playhead (from the top when it's at the end)
+        if (edit) edit->getTransport().stop (false, false);
+        pushConsole();
+        long len = 0; for (auto& t : S.tracks) len = std::max (len, t.len);
+        songFrom = studio.playhead < len / S.sr - 0.5 ? std::max (0.0, studio.playhead) : 0.0;
+        audition->playSong (songFrom);
+        songPlaying = true;
+        return;
+    }
     if (m != "hit" && m != "mono" && ! hl::countsOk (S)) { setNotice ("That needs the full hit count. Hit and Mono work now."); return; }
     if (edit) edit->getTransport().stop (false, false);
     pushConsole();
@@ -1522,7 +1533,9 @@ void MainComponent::timerCallback()
     if (edit)
     {
         auto& t = edit->getTransport();
-        studio.setTransport (t.getPosition().inSeconds(), t.isPlaying());
+        if (songPlaying && audition && audition->isPlaying()) studio.setTransport (songFrom + audition->position(), true);
+        else if (songPlaying) { songPlaying = false; studio.setTransport (studio.playhead, false); }
+        else studio.setTransport (t.getPosition().inSeconds(), t.isPlaying());
 
         const bool dirty = edit->hasChangedSinceSaved();
         if (dirty != lastDirty) { lastDirty = dirty; updateTitle(); }

@@ -273,6 +273,9 @@ OneShot exportOneShot (const Session&, const MixRender&, const LevelResult&);
     tone, shape, bus inserts, the room, and each mic's strip and fader (matched by mic name). No audio, no hits,
     no alignment results. Keys as in Hitline's saved state. */
 juce::var settingsToVar (const Session&);
+/** A mic's applied delay (samples; the lead's is 0) and its polarity with the strip's flip, as the export uses them. */
+double trackLag (const Session&, int t);
+int trackPol (const Session&, int t);
 /** Applies saved settings onto a freshly opened session. Mics the settings don't name keep their defaults. */
 void applySettings (Session&, const juce::var&);
 

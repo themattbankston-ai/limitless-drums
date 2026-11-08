@@ -323,6 +323,53 @@ void Audition::play (std::vector<PlayEvent> events, const Options& o)
     live.store (ph.get());
 }
 
+void Audition::playSong (double from, double maxLen)
+{
+    stop();
+    if (! engine || ! engine->mix) return;
+    const auto& S = engine->session; const auto& M = *engine->mix;
+    auto ph = std::make_shared<Phrase>();
+    ph->events = { PlayEvent { 0, 0, 0 } };
+    ph->sr = S.sr; ph->nT = (int) S.tracks.size(); ph->ref = S.refIdx;
+    long len = 0; for (auto& t : S.tracks) len = std::max (len, t.len);
+    const long s0 = std::clamp ((long) (from * S.sr), 0L, std::max (0L, len - 1));
+    const long n = std::max (2L, std::min (len - s0, (long) (maxLen * S.sr)));
+    auto r = std::make_unique<Rendered>();
+    auto seg = [&] (const hl::F32& x, double lag, int pol) { return hl::renderSeg (x, s0, n, lag, pol, 1, true); };
+    for (int t = 0; t < (int) S.tracks.size(); ++t)
+    {
+        const auto& tr = S.tracks[(size_t) t];
+        hl::Chs a, b;
+        for (auto& x : tr.ch) a.push_back (seg (x, 0, 1));
+        for (auto& x : M.proc[(size_t) t]) b.push_back (seg (x, hl::trackLag (S, t), hl::trackPol (S, t)));
+        r->a.stems.push_back (std::move (a)); r->b.stems.push_back (std::move (b));
+    }
+    for (int k = 0; k < 2; ++k)
+        if (M.rev[(size_t) k].size() == 2)
+            for (auto& x : M.rev[(size_t) k]) { hl::F32 y ((size_t) n, 0.0f); for (long q = 0; q < n && s0 + q < (long) x.size(); ++q) y[(size_t) q] = x[(size_t) (s0 + q)]; r->b.rev[(size_t) k].push_back (std::move (y)); }
+    r->a.len = r->b.len = n;
+    // one scale for the whole stretch, from the processed mix's peak; A matched to B's loudness
+    auto [L, R] = hl::mixToStereo (S, r->b);
+    float pk = 1e-9f; for (long q = 0; q < n; ++q) pk = std::max ({ pk, std::abs (L[(size_t) q]), std::abs (R[(size_t) q]) });
+    ph->scale = std::min (1.0, 0.89 / pk);
+    double ea = 0, eb = 0;
+    for (size_t t = 0; t < r->a.stems.size(); ++t)
+    {
+        for (auto& c : r->a.stems[t]) for (float v : c) ea += (double) v * v;
+        for (auto& c : r->b.stems[t]) for (float v : c) eb += (double) v * v;
+    }
+    ph->kA = ea > 1e-12 && eb > 1e-12 ? std::clamp (std::sqrt (eb / ea), 0.25, 4.0) : 1.0;
+    ph->store.resize (1); ph->ready.reset (new std::atomic<Rendered*>[1]);
+    ph->store[0] = std::move (r); ph->ready[0] = ph->store[0].get();
+    ph->end = (double) n / S.sr;
+    phrase = ph;
+    currentMode = "song";
+    t = 0; gA = gB = 0; limGain = 1; cxy = cxx = cyy = 0; cn = 0; snapGains = true;
+    finishedFlag = false;
+    playing = true;
+    live.store (ph.get());
+}
+
 void Audition::finishLater()
 {
     if (finishedFlag.exchange (true)) return;
@@ -430,6 +477,14 @@ void Audition::audioDeviceIOCallbackWithContext (const float* const*, int, float
                     l += ol; r += orr;
                     (tr == ref ? lead : rest) += ol + orr;
                 }
+                // the reverb returns (R1, R2): stereo, through the bus
+                for (auto& rv : h.rev)
+                    if (rv.size() == 2 && i0 + 1 < (long) rv[0].size() && ph->console)
+                    {
+                        const double g = bus * vg;
+                        l += (rv[0][(size_t) i0] + (rv[0][(size_t) i0 + 1] - rv[0][(size_t) i0]) * fr) * g;
+                        r += (rv[1][(size_t) i0] + (rv[1][(size_t) i0 + 1] - rv[1][(size_t) i0]) * fr) * g;
+                    }
                 if (! h.room.empty() && room > 0 && ph->console)
                 {
                     const double g = room * bus * vg;

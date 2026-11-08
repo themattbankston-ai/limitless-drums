@@ -93,7 +93,8 @@ private:
     std::unique_ptr<juce::FileChooser> refChooser;
     void refreshMix();
     void refreshPlugin();
-    int plugT = -2, plugK = 0;   ///< the insert whose window is open (-2 none, -1 the bus)
+    int plugT = -2, plugK = 0;
+    double songFrom = 0; bool songPlaying = false;   ///< Song mode playback: where it started   ///< the insert whose window is open (-2 none, -1 the bus)
     void onMixAction (const std::string& action, double v);
     void onSongAction (const std::string& action, double v);
 public:

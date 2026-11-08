@@ -1680,4 +1680,6 @@ void applySettings (Session& S, const juce::var& st)
                 break;
             }
 }
+double trackLag (const Session& S, int t) { return lagOf (S, t); }
+int trackPol (const Session& S, int t) { return polR (S, t); }
 } // namespace ld::hl
