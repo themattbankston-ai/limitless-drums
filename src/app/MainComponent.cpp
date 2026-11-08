@@ -465,6 +465,8 @@ void MainComponent::adoptEngineOrder()
     if (fresh == nullptr) return;
     edit->getTransport().stop (false, true);
     edit->getUndoManager().removeChangeListener (this);
+    for (const char* k : { "ldSession", "ldSettings" })   // what New Session decided, and the settings, travel with the new edit
+        if (edit->state.hasProperty (k)) fresh->state.setProperty (k, edit->state[k], nullptr);
     edit = std::move (fresh);
     currentRoles = std::move (roles);
     project::storeRoles (*edit, currentRoles);

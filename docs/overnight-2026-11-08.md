@@ -48,6 +48,9 @@ Notes for the morning, kept up to date through the night.
 - **Saved projects lost the mix**: a project file held only the edit, so reopening it lost the mixer, inserts and
   Song/Clean/Export settings. These now go into the project and its autosave.
   - Pressing Auto Prep again also reset the whole mix. It now keeps it.
+  - The record that marks a session as a Song (rather than samples) was lost when the tracks were re-ordered after
+    loading, so a restored song came back as a "Kick" sample session. Fixed. I tested recovery end to end: kill the
+    app, restore, then Auto Prep, and the session comes back as a Song with its Consistency setting.
 - **Out of memory on the 4-minute song** (10 mics, monkey test): three causes, all fixed.
   - Every re-render copied all the session's audio (565 MB) first. Copies now share the recordings.
   - Auto Prep held the old mix while building the new one. The old one is now freed first.
