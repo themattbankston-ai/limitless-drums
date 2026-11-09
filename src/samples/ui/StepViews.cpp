@@ -217,7 +217,7 @@ void HitsView::drawSetup (Canvas& c)
         txt (c, fmt ("%.1f dB", tr.peakDb), monoFont (11), ink2, cols[3], y, 90, 30);
         c.setColor (lead ? accent : 0xff55555a); c.ring (cols[4], y + 8, 14, lead ? 4.0f : 1.5f);
         add (cols[4] - 4, y, 120, 30, "lead:" + std::to_string (t));
-        if (lead) txt (c, "everything lines up to it", bodyFont (11), accentInk, cols[4] + 22, y, 200, 30);
+        if (lead) txt (c, "everything lines up to it", bodyFont (11), accentInk, cols[4] + 22, y, px + pw - (cols[4] + 22) - 10, 30);
         y += 32;
     }
     // the session
