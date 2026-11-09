@@ -46,8 +46,10 @@ public:
 
     /** From `start` (seconds on the timeline) the shift is multiplied by `scale` and `gainDb` is added, until the next
         entry. The hits use it: a hit tuned by ratio r plays its mics' offsets 1/r as long, as the export does (delay,
-        then varispeed), and each hit gets its Level gain without rebuilding playback. */
-    struct HitScale { double start = 0; double scale = 1; double gainDb = 0; };
+        then varispeed), and each hit gets its Level gain without rebuilding playback. The phase EQ's frequencies are
+        multiplied by `freqScale` (the hit's ratio r): the correction was measured on the recording, and varispeed moves
+        what it corrects from fc to fc*r, so it has to move with it. */
+    struct HitScale { double start = 0; double scale = 1; double gainDb = 0; double freqScale = 1; };
     void setHitScales (std::vector<HitScale>);   ///< message thread; sorted by start
 
     juce::CachedValue<float> shiftValue, gainValue;

@@ -115,12 +115,14 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
     {
         const double t = t0 + done / sr + 0.5 / sr;
         auto it = std::upper_bound (tbl->begin(), tbl->end(), t, [] (double x, const HitScale& h) { return x < h.start; });
-        const double scale = it == tbl->begin() ? 1.0 : std::prev (it)->scale, extra = it == tbl->begin() ? 0.0 : std::prev (it)->gainDb;
+        const double scale = it == tbl->begin() ? 1.0 : std::prev (it)->scale, extra = it == tbl->begin() ? 0.0 : std::prev (it)->gainDb,
+                     fscale = it == tbl->begin() ? 1.0 : std::prev (it)->freqScale;
         int seg = rc.bufferNumSamples - done;
         if (it != tbl->end()) seg = std::clamp ((int) std::ceil ((it->start - t) * sr), 1, seg);
         auto s = base;
         s.advanceSamples *= scale;
         s.gainDb += extra;
+        for (auto& a : s.ap) if (a.fc > 0) a.fc *= fscale;
         dsp.setTarget (s);
         if (jump && done == 0) dsp.reset();
         float* ch[2] = { nullptr, nullptr };

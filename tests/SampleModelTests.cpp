@@ -280,3 +280,75 @@ TEST_CASE ("Sample model SA14: the Align score is measured where the mic sits no
     CHECK (bad.first < good.first - 0.5);
     CHECK (std::abs (bad.second - good.second) < 1e-9);   // as recorded doesn't move
 }
+
+TEST_CASE ("Sample model: a tuned hit's phase EQ moves with the tuning (matches the reference export)")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("apTune") }).isEmpty());
+    prep (m);
+    int t = std::getenv ("LD_TEST_LEAD") ? m.leadTrack() : (m.leadTrack() == 0 ? 1 : 0);
+    // a phase EQ on one mic, every hit tuned 8 % down
+    REQUIRE (m.change ([t] (ld::hl::Session& S)
+    {
+        auto& tr = S.tracks[(size_t) t];
+        if (! std::getenv ("LD_TEST_NOAP")) { tr.ap = { { 250.0, 0.7 } }; tr.apOn = true; }
+        ld::hl::TuneState ti;
+        ti.ratios.assign (S.onsets.size(), std::getenv ("LD_TEST_RATIO") ? std::atof (std::getenv ("LD_TEST_RATIO")) : 0.92);
+        S.tinfo = ti;
+    }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    m.change ([] (ld::hl::Session&) {}, SampleModel::Redo::align);   // the plugin hears the new phase EQ
+    m.layoutHits();
+    pumpUntilIdle (m);
+    const auto* st = m.engineState();
+    REQUIRE (st->mix);
+    REQUIRE (st->levels);
+    auto S = st->session;
+    S.tuneTaps = 64;   // the reference at the same filter length the hits are rendered with
+    const auto& R = st->levels->regions;
+    // B for that mic through Tracktion, against the reference render of every hit
+    juce::TemporaryFile temp (".wav");
+    auto& edit = *m.getEdit();
+    juce::BigInteger which; which.setBit (te::getAllTracks (edit).indexOf (m.trackB (t)));
+    te::Renderer::Parameters p (edit);
+    p.destFile = temp.getFile();
+    p.audioFormat = edit.engine.getAudioFileFormatManager().getWavFormat();
+    p.bitDepth = 32; p.sampleRateForAudio = S.sr; p.blockSizeForAudio = 512;
+    p.time = te::TimeRange (te::TimePosition(), edit.getLength());
+    p.tracksToDo = which; p.usePlugins = true; p.useMasterPlugins = false; p.mustRenderInMono = true;
+    REQUIRE (te::Renderer::renderToFile ("Render", p) != juce::File());
+    const auto b = readWav (temp.getFile());
+    const long pad = (long) std::lround (SampleModel::kPad * S.sr);
+    double e = 0, d = 0;
+    for (size_t i = 0; i < R.size(); ++i)
+    {
+        const auto ref = ld::hl::renderHitMic (S, *st->mix, t, i, R[i], S.sr, std::pow (10.0, m.hitGainDb (t, i) / 20));
+        const long cap = std::min<long> ((long) ref[0].size(), (long) (0.3 * S.sr));   // the hit itself
+        for (long n = 0; n < cap; ++n)
+        {
+            const long k = pad + R[i].start + n;
+            if (k >= b.getNumSamples()) break;
+            const double r = ref[0][(size_t) n], x = b.getSample (0, (int) k);
+            e += r * r; d += (r - x) * (r - x);
+        }
+    }
+    if (std::getenv ("LD_TEST_VERBOSE"))
+        for (size_t i = 0; i < R.size(); ++i)
+        {
+            const auto ref = ld::hl::renderHitMic (S, *st->mix, t, i, R[i], S.sr, std::pow (10.0, m.hitGainDb (t, i) / 20));
+            const long W = (long) (0.2 * S.sr);
+            double best = -1e30; int bl = 0, rpk = 0, bpk = 0; float rm = 0, bm = 0;
+            for (int l = -400; l <= 400; ++l)
+            {
+                double c = 0;
+                for (long n = 0; n < W && n < (long) ref[0].size(); ++n) { const long k = pad + R[i].start + n + l; if (k >= 0 && k < b.getNumSamples()) c += ref[0][(size_t) n] * b.getSample (0, (int) k); }
+                if (c > best) { best = c; bl = l; }
+            }
+            for (long n = 0; n < W && n < (long) ref[0].size(); ++n) { if (std::abs (ref[0][(size_t) n]) > rm) { rm = std::abs (ref[0][(size_t) n]); rpk = (int) n; } const float x = std::abs (b.getSample (0, (int) (pad + R[i].start + n))); if (x > bm) { bm = x; bpk = (int) n; } }
+            fprintf (stderr, "hit %zu: region %ld..%ld onset %ld, best lag %d, peak ref %.3f at %d, B %.3f at %d, gain %.2f\n", i, R[i].start, R[i].end, S.onsets[i], bl, rm, rpk, bm, bpk, m.hitGainDb (t, i));
+        }
+    const double nullDb = 10 * std::log10 (std::max (d, 1e-30) / std::max (e, 1e-30));
+    INFO ("tuned hits with a phase EQ against the reference: " << nullDb << " dB");
+    CHECK (nullDb < -50);   // (without the phase EQ following the tuning this is about -15 dB)
+    if (std::getenv ("LD_TEST_VERBOSE")) fprintf (stderr, "null %.1f dB\n", nullDb);
+}

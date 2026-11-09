@@ -1,5 +1,6 @@
 #include "SampleModel.h"
 #include "hl/Clean.h"
+#include "hl/Tune.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -303,7 +304,7 @@ bool SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what
         return true;
     }
     if (what == Redo::align) applyAlignment();
-    if (what == Redo::tune) { hl::computeTune (state->session); layoutHits(); }
+    if (what == Redo::tune) { hl::computeTune (state->session); tuneLayoutWanted = true; }   // the tuned hits render in the background
     if (what == Redo::mix) wantMix = true;
     buildHits();
     if (! state->prepared) return true;
@@ -317,7 +318,8 @@ void SampleModel::reapply (bool mixToo)
     applyAlignment();
     if (state->session.tuneAnalyzed) hl::computeTune (state->session);
     buildHits();
-    layoutHits();
+    layoutHits (false);   // tuned hits not rendered yet keep playing as they were until the render lands
+    tuneLayoutWanted = true;
     if (! state->prepared) return;
     if (mixToo) wantMix = true;
     ++renderWanted;
@@ -422,11 +424,29 @@ void SampleModel::startRender()
     auto base = state;
     auto alivePtr = alive;
     // (a render for a take that has since been replaced lands with state != base and is dropped)
-    std::thread ([this, copy, base, alivePtr, ticket, mix]
+    const auto dir = cacheDir;
+    const int fileTag = ++toneVersion;
+    std::thread ([this, copy, base, alivePtr, ticket, mix, dir, fileTag]
     {
         if (mix) renderAndMeasure (*copy);
         else if (base->mix) copy->levels = hl::measureLevels (copy->session, *base->mix);
-        juce::MessageManager::callAsync ([this, copy, base, alivePtr, ticket, mix]
+        // every tuned hit of every mic, ready to play (rendered here, so the message thread never waits on it)
+        auto made = std::make_shared<std::vector<std::pair<std::string, juce::File>>>();
+        const auto& CS = copy->session;
+        const hl::MixRender* M = mix ? (copy->mix ? &*copy->mix : nullptr) : (base->mix ? &*base->mix : nullptr);
+        if (copy->levels && copy->levels->valid && CS.tinfo)
+            for (size_t i = 0; i < copy->levels->regions.size() && i < CS.tinfo->ratios.size(); ++i)
+            {
+                const double r = CS.tinfo->ratios[i];
+                if (! std::isfinite (r) || r <= 0 || std::abs (r - 1.0) <= 1e-12) continue;
+                for (int t = 0; t < (int) CS.tracks.size(); ++t)
+                {
+                    const auto key = hitKey (t, i, r, CS.sr);
+                    auto f = dir.getChildFile ("hit_" + juce::String (key) + "_" + juce::String (fileTag) + ".wav");
+                    if (writeFloatWav (f, renderHit (*copy, M, t, i, r, CS.sr), CS.sr)) made->push_back ({ key, f });
+                }
+            }
+        juce::MessageManager::callAsync ([this, copy, base, alivePtr, ticket, mix, made]
         {
             if (! *alivePtr) return;
             rendering = false;
@@ -436,13 +456,30 @@ void SampleModel::startRender()
                 if (mix) state->mix = std::move (copy->mix);
                 state->levels = copy->levels;
                 if (mix) prepFor = nullptr;   // the hits play the new clean-up and tone
-                if (mix) layoutHits(); else updateHitGains();
+                if (prepFor != state.get()) { prepFiles.clear(); hitFiles.clear(); prepFor = state.get(); }
+                bool newFiles = false;
+                for (auto& [k, f] : *made) if (! hitFiles.count (k)) { hitFiles[k] = f; newFiles = true; }
+                if (mix || newFiles || tuneLayoutWanted) layoutHits(); else updateHitGains();
+                tuneLayoutWanted = false;
             }
             releaseFreedMemory();
             if (onChanged) onChanged();
             startRender();   // edits that came in meanwhile
         });
     }).detach();
+}
+
+double SampleModel::changeLead() const
+{
+    // a phase EQ that has to follow the hits' tuning needs its slot filled first; otherwise a fade is enough
+    bool eqMoves = false;
+    if (state)
+    {
+        bool tuned = false;
+        for (size_t i = 0; i < hitList.size(); ++i) if (std::abs (hitRatio (i) - 1.0) > 1e-9) tuned = true;
+        for (auto& tr : state->session.tracks) if (tuned && tr.apOn && ! tr.ap.empty()) eqMoves = true;
+    }
+    return live::AlignDsp::changeSeconds (state ? state->session.sr : 48000, eqMoves);
 }
 
 double SampleModel::hitRatio (size_t i) const
@@ -466,6 +503,7 @@ juce::File SampleModel::prepFile (int t)
     if (prepFiles.size() != S.tracks.size() || prepFor != state.get())
     {
         prepFiles.assign (S.tracks.size(), juce::File());
+        hitFiles.clear();
         prepFor = state.get();
     }
     if (prepFiles[(size_t) t] != juce::File()) return prepFiles[(size_t) t];
@@ -500,10 +538,12 @@ std::vector<live::AlignPlugin::HitScale> SampleModel::scalesFor (int t, const st
     const auto& R = state->levels->regions;
     auto one = [&] (size_t i)
     {
-        // switch a fade's length early, so the change has finished before the hit (the last 10 ms of the previous
-        // hit's tail take it instead)
+        // switch early enough that the change has fully arrived before the hit (the end of the previous hit's tail
+        // takes it instead)
         const double start = (double) R[i].start / state->session.sr;
-        scales.push_back ({ kPad + start - live::AlignDsp::kFadeSeconds - 0.0005, 1.0 / hitRatio (i), hitGainDb (t, i) });
+        // the ratio this hit actually plays at (a tuned hit whose render hasn't landed yet still plays untuned)
+        const double r = i < playedRatio.size() ? playedRatio[i] : hitRatio (i);
+        scales.push_back ({ kPad + start - changeLead() - 0.002, 1.0 / r, hitGainDb (t, i), r });
     };
     if (only) { for (int i : *only) one ((size_t) i); }
     else for (size_t i = 0; i < R.size(); ++i) one (i);
@@ -511,16 +551,50 @@ std::vector<live::AlignPlugin::HitScale> SampleModel::scalesFor (int t, const st
     return scales;
 }
 
-void SampleModel::layoutHits() { layoutHitsFor (nullptr); }
+std::string SampleModel::hitKey (int t, size_t i, double ratio, double rate)
+{
+    char b[96];
+    std::snprintf (b, sizeof b, "%d_%zu_%.12f_%.3f", t, i, ratio, rate);
+    return b;
+}
 
-void SampleModel::layoutHitsFor (const std::vector<int>* only)
+hl::Chs SampleModel::renderHit (const EngineState& st, const hl::MixRender* M, int t, size_t i, double ratio, double outRate)
+{
+    // the audio before the phase EQ (the Align plugin adds the shift, polarity, phase EQ and gain after it)
+    const auto& S = st.session;
+    const hl::Chs* src = &S.tracks[(size_t) t].ch.get();
+    if (M && t < (int) M->proc.size()) src = M->bus[(size_t) t].empty() ? &M->proc[(size_t) t] : &M->bus[(size_t) t];
+    const auto& R = st.levels->regions[i];
+    const double step = ratio * S.sr / outRate, on = (double) S.onsets[i];
+    const long preOut = (long) std::floor ((on - (double) R.start) / step + 0.5);
+    const long outLen = std::max (1L, (long) std::floor ((double) (R.end - R.start) / step + 0.5));
+    hl::Chs out;
+    for (auto& x : *src) out.push_back (hl::renderTuned (x, on, preOut, outLen, 0.0, 1, 1.0, step, R.start, R.end, 0, 64));
+    return out;
+}
+
+juce::File SampleModel::hitFile (int t, size_t i, double outRate)
+{
+    if (prepFor != state.get()) { prepFiles.clear(); hitFiles.clear(); prepFor = state.get(); }
+    const auto key = hitKey (t, i, hitRatio (i), outRate);
+    if (auto it = hitFiles.find (key); it != hitFiles.end() && it->second.existsAsFile()) return it->second;
+    auto f = cacheDir.getChildFile ("hit_" + juce::String (key) + "_" + juce::String (++toneVersion) + ".wav");
+    if (! writeFloatWav (f, renderHit (*state, state->mix ? &*state->mix : nullptr, t, i, hitRatio (i), outRate), outRate)) return {};
+    return hitFiles[key] = f;
+}
+
+void SampleModel::layoutHits (bool renderMissing) { layoutHitsFor (nullptr, 0, renderMissing); }
+
+void SampleModel::layoutHitsFor (const std::vector<int>* only, double outRate, bool renderMissing)
 {
     if (! state || ! edit || ! state->levels || ! state->levels->valid) return;
     const auto& S = state->session;
     const auto& R = state->levels->regions;
     if (R.empty()) return;
     const double sr = S.sr, end = length();
+    if (outRate <= 0) outRate = sr;
     const bool wasPlaying = isPlaying();
+    playedRatio.assign (R.size(), 1.0);
     for (int t = 0; t < (int) S.tracks.size(); ++t)
     {
         auto* at = track (t);
@@ -534,19 +608,36 @@ void SampleModel::layoutHitsFor (const std::vector<int>* only)
         {
             const size_t i = (size_t) ii;
             const double r = hitRatio (i);
-            const double start = (double) R[i].start / sr;
+            // the clip starts on a whole output sample; a tuned hit (or any hit at another rate) plays its own
+            // rendered file, an untuned one plays the processed track from the region's start
+            const double start = std::round (((double) R[i].start / sr + kPad) * outRate) / outRate - kPad;
+            bool own = std::abs (r - 1.0) > 1e-12 || outRate != sr;
+            juce::File clipSrc = src;
+            if (own)
+            {
+                const auto key = hitKey (t, i, r, outRate);
+                if (prepFor == state.get() && hitFiles.count (key)) clipSrc = hitFiles[key];
+                else if (renderMissing || only) clipSrc = hitFile (t, i, outRate);
+                else clipSrc = juce::File();
+                if (clipSrc == juce::File())
+                {
+                    if (only) continue;
+                    own = false;   // not rendered yet: plays untuned until it is
+                    clipSrc = src;
+                }
+            }
             // playing: each hit stops where the next starts. Exporting (non-overlapping sets): the whole tuned region
             const double cap = only ? 1.0e9 : (i + 1 < R.size() ? (double) R[i + 1].start / sr : end) - start;
-            const double len = std::min ((double) (R[i].end - R[i].start) / sr / r, cap);
+            const double rr = own ? r : 1.0;
+            if (t == 0) playedRatio[i] = rr;
+            const double len = std::min ((double) (long) std::floor ((double) (R[i].end - R[i].start) / (rr * sr / outRate) + 0.5) / outRate, cap);
             if (len <= 0) continue;
-            te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (kPad + start), te::TimeDuration::fromSeconds (len)), te::TimeDuration() };
-            auto clip = at->insertWaveClip (S.tracks[(size_t) t].name + " " + std::to_string (i + 1), src, pos, false);
+            te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (kPad + start), te::TimeDuration::fromSeconds (len)),
+                                   te::TimeDuration::fromSeconds (own ? 0.0 : (double) R[i].start / sr) };
+            auto clip = at->insertWaveClip (S.tracks[(size_t) t].name + " " + std::to_string (i + 1), clipSrc, pos, false);
             if (! clip) continue;
             clip->setAutoCrossfade (false);
             clip->setResamplingQuality (te::ResamplingQuality::sincBest);
-            clip->setSpeedRatio (r);
-            // the source starts at the region's start: offsets are on the clip's own (sped-up) time
-            clip->setPosition ({ pos.time, te::TimeDuration::fromSeconds ((double) R[i].start / sr / r) });
         }
         if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, only));
     }
@@ -665,7 +756,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
         {
             const double start = (double) R[i].start / sr, endT = start + (double) (R[i].end - R[i].start) / sr / hitRatio (i);
             size_t k = 0;
-            while (k < sets.size() && setEnd[k] > start - live::AlignDsp::kFadeSeconds - 0.002) ++k;
+            while (k < sets.size() && setEnd[k] > start - changeLead() - 0.004) ++k;
             if (k == sets.size()) { sets.emplace_back(); setEnd.push_back (0); }
             sets[k].push_back ((int) i);
             setEnd[k] = endT;
@@ -677,7 +768,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
     juce::String err;
     for (auto& set : sets)
     {
-        layoutHitsFor (&set);
+        layoutHitsFor (&set, srOut);
         for (int t = 0; t < T && err.isEmpty(); ++t)
         {
             const auto whole = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1, err);

@@ -45,6 +45,9 @@ public:
 
     /** The fixed latency every track carries at this rate (also the largest advance allowed, plus half the taps). */
     static int latencySamples (double sampleRate);
+    /** How long before a change has fully arrived: a shift, gain or polarity change fades over kFadeSeconds; a phase-EQ
+        change first fills its slot (a third of the history it reads), then fades. Schedule changes this far ahead. */
+    static double changeSeconds (double sampleRate, bool phaseEqChanges);
     /** How far a track can be moved either way at this rate. */
     static double maxShiftSamples (double sampleRate);
 

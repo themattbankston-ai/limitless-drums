@@ -135,6 +135,14 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
             auto t1 = std::chrono::steady_clock::now();
             const auto err = model.autoPrepNow();
             auto t2 = std::chrono::steady_clock::now();
+            // LD_CORPUS_TUNE=1: tune every pitched take (each hit to the drum's note), so the tuned path is checked too
+            if (std::getenv ("LD_CORPUS_TUNE") && model.session()->tuneAnalyzed)
+            {
+                model.change ([] (ld::hl::Session& s) { s.tune.on = true; s.tune.mode = "rr"; }, ld::samples::SampleModel::Redo::tune);
+                const auto w0 = juce::Time::getMillisecondCounter();
+                do juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+                while (model.isBusy() && juce::Time::getMillisecondCounter() - w0 < 120000);
+            }
             const auto& S = model.engineState()->session;
             const int found = (int) S.onsets.size();
             CHECK (err.toStdString() == "");
@@ -174,6 +182,7 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
             juce::String nullLine;
             const auto* st = model.engineState();
             auto Sx = S;
+            Sx.tuneTaps = 64;   // the reference at the filter length the tuned hits are rendered with
             if (const char* tp = std::getenv ("LD_CORPUS_REF_TAPS")) Sx.tuneTaps = std::atoi (tp);
             if (st->mix && st->levels && st->levels->valid)
             {
@@ -221,7 +230,7 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                 const double exS = std::chrono::duration<double> (std::chrono::steady_clock::now() - te0).count();
                 CHECK (exErr.toStdString() == "");
                 std::map<std::string, juce::MemoryBlock> refFiles;
-                const int refCount = ld::hl::writeSession (S, *st->mix, *st->levels, [&] (const std::string& path, const juce::MemoryBlock& mb) { refFiles[path] = mb; });
+                const int refCount = ld::hl::writeSession (Sx, *st->mix, *st->levels, [&] (const std::string& path, const juce::MemoryBlock& mb) { refFiles[path] = mb; });
                 CHECK (count == refCount);
                 juce::AudioFormatManager fm; fm.registerBasicFormats();
                 double worst = -300, worstLen = 0; std::string worstName;
@@ -282,6 +291,8 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
             const double so = std::chrono::duration<double> (t1 - t0).count(), sp = std::chrono::duration<double> (t2 - t1).count();
             report << f.getFileName() << " | " << (int) S.tracks.size() << " | " << V * RR << " | " << found << " | " << S.det.V << "x" << S.det.RR
                    << " | " << juce::String (so, 2) << " | " << juce::String (sp, 2) << " | " << juce::String (worstA, 7) << " | " << micLine << "\n";
+            if (S.tinfo) { double lo = 1e9, hi = -1e9; for (double r : S.tinfo->ratios) { lo = std::min (lo, r); hi = std::max (hi, r); }
+                           fprintf (stderr, "[corpus] %s tuning: %.1f .. %.1f cents\n", f.getFileName().toRawUTF8(), 1200 * std::log2 (lo), 1200 * std::log2 (hi)); }
             fprintf (stderr, "[corpus] %s: %d/%d hits, %dx%d, open %.2fs, prep %.2fs, A err %.2g\n  %s\n", f.getFileName().toRawUTF8(), found, V * RR,
                      S.det.V, S.det.RR, so, sp, worstA, micLine.toRawUTF8());
         }();

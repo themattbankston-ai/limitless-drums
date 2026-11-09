@@ -36,6 +36,13 @@ double AlignDsp::maxShiftSamples (double sampleRate)
     return std::lround (kMaxShiftSeconds * sampleRate);
 }
 
+double AlignDsp::changeSeconds (double sampleRate, bool phaseEqChanges)
+{
+    if (! phaseEqChanges) return kFadeSeconds;
+    const long hist = (long) latencySamples (sampleRate) + (long) maxShiftSamples (sampleRate) + taps + (long) std::lround (kPrimeSeconds * sampleRate);
+    return (double) ((hist + 2) / 3 + 1) / sampleRate + kFadeSeconds;
+}
+
 void AlignDsp::prepare (double sampleRate, int numChannels)
 {
     sr = sampleRate;

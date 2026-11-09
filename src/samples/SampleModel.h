@@ -156,13 +156,22 @@ private:
     double matchDb = 0;   ///< what A needs to sound as loud as B
     void applyMutes();
     void recomputeLevelMatch();
+    double changeLead() const;
+    // Tune: each tuned hit is rendered once into its own file (the reference's varispeed, at 128 points, onset on a
+    // whole output sample), so playback and export place it exactly; Tracktion plays those files as they are.
+    std::map<std::string, juce::File> hitFiles;   ///< key: track, hit, ratio, rate (cleared when the processed audio changes)
+    static std::string hitKey (int t, size_t i, double ratio, double rate);
+    juce::File hitFile (int t, size_t i, double outRate);
+    static hl::Chs renderHit (const EngineState&, const hl::MixRender*, int t, size_t i, double ratio, double outRate);   ///< how far ahead of each hit its settings switch (seconds)
     std::vector<juce::File> prepFiles;
     const void* prepFor = nullptr;
     juce::File prepFile (int t);
     std::vector<live::AlignPlugin::HitScale> scalesFor (int t, const std::vector<int>* only) const;
     /** null: playing (every hit, each ending where the next starts). Otherwise only the hits listed, each with its whole
         tuned region (export: the lists are chosen so no two overlap). */
-    void layoutHitsFor (const std::vector<int>* only);
+    void layoutHitsFor (const std::vector<int>* only, double outRate = 0, bool renderMissing = true);   ///< outRate: the rate it renders at (0: the take's)
+    bool tuneLayoutWanted = false;
+    std::vector<double> playedRatio;   ///< per hit, the ratio its clips play at now (the Align table follows it)
     hl::Chs renderB (int t, double srOut, bool stereo, juce::String& err);
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 
@@ -177,7 +186,7 @@ public:
     /** Each hit becomes its own clip on every track (all cut at the same place), tuned by its ratio (varispeed, best
         sinc), and the Align plugin gets each hit's Level gain and offset scale. Needs the levels; until then each
         track plays as one clip. Called after Auto Prep and whenever Tune or Level change. */
-    void layoutHits();
+    void layoutHits (bool renderMissing = true);
     /** Level changed only: new gains, live, no rebuild. */
     void updateHitGains();
 
