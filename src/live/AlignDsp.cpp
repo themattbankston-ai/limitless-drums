@@ -10,6 +10,7 @@ namespace
 {
 constexpr double kMaxShiftSeconds = 0.05;   // 50 ms each way: further than any room mic needs
 constexpr double kFadeSeconds = 0.010;
+constexpr double kPrimeSeconds = 0.085;     // a new phase EQ is run over this much of the past before it fades in
 constexpr double kBeta = 10.0;              // Kaiser shape: about -100 dB sidelobes
 
 double besselI0 (double x)
@@ -40,7 +41,8 @@ void AlignDsp::prepare (double sampleRate, int numChannels)
     sr = sampleRate;
     L = latencySamples (sr);
     // room for the latency, a full shift later than recorded, and the taps
-    const long need = (long) L + (long) maxShiftSamples (sr) + taps + 2;
+    primeLen = (int) std::lround (kPrimeSeconds * sr);
+    const long need = (long) L + (long) maxShiftSamples (sr) + taps + primeLen + 2;
     long size = 1;
     while (size < need) size <<= 1;
     mask = size - 1;
@@ -59,6 +61,8 @@ void AlignDsp::reset()
     fading = false;
     fadePos = 0;
     cur = make (target);   // a fresh start goes straight to the target, no fade
+    curState = {};
+    nextState = {};
 }
 
 AlignDsp::Kernel AlignDsp::make (const Settings& s) const
@@ -72,6 +76,12 @@ AlignDsp::Kernel AlignDsp::make (const Settings& s) const
     const double frac = delay - (double) k.whole;
     const float g = (float) (std::pow (10.0, s.gainDb / 20.0) * (s.flip ? -1.0 : 1.0));
     k.g = g;
+    for (const auto& a : s.ap)
+    {
+        if (a.fc <= 0 || a.fc >= sr / 2) continue;
+        const double w0 = 2 * M_PI * a.fc / sr, al = std::sin (w0) / (2 * std::max (0.05, a.Q)), cw = std::cos (w0), a0 = 1 + al;
+        k.ap[(size_t) k.nAp++] = { (1 - al) / a0, -2 * cw / a0, 1.0, -2 * cw / a0, (1 - al) / a0 };
+    }
     if (frac < 1e-12)
     {
         k.impulse = true;
@@ -104,11 +114,36 @@ float AlignDsp::tapOut (const std::vector<float>& r, long at, const Kernel& k) c
     return (float) acc;
 }
 
+float AlignDsp::pathOut (const std::vector<float>& r, long at, const Kernel& k, std::array<std::array<double, 4>, 2>& st) const
+{
+    double v = tapOut (r, at, k);
+    for (int i = 0; i < k.nAp; ++i)
+    {
+        const auto& b = k.ap[(size_t) i];
+        auto& z = st[(size_t) i];
+        const double out = b.b0 * v + b.b1 * z[0] + b.b2 * z[1] - b.a1 * z[2] - b.a2 * z[3];
+        z[1] = z[0]; z[0] = v; z[3] = z[2]; z[2] = out;
+        v = out;
+    }
+    return (float) v;
+}
+
+void AlignDsp::prime (Kernel& k, State& st) const
+{
+    // run the new phase EQ over the recent past, so it fades in already settled instead of ringing up from silence
+    st = {};
+    if (k.nAp == 0) return;
+    for (size_t c = 0; c < ring.size(); ++c)
+        for (long at = pos - primeLen; at < pos; ++at)
+            pathOut (ring[c], at, k, st[c]);
+}
+
 void AlignDsp::startFadeIfNeeded()
 {
     if (! fading && target != cur.s)
     {
         next = make (target);
+        prime (next, nextState);
         fading = true;
         fadePos = 0;
     }
@@ -124,21 +159,23 @@ void AlignDsp::process (float* const* channels, int numChannels, int numSamples)
         for (int c = 0; c < nch; ++c) ring[(size_t) c][(size_t) (at & mask)] = channels[c][n];
         if (! fading)
         {
-            for (int c = 0; c < nch; ++c) channels[c][n] = tapOut (ring[(size_t) c], at, cur);
+            for (int c = 0; c < nch; ++c) channels[c][n] = pathOut (ring[(size_t) c], at, cur, curState[(size_t) c]);
+            ++pos;
         }
         else
         {
             const float b = fadeCurve[(size_t) fadePos], a = 1.0f - b;
             for (int c = 0; c < nch; ++c)
-                channels[c][n] = a * tapOut (ring[(size_t) c], at, cur) + b * tapOut (ring[(size_t) c], at, next);
+                channels[c][n] = a * pathOut (ring[(size_t) c], at, cur, curState[(size_t) c]) + b * pathOut (ring[(size_t) c], at, next, nextState[(size_t) c]);
+            ++pos;
             if (++fadePos >= fadeLen)
             {
                 cur = next;
+                curState = nextState;
                 fading = false;
                 startFadeIfNeeded();   // a change that arrived during the fade starts now, not at the next block
             }
         }
-        ++pos;
     }
     for (int c = nch; c < numChannels; ++c) std::fill (channels[c], channels[c] + numSamples, 0.0f);
 }

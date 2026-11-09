@@ -5,7 +5,7 @@ namespace ld::live
 
 namespace
 {
-const juce::Identifier shiftId ("shiftMs"), gainId ("gainDb"), flipId ("flip");
+const juce::Identifier shiftId ("shiftMs"), gainId ("gainDb"), flipId ("flip"), ap1FcId ("ap1Fc"), ap1QId ("ap1Q"), ap2FcId ("ap2Fc"), ap2QId ("ap2Q");
 }
 
 const char* AlignPlugin::xmlTypeName = "ldAlign";
@@ -16,6 +16,10 @@ AlignPlugin::AlignPlugin (te::PluginCreationInfo info) : te::Plugin (info)
     shiftValue.referTo (state, shiftId, um, 0.0f);
     gainValue.referTo (state, gainId, um, 0.0f);
     flipValue.referTo (state, flipId, um, false);
+    ap1Fc.referTo (state, ap1FcId, um, 0.0f);
+    ap1Q.referTo (state, ap1QId, um, 0.707f);
+    ap2Fc.referTo (state, ap2FcId, um, 0.0f);
+    ap2Q.referTo (state, ap2QId, um, 0.707f);
 
     shiftParam = addParam ("shift", "Shift", { -50.0f, 50.0f },
                            [] (float v) { return juce::String (v, 3) + " ms"; },
@@ -52,6 +56,8 @@ AlignDsp::Settings AlignPlugin::settingsNow() const
     s.advanceSamples = (double) shiftParam->getCurrentValue() * sampleRate / 1000.0;
     s.gainDb = gainParam->getCurrentValue();
     s.flip = flipValue.get();
+    s.ap[0] = { ap1Fc.get(), ap1Q.get() };
+    s.ap[1] = { ap2Fc.get(), ap2Q.get() };
     return s;
 }
 

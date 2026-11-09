@@ -37,9 +37,12 @@ public:
     void setShiftMs (float ms) { shiftValue = ms; }
     void setFlip (bool f) { flipValue = f; }
     void setGainDb (float db) { gainValue = db; }
+    /** Phase EQ band 0 or 1: an all-pass at fc (0 = off) with this Q. */
+    void setPhaseEq (int band, float fc, float q) { (band ? ap2Fc : ap1Fc) = fc; (band ? ap2Q : ap1Q) = q; }
 
     juce::CachedValue<float> shiftValue, gainValue;
     juce::CachedValue<bool> flipValue;
+    juce::CachedValue<float> ap1Fc, ap1Q, ap2Fc, ap2Q;
     te::AutomatableParameter::Ptr shiftParam, gainParam;
 
 protected:

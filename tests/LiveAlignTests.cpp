@@ -3,6 +3,7 @@
 #include "TestSignals.h"
 #include "live/AlignDsp.h"
 #include "live/AlignPlugin.h"
+#include "hl/Align.h"
 #include <cmath>
 #include <random>
 
@@ -117,7 +118,7 @@ TEST_CASE ("Live align: changes fade without clicks, the same whatever the block
 {
     std::vector<float> x (30000);
     for (size_t n = 0; n < x.size(); ++n) x[n] = (float) (0.8 * std::sin (2 * M_PI * 200 * (double) n / SR));
-    AlignDsp::Settings to; to.advanceSamples = 240.5; to.flip = true; to.gainDb = -3;
+    AlignDsp::Settings to; to.advanceSamples = 240.5; to.flip = true; to.gainDb = -3; to.ap[0] = { 202, 0.7 };
     const std::vector<std::pair<int, AlignDsp::Settings>> ch { { 9600, to } };
     const auto a = run (x, { 64 }, ch), b = run (x, { 480 }, ch), c = run (x, { 9600, 7, 333, 1, 4096 }, { { 9600, to } });
     CHECK (a == b);
@@ -171,4 +172,20 @@ TEST_CASE ("Live align: inside Tracktion the shifts land on the timeline, and th
     CHECK (aFar->gainParam->getCurrentValue() == 0.0f);
     CHECK (std::abs (aFar->shiftParam->getCurrentValue() - 88.0f / 48.0f) < 1e-5f);
     CHECK (renderTrack (*edit, *tracks[1], 512) == rFar);
+}
+
+TEST_CASE ("Live align: the phase EQ is the analysis engine's all-pass, and changes level nowhere")
+{
+    const auto x = noise (48000, 7);
+    AlignDsp::Settings s; s.ap[0] = { 202, 0.7 }; s.ap[1] = { 1200, 1.5 };
+    const auto y = run (x, { 512 }, {}, s);
+    const int D = AlignDsp::latencySamples (SR);
+    const auto ref = ld::hl::applyAllpass (ld::hl::F32 (x.begin(), x.end()), SR, { { 202, 0.7 }, { 1200, 1.5 } });
+    double e = 0, p = 0;
+    for (int n = D; n < (int) x.size(); ++n) { const double d = y[(size_t) n] - ref[(size_t) (n - D)]; e += d * d; p += (double) ref[(size_t) (n - D)] * ref[(size_t) (n - D)]; }
+    INFO ("difference " << db (std::sqrt (e / p)) << " dB");
+    CHECK (db (std::sqrt (e / p)) < -100);
+    double px = 0, py = 0;
+    for (int n = D; n < (int) x.size(); ++n) { px += (double) x[(size_t) (n - D)] * x[(size_t) (n - D)]; py += (double) y[(size_t) n] * y[(size_t) n]; }
+    CHECK (std::abs (10 * std::log10 (py / px)) < 0.05);
 }
