@@ -1,5 +1,8 @@
 #include "HitsView.h"
 #include "app/ui/Draw.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 
 namespace ld::samples
 {

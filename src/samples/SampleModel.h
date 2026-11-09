@@ -5,6 +5,7 @@
 #include "app/ui/Wave.h"
 #include "live/AlignPlugin.h"
 #include <functional>
+#include <map>
 #include <memory>
 
 namespace ld::samples
