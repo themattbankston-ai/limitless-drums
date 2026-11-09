@@ -63,6 +63,18 @@ public:
     /** Auto Prep on this thread, start to finish (for tests and tools). Returns the error, or empty. */
     juce::String autoPrepNow();
 
+    // ---- the steps change the session through here
+    enum class Redo { align, tune, levels, mix };
+    /** Changes the session. align: heard at once (the Align plugins), levels re-measured in the background. tune: the
+        clips' ratios at once, then levels. levels: re-measured in the background (gains live when done). mix: clean-up and
+        tone re-rendered in the background, then the hits play the new audio. Playback keeps going throughout. */
+    void change (const std::function<void (hl::Session&)>& f, Redo what);
+    bool isRendering() const { return rendering; }
+    const hl::Session* session() const { return state ? &state->session : nullptr; }
+    const hl::MixRender* mixRender() const { return state && state->mix ? &*state->mix : nullptr; }
+    const hl::LevelResult* levelResult() const { return state && state->levels ? &*state->levels : nullptr; }
+    std::function<void()> onChanged;   ///< after a background render lands (message thread)
+
     // for tests and tools
     te::Edit* getEdit() const { return edit.get(); }
     const EngineState* engineState() const { return state.get(); }
@@ -111,6 +123,10 @@ private:
     juce::File cacheDir;
     bool prepping = false, processedOn = true;
     int toneVersion = 0;
+    bool rendering = false;
+    int renderWanted = 0, renderDone = 0;   ///< edit counters: a render that lands stale starts another
+    bool wantMix = false;
+    void startRender();
     std::vector<bool> userMute;
     bool levelMatchOn = true;
     double matchDb = 0;   ///< what A needs to sound as loud as B

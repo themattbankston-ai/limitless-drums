@@ -253,6 +253,54 @@ void SampleModel::applyAlignment()
             }
 }
 
+void SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what)
+{
+    if (! state) return;
+    f (state->session);
+    if (what == Redo::align) applyAlignment();
+    if (what == Redo::tune) { hl::computeTune (state->session); layoutHits(); }
+    if (what == Redo::mix) wantMix = true;
+    if (! state->prepared) return;
+    ++renderWanted;
+    startRender();
+}
+
+void SampleModel::startRender()
+{
+    if (rendering || renderDone == renderWanted || ! state) return;
+    rendering = true;
+    const int ticket = renderWanted;
+    const bool mix = wantMix || ! state->mix;
+    wantMix = false;
+    // the session is copied (the audio is shared, not copied); a levels-only pass reads the current render in place
+    // (nothing else replaces it while this runs: only this callback does)
+    auto copy = std::make_shared<EngineState>();
+    copy->session = state->session;
+    copy->prepared = state->prepared;
+    auto base = state;
+    auto alivePtr = alive;
+    std::thread ([this, copy, base, alivePtr, ticket, mix]
+    {
+        if (mix) renderAndMeasure (*copy);
+        else if (base->mix) copy->levels = hl::measureLevels (copy->session, *base->mix);
+        juce::MessageManager::callAsync ([this, copy, base, alivePtr, ticket, mix]
+        {
+            if (! *alivePtr) return;
+            rendering = false;
+            renderDone = ticket;
+            if (state == base)
+            {
+                if (mix) state->mix = std::move (copy->mix);
+                state->levels = copy->levels;
+                if (mix) prepFor = nullptr;   // the hits play the new clean-up and tone
+                if (mix) layoutHits(); else updateHitGains();
+            }
+            if (onChanged) onChanged();
+            startRender();   // edits that came in meanwhile
+        });
+    }).detach();
+}
+
 double SampleModel::hitRatio (size_t i) const
 {
     if (! state || ! state->session.tinfo || i >= state->session.tinfo->ratios.size()) return 1.0;

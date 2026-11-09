@@ -4,6 +4,7 @@
 #include "ui/HitsView.h"
 #include "app/ui/VisageHost.h"
 #include "core/Session.h"
+#include "hl/Prep.h"
 #include "BinaryData.h"
 
 namespace ld::samples
@@ -23,6 +24,10 @@ public:
         addAndMakeVisible (*host);
         view.onOpen = [this] { chooseFiles(); };
         view.onAutoPrep = [this] { autoPrep(); };
+        view.onExport = [this] { exportTake(); };
+        view.onLoadReference = [this] { loadReference(); };
+        model.onChanged = [this] { view.takeChanged (false); };
+        if (const char* step = std::getenv ("LD_STEP")) view.setStep (std::atoi (step));
         setSize (1440, 900);
         startTimerHz (30);
     }
@@ -60,8 +65,50 @@ public:
         view.setStatus ("Finding the hits and lining up the mics\xe2\x80\xa6");
         model.autoPrep ([this] (juce::String err)
         {
-            view.setStatus (err.isEmpty() ? std::string ("Every hit found, and the mics are lined up. A/B to hear the difference.") : err.toStdString());
+            view.setStatus (err.isEmpty() ? std::string ("Every hit found, the mics lined up and the levels set. A/B to hear the difference.") : err.toStdString());
             view.takeChanged();
+            if (const char* to = std::getenv ("LD_EXPORT_TO")) if (err.isEmpty()) exportTake();
+        });
+    }
+
+    void exportTake()
+    {
+        if (! model.isPrepared()) { view.setStatus ("Run Auto Prep first: every hit has to be found."); return; }
+        auto go = [this] (juce::File dir)
+        {
+            view.exportFolder = dir.getFullPathName().toStdString();
+            view.setExportProgress (0);
+            view.setStatus ("Writing the files\xe2\x80\xa6");
+           #if JUCE_LINUX
+            if (root.window() != nullptr) root.drawWindow();
+           #endif
+            int count = 0;
+            const auto err = model.exportTo (dir, count, [this] (float p) { view.setExportProgress (p); });
+            view.setExportProgress (-1);
+            view.setStatus (err.isEmpty() ? "Wrote " + std::to_string (count) + " files to " + dir.getFullPathName().toStdString() : err.toStdString());
+        };
+        if (const char* to = std::getenv ("LD_EXPORT_TO")) { go (juce::File (to)); return; }
+        chooser = std::make_unique<juce::FileChooser> ("Export to", juce::File::getSpecialLocation (juce::File::userDesktopDirectory));
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                              [go] (const juce::FileChooser& fc) { if (fc.getResult() != juce::File()) go (fc.getResult()); });
+    }
+
+    void loadReference()
+    {
+        if (! model.mixRender()) { view.setStatus ("Run Auto Prep first."); return; }
+        chooser = std::make_unique<juce::FileChooser> ("A finished sample to move toward", juce::File(), "*.wav;*.aif;*.aiff");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (! f.existsAsFile() || ! model.session() || ! model.mixRender()) return;
+            auto R = hl::loadReference (*model.session(), *model.mixRender(), f);
+            if (! R.error.empty() || R.curve.empty()) { view.setStatus ("Couldn't read that reference: " + R.error); return; }
+            model.change ([R] (hl::Session& s)
+            {
+                s.tone.hasRef = true; s.tone.refCurve = R.curve; if (s.tone.refAmt == 0) s.tone.refAmt = 0.6;
+                s.tone.hasRefEnv = R.hasEnv; s.tone.refEnv = R.env; if (R.hasEnv && s.tone.refEnvAmt == 0) s.tone.refEnvAmt = 0.5;
+            }, SampleModel::Redo::mix);
+            view.setStatus ("Reference loaded: " + R.name + ".");
         });
     }
 

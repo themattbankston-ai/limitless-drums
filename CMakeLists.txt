@@ -191,6 +191,7 @@ if(LD_BUILD_APP)
         src/samples/SamplesMain.cpp
         src/samples/SampleModel.cpp
         src/samples/ui/HitsView.cpp
+        src/samples/ui/StepViews.cpp
         src/app/Engine.cpp
         src/app/ui/VisageHost.cpp
         src/app/ui/Wave.cpp)

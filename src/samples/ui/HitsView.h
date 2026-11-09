@@ -24,12 +24,18 @@ public:
     bool mouseWheel (const visage::MouseEvent&) override;
     bool keyPress (const visage::KeyEvent&) override;
 
-    /** Call after a take opens or Auto Prep finishes. */
-    void takeChanged();
+    /** Call after a take opens or Auto Prep finishes (refit: fit the view to the take again). */
+    void takeChanged (bool refit = true);
     void setStatus (const std::string& s) { status = s; redraw(); }
     void tick();   ///< 30 times a second: playhead, meters
 
     std::function<void()> onOpen, onAutoPrep;
+    std::function<void()> onExport;         ///< the Export step's button (the shell picks the folder)
+    std::function<void()> onLoadReference;  ///< the Tone step's reference (the shell picks the file)
+    int currentStep() const { return step; }
+    void setStep (int s) { step = std::clamp (s, 0, 7); redraw(); }
+    void setExportProgress (float p) { exportProgress = p; redraw(); }
+    std::string exportFolder;               ///< where the export goes (the shell sets it)
 
 private:
     SampleModel& model;
@@ -51,8 +57,15 @@ private:
     int ab = 1;                       ///< 0 A, 1 B, 2 A then B
     std::string status;
 
+    int step = 1;                      ///< 0 Setup .. 7 Export
+    int alignUnits = 0;               ///< ms, samples, feet
+    int selMic = -1;                  ///< the mic the Align, Tone and Level steps act on (-1: all / the lead)
+    float exportProgress = -1;
+    float barEnd = 0;                 ///< where the step bar's controls end (the status goes after)
+
     // gestures
-    enum class Drag { none, select, fader, pan } drag = Drag::none;
+    enum class Drag { none, select, fader, pan, slider } drag = Drag::none;
+    std::string sliderKey;
     int dragTrack = -1;
     double dragFrom = 0;
     float dragY0 = 0, dragV0 = 0;
@@ -82,6 +95,22 @@ private:
     void drawInspector (visage::Canvas&);
     void drawCloseUp (visage::Canvas&);
     void drawPopup (visage::Canvas&);
+
+    // the other steps (StepViews.cpp)
+    void drawStep (visage::Canvas&);
+    void drawSetup (visage::Canvas&);
+    void drawAlign (visage::Canvas&);
+    void drawTune (visage::Canvas&);
+    void drawTone (visage::Canvas&);
+    void drawClean (visage::Canvas&);
+    void drawLevel (visage::Canvas&);
+    void drawExport (visage::Canvas&);
+    bool actStep (const std::string& id, const visage::MouseEvent&);   ///< true when it was one of theirs
+    void slider (visage::Canvas&, float x, float y, float w, const std::string& label, const std::string& key);
+    void segmented (visage::Canvas&, float x, float y, const std::vector<std::string>& labels, int sel, const std::string& idPrefix, float h = 28);
+    double sliderValue (const std::string& key) const;
+    static double sliderSpan (const std::string& key);
+    void setSliderValue (const std::string& key, double v);
 };
 
 } // namespace ld::samples
