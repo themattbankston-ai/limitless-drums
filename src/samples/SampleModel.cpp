@@ -5,9 +5,21 @@
 #include <cstdio>
 #include <map>
 #include <thread>
+#if defined (__linux__)
+ #include <malloc.h>
+#endif
 
 namespace ld::samples
 {
+
+// the renders work on other threads; on Linux their freed working copies otherwise stay in those threads' heaps
+static void releaseFreedMemory()
+{
+   #if defined (__linux__)
+    malloc_trim (0);
+   #endif
+}
+
 
 namespace
 {
@@ -219,6 +231,7 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
             if (! *alivePtr) return;
             prepping = false;
             state = copy;
+            releaseFreedMemory();
             buildHits();
             applyAlignment();
             layoutHits();
@@ -300,6 +313,7 @@ void SampleModel::startRender()
                 if (mix) prepFor = nullptr;   // the hits play the new clean-up and tone
                 if (mix) layoutHits(); else updateHitGains();
             }
+            releaseFreedMemory();
             if (onChanged) onChanged();
             startRender();   // edits that came in meanwhile
         });
