@@ -31,7 +31,7 @@ public:
 
     void initialise (const te::PluginInitialisationInfo&) override;
     void deinitialise() override {}
-    void reset() override { dsp.reset(); }
+    void reset() override { dsp.reset(); jumpNext = true; }
     double getLatencySeconds() override { return AlignDsp::latencySamples (sampleRate) / sampleRate; }
     int getNumOutputChannelsGivenInputs (int numInputChannels) override { return juce::jmin (numInputChannels, 2); }
     BusLayout getBusses() const override { return BusLayout::singleStereoInOut(); }
@@ -61,6 +61,7 @@ protected:
 private:
     AlignDsp::Settings settingsNow() const;
     AlignDsp dsp;
+    std::atomic<bool> jumpNext { true };   ///< after a reset or a seek: start on the right settings, don't fade into them
     std::shared_ptr<const std::vector<HitScale>> scales;
     std::vector<std::shared_ptr<const std::vector<HitScale>>> retired;   ///< freed on the message thread, never the audio thread
 

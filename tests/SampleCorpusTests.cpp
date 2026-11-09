@@ -38,7 +38,8 @@ std::vector<float> renderTrack (te::Edit& edit, int idx, double sr)
     p.ditheringEnabled = false;
     te::Renderer::renderToFile ("Render", p);
     auto b = ld::readMono (temp.getFile());
-    return std::vector<float> (b.getReadPointer (0), b.getReadPointer (0) + b.getNumSamples());
+    const int pad = (int) std::lround (ld::samples::SampleModel::kPad * sr);   // the take sits this far into the edit
+    return std::vector<float> (b.getReadPointer (0) + std::min (pad, b.getNumSamples()), b.getReadPointer (0) + b.getNumSamples());
 }
 
 // how well two mics add up over the first 25 ms of every hit: 1 = in step, 0 = unrelated, below 0 = fighting
@@ -102,10 +103,12 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
         {
             auto wavs = f.findChildFiles (juce::File::findFiles, false, "*.wav");
             CHECK (! wavs.isEmpty()); if (wavs.isEmpty()) return;
-            std::smatch m;
+            std::smatch mv, mr;
             const std::string fn = wavs[0].getFileName().toStdString();
-            const bool named = std::regex_search (fn, m, std::regex ("_V(\\d+)_RR(\\d+)")); CHECK (named); if (! named) return;
-            const int V = std::stoi (m[1]), RR = std::stoi (m[2]);
+            const bool named = std::regex_search (fn, mv, std::regex ("_V(\\d+)")) && std::regex_search (fn, mr, std::regex ("_RR(\\d+)"));
+            CHECK (named);
+            if (! named) return;
+            const int V = std::stoi (mv[1]), RR = std::stoi (mr[1]);
 
             ld::samples::SampleModel model (ldtest::engine());
             auto t0 = std::chrono::steady_clock::now();

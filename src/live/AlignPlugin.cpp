@@ -66,6 +66,7 @@ void AlignPlugin::initialise (const te::PluginInitialisationInfo& info)
     sampleRate = info.sampleRate;
     dsp.setTarget (settingsNow());
     dsp.prepare (sampleRate, 2);
+    jumpNext = true;
 }
 
 void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
@@ -76,9 +77,11 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
     auto& b = *rc.destBuffer;
     const int nch = std::min (2, b.getNumChannels());
     const auto tbl = std::atomic_load (&scales);
+    const bool jump = jumpNext.exchange (false);
     if (tbl == nullptr || tbl->empty())
     {
         dsp.setTarget (base);
+        if (jump) dsp.reset();
         float* ch[2] = { nullptr, nullptr };
         for (int c = 0; c < nch; ++c) ch[c] = b.getWritePointer (c, rc.bufferStartSample);
         dsp.process (ch, nch, rc.bufferNumSamples);
@@ -100,6 +103,7 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
         s.advanceSamples *= scale;
         s.gainDb += extra;
         dsp.setTarget (s);
+        if (jump && done == 0) dsp.reset();
         float* ch[2] = { nullptr, nullptr };
         for (int c = 0; c < nch; ++c) ch[c] = b.getWritePointer (c, rc.bufferStartSample + done);
         dsp.process (ch, nch, seg);

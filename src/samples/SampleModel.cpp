@@ -141,7 +141,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
         auto* at = ts[(int) t];
         at->setName (tr.name);
         te::AudioFile af (engine, file);
-        te::ClipPosition pos { te::TimeRange (te::TimePosition(), te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() };
+        te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (kPad), te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() };
         if (auto clip = at->insertWaveClip (tr.name, file, pos, false)) clip->setAutoCrossfade (false);
         live::alignOn (*at);
         auto* aTrack = ts[T + (int) t];
@@ -161,6 +161,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     userMute.assign ((size_t) T, false);
     processedOn = true;
     applyMutes();
+    setPosition (0);
     buildHits();
     return {};
 }
@@ -310,7 +311,7 @@ std::vector<live::AlignPlugin::HitScale> SampleModel::scalesFor (int t, int pari
         // switch a fade's length early, so the change has finished before the hit (the last 10 ms of the previous
         // hit's tail take it instead)
         const double start = (double) R[i].start / state->session.sr;
-        scales.push_back ({ std::max (0.0, start - live::AlignDsp::kFadeSeconds - 0.0005), 1.0 / hitRatio (i), hitGainDb (t, i) });
+        scales.push_back ({ kPad + start - live::AlignDsp::kFadeSeconds - 0.0005, 1.0 / hitRatio (i), hitGainDb (t, i) });
     }
     return scales;
 }
@@ -340,7 +341,7 @@ void SampleModel::layoutHitsFor (int parity)
             const double cap = parity >= 0 ? 1.0e9 : (i + 1 < R.size() ? (double) R[i + 1].start / sr : end) - start;
             const double len = std::min ((double) (R[i].end - R[i].start) / sr / r, cap);
             if (len <= 0) continue;
-            te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (start), te::TimeDuration::fromSeconds (len)), te::TimeDuration() };
+            te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (kPad + start), te::TimeDuration::fromSeconds (len)), te::TimeDuration() };
             auto clip = at->insertWaveClip (S.tracks[(size_t) t].name + " " + std::to_string (i + 1), src, pos, false);
             if (! clip) continue;
             clip->setAutoCrossfade (false);
@@ -437,7 +438,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
             for (size_t i = (size_t) parity; i < R.size(); i += 2)
             {
                 const double stepIn = hitRatio (i) * sr / srOut;
-                const long a = (long) std::llround ((double) R[i].start / sr * srOut);
+                const long a = (long) std::llround (((double) R[i].start / sr + kPad) * srOut);
                 const long n = std::max (1L, (long) std::llround ((double) (R[i].end - R[i].start) / stepIn));
                 hl::Chs h;
                 for (auto& x : whole)
@@ -460,6 +461,8 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
         for (int t = 0; t < T; ++t)
         {
             auto x = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1);
+            const auto pad = (long) std::llround (kPad * srOut);
+            for (auto& c : x) c.erase (c.begin(), c.begin() + std::min ((long) c.size(), pad));
             for (auto& c : x) c.resize ((size_t) std::llround ((double) S.tracks[(size_t) t].len / sr * srOut), 0.0f);
             fullAudio.push_back (std::move (x));
         }
@@ -581,14 +584,14 @@ void SampleModel::setProcessed (bool b)
 void SampleModel::play() { if (edit) { edit->getTransport().ensureContextAllocated(); edit->getTransport().play (false); } }
 void SampleModel::stop() { if (edit) edit->getTransport().stop (false, false); }
 bool SampleModel::isPlaying() const { return edit && edit->getTransport().isPlaying(); }
-double SampleModel::position() const { return edit ? edit->getTransport().getPosition().inSeconds() : 0.0; }
-void SampleModel::setPosition (double s) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (std::max (0.0, s))); }
+double SampleModel::position() const { return edit ? edit->getTransport().getPosition().inSeconds() - kPad : 0.0; }
+void SampleModel::setPosition (double s) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (kPad + std::max (0.0, s))); }
 
 void SampleModel::setLoop (double a, double b, bool on)
 {
     if (! edit) return;
     auto& tr = edit->getTransport();
-    if (b > a) tr.setLoopRange (te::TimeRange (te::TimePosition::fromSeconds (a), te::TimePosition::fromSeconds (b)));
+    if (b > a) tr.setLoopRange (te::TimeRange (te::TimePosition::fromSeconds (kPad + a), te::TimePosition::fromSeconds (kPad + b)));
     tr.looping = on;
 }
 

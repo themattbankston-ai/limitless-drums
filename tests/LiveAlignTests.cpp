@@ -189,3 +189,26 @@ TEST_CASE ("Live align: the phase EQ is the analysis engine's all-pass, and chan
     for (int n = D; n < (int) x.size(); ++n) { px += (double) x[(size_t) (n - D)] * x[(size_t) (n - D)]; py += (double) y[(size_t) n] * y[(size_t) n]; }
     CHECK (std::abs (10 * std::log10 (py / px)) < 0.05);
 }
+
+TEST_CASE ("Live align: a hit right after the edit's lead-in comes through whole, and per-hit gains switch on time")
+{
+    registerOnce();
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ld_live_align_start");
+    dir.deleteRecursively(); dir.createDirectory();
+    // the sample build sits every take 0.25 s into the edit: Tracktion's render doesn't run the look-ahead before 0
+    const int pad = 12000;
+    std::vector<float> x (96000 + pad, 0.0f);
+    x[pad + 5] = 0.5f; x[pad + 48000] = 0.5f;
+    writeFloatWav (dir.getChildFile ("X.wav"), x);
+    auto edit = ld::createSessionEdit (ldtest::engine(), { { "X", dir.getChildFile ("X.wav") } }, 120.0, te::Edit::EditRole::forRendering);
+    REQUIRE (edit != nullptr);
+    auto tracks = te::getAudioTracks (*edit);
+    auto* a = ld::live::alignOn (*tracks[0]);
+    REQUIRE (a != nullptr);
+    a->setHitScales ({ { 0.24, 1.0, -6.0 }, { 0.25 + 0.9, 1.0, -12.0 } });
+    const auto r = renderTrack (*edit, *tracks[0], 512);
+    INFO ("at 5: " << r[pad + 5] << ", at 48000: " << r[pad + 48000]);
+    CHECK (std::abs (r[pad + 5] - 0.5f * std::pow (10.0f, -6.0f / 20.0f)) < 1e-4f);
+    CHECK (std::abs (r[pad + 48000] - 0.5f * std::pow (10.0f, -12.0f / 20.0f)) < 1e-4f);
+    CHECK (renderTrack (*edit, *tracks[0], 37) == r);
+}

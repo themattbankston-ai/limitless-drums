@@ -35,6 +35,11 @@ struct HitInfo
 class SampleModel
 {
 public:
+    /** The take sits this far into the edit, so the Align plugins' look-ahead has audio before the first hit (a
+        render or playback from 0 would otherwise lose a hit that starts the file). Every time this class takes or
+        gives is on the take's own timeline; only the edit is offset. */
+    static constexpr double kPad = 0.25;
+
     explicit SampleModel (te::Engine&);
     ~SampleModel();
 
