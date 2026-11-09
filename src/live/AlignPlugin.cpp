@@ -29,6 +29,7 @@ AlignPlugin::AlignPlugin (te::PluginCreationInfo info) : te::Plugin (info)
                           [] (float v) { return juce::String (v, 1) + " dB"; },
                           [] (const juce::String& s) { return s.getFloatValue(); });
     gainParam->attachToCurrentValue (gainValue);
+    publish();
 }
 
 AlignPlugin::~AlignPlugin()
@@ -40,31 +41,43 @@ AlignPlugin::~AlignPlugin()
 
 void AlignPlugin::valueTreePropertyChanged (juce::ValueTree& v, const juce::Identifier& id)
 {
-    // an undo, redo or load changes the stored value directly: bring the parameter the audio reads back in line
-    if (v == state && (id == shiftId || id == gainId))
+    // an undo, redo or load changes the stored value directly: refresh the cached copies (this can run before they
+    // have heard of the change), keep the parameters in line, and publish the new snapshot
+    if (v == state && (id == shiftId || id == gainId || id == flipId || id == ap1FcId || id == ap1QId || id == ap2FcId || id == ap2QId))
     {
-        // (this can run before the cached copy has heard of the change, so refresh it first)
-        if (id == shiftId) { shiftValue.forceUpdateOfCachedValue(); shiftParam->updateFromAttachedValue(); }
-        else { gainValue.forceUpdateOfCachedValue(); gainParam->updateFromAttachedValue(); }
+        for (auto* cv : { &shiftValue, &gainValue, &ap1Fc, &ap1Q, &ap2Fc, &ap2Q }) cv->forceUpdateOfCachedValue();
+        flipValue.forceUpdateOfCachedValue();
+        if (id == shiftId) shiftParam->updateFromAttachedValue();
+        if (id == gainId) gainParam->updateFromAttachedValue();
+        publish();
     }
     te::Plugin::valueTreePropertyChanged (v, id);
 }
 
-AlignDsp::Settings AlignPlugin::settingsNow() const
+void AlignPlugin::publish()
 {
-    AlignDsp::Settings s;
-    s.advanceSamples = (double) shiftParam->getCurrentValue() * sampleRate / 1000.0;
-    s.gainDb = gainParam->getCurrentValue();
-    s.flip = flipValue.get();
-    s.ap[0] = { ap1Fc.get(), ap1Q.get() };
-    s.ap[1] = { ap2Fc.get(), ap2Q.get() };
-    return s;
+    Snapshot n;
+    n.shiftMs = shiftValue.get();
+    n.s.gainDb = gainValue.get();
+    n.s.flip = flipValue.get();
+    n.s.ap[0] = { ap1Fc.get(), ap1Q.get() };
+    n.s.ap[1] = { ap2Fc.get(), ap2Q.get() };
+    const juce::SpinLock::ScopedLockType l (lock);
+    pubSnap = n;
 }
 
 void AlignPlugin::initialise (const te::PluginInitialisationInfo& info)
 {
     sampleRate = info.sampleRate;
-    dsp.setTarget (settingsNow());
+    publish();
+    {
+        const juce::SpinLock::ScopedLockType l (lock);
+        audioSnap = pubSnap;
+        audioTbl = pubTbl;
+    }
+    auto s = audioSnap.s;
+    s.advanceSamples = audioSnap.shiftMs * sampleRate / 1000.0;
+    dsp.setTarget (s);
     dsp.prepare (sampleRate, 2);
     jumpNext = true;
 }
@@ -73,15 +86,16 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
 {
     if (rc.destBuffer == nullptr) return;
     SCOPED_REALTIME_CHECK
-    const auto base = settingsNow();
+    {
+        // never waits: if the message thread is publishing this very moment, this block keeps the last snapshot
+        const juce::SpinLock::ScopedTryLockType l (lock);
+        if (l.isLocked()) { audioSnap = pubSnap; audioTbl = pubTbl; }
+    }
+    auto base = audioSnap.s;
+    base.advanceSamples = audioSnap.shiftMs * sampleRate / 1000.0;
     auto& b = *rc.destBuffer;
     const int nch = std::min (2, b.getNumChannels());
-    {
-        // never waits: if the message thread is swapping the table this very moment, this block keeps the last one
-        const juce::SpinLock::ScopedTryLockType l (tblLock);
-        if (l.isLocked() && audioScales != scales) audioScales = scales;   // (the old one stays alive in `retired`)
-    }
-    const auto& tbl = audioScales;
+    const auto* tbl = audioTbl;
     const bool jump = jumpNext.exchange (false);
     if (tbl == nullptr || tbl->empty())
     {
@@ -118,14 +132,19 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
 
 void AlignPlugin::setHitScales (std::vector<HitScale> v)
 {
-    auto p = std::make_shared<const std::vector<HitScale>> (std::move (v));
+    auto p = std::make_unique<std::vector<HitScale>> (std::move (v));
+    std::vector<std::unique_ptr<std::vector<HitScale>>> unused;
     {
-        const juce::SpinLock::ScopedLockType l (tblLock);
-        if (scales) retired.push_back (scales);
-        scales = p;
+        const juce::SpinLock::ScopedLockType l (lock);
+        pubTbl = p.get();
+        tables.push_back (std::move (p));
+        // everything but the published table and the one the audio thread holds can go; the audio thread only
+        // changes which one it holds under this lock, so neither can change while we sort them
+        for (auto& t : tables)
+            if (t.get() != pubTbl && t.get() != audioTbl) unused.push_back (std::move (t));
+        tables.erase (std::remove (tables.begin(), tables.end(), nullptr), tables.end());
     }
-    // keep the last couple alive: the audio thread may still hold one for the block it's in
-    while (retired.size() > 4) retired.erase (retired.begin());
+    // (freed here, outside the lock, on the message thread)
 }
 
 void registerLivePlugins (te::Engine& engine)

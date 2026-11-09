@@ -78,9 +78,14 @@ void HitsView::selectHit (int i, bool play, bool andRedraw)
     selA = H[(size_t) selHit].time;
     selB = H[(size_t) selHit].end;
     if (playMode == 1)        // Layer: every round robin of this velocity, one after another
-        for (auto& h : H) if (h.vel == H[(size_t) selHit].vel) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
+    {
+        for (auto& h : H)
+            if (h.vel == H[(size_t) selHit].vel) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
+    }
     else if (playMode == 2)   // Sweep: every hit, softest to hardest
+    {
         for (auto& h : H) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
+    }
     selA = std::max (0.0, selA - 0.005);
     model.setLoop (selA, selB, loopOn);
     if (selA < scroll || selB > timeAt (laneX() + laneW())) scroll = std::max (0.0, selA - 0.25 * laneW() / pps);
@@ -136,21 +141,30 @@ void HitsView::drawToolbar (Canvas& c)
     c.setColor (0xff1b1b1d); c.circle (14, 11, 30);
     c.setColor (accent); c.ring (14, 11, 30, 1.5f);
     txt (c, "\xe2\x88\x9e", boldFont (18), accent, 14, 11, 30, 30, visage::Font::kCenter);
-    txt (c, "Limitless Drums", boldFont (13), ink, 54, 9, 180, 18);
-    txt (c, model.isOpen() ? (model.takeName() + " \xc2\xb7 " + juce::String ((int) model.tracks().size()) + " tracks").toStdString() : std::string ("No take open"), bodyFont (11), ink3, 54, 27, 200, 16);
+    // narrower windows (down to the 1100 px minimum) drop the take line and the counter's Start/End/Len, and the
+    // steps share whatever room is left, so all eight and the transport always fit
+    const bool compact = width() < 1400;
+    const float counterW = compact ? 132.0f : 250.0f, transportW = 36 * 3 + 46 + 10 + counterW;
+    const float tx0 = width() - 104 - 12 - transportW;
+    txt (c, "Limitless Drums", boldFont (13), ink, 54, compact ? 17 : 9, 120, 18);
+    if (! compact)
+        txt (c, model.isOpen() ? (model.takeName() + " \xc2\xb7 " + juce::String ((int) model.tracks().size()) + " tracks").toStdString() : std::string ("No take open"), bodyFont (11), ink3, 54, 27, 180, 16);
     // steps
-    float x = 240;
-    c.setColor (well); c.roundedRectangle (x, 12, 8 * 84 + 4, 32, 5);
+    float x = compact ? 176.0f : 240.0f;
+    const float sw = std::clamp ((tx0 - 12 - x - 4) / 8.0f, 50.0f, 84.0f);
+    c.setColor (well); c.roundedRectangle (x, 12, 8 * sw + 4, 32, 5);
     for (int i = 0; i < 8; ++i)
     {
-        const float bx = x + 2 + i * 84;
+        const float bx = x + 2 + i * sw;
         const bool on = i == step;
-        button (c, bx, 14, 82, 28, std::to_string (i + 1) + ". " + stepNames[i], on);
-        if (on) { c.setColor (accent); c.fill (bx + 3, 40, 76, 2); }
-        add (bx, 14, 82, 28, "step:" + std::to_string (i));
+        const std::string label = sw >= 80 ? std::to_string (i + 1) + ". " + stepNames[i] : std::string (stepNames[i]);
+        if (on) { c.setColor (btnOn); c.roundedRectangle (bx, 14, sw - 2, 28, 3); }
+        txt (c, label, on ? boldFont (sw >= 66 ? 12 : 11) : bodyFont (sw >= 66 ? 12 : 11), on ? ink : ink2, bx, 14, sw - 2, 28, visage::Font::kCenter);
+        if (on) { c.setColor (accent); c.fill (bx + 3, 40, sw - 8, 2); }
+        add (bx, 14, sw - 2, 28, "step:" + std::to_string (i));
     }
     // transport
-    x = width() - 520;
+    x = tx0;
     const char* tid[4] = { "prev", "stop", "play", "next" };
     for (int i = 0; i < 4; ++i)
     {
@@ -169,11 +183,14 @@ void HitsView::drawToolbar (Canvas& c)
     }
     // counter
     x += 36 * 3 + 46 + 10;
-    c.setColor (0xff0f0f10); c.roundedRectangle (x, 7, 250, 38, 4);
+    c.setColor (0xff0f0f10); c.roundedRectangle (x, 7, counterW, 38, 4);
     txt (c, fmtTime (model.position()), monoFont (17), accent, x + 10, 7, 120, 38);
-    txt (c, "Start " + fmtTime (selA), monoFont (9), ink3, x + 128, 9, 120, 12);
-    txt (c, "End   " + fmtTime (selB), monoFont (9), ink3, x + 128, 20, 120, 12);
-    txt (c, "Len   " + fmtTime (std::max (0.0, selB - selA)), monoFont (9), ink3, x + 128, 31, 120, 12);
+    if (! compact)
+    {
+        txt (c, "Start " + fmtTime (selA), monoFont (9), ink3, x + 128, 9, 120, 12);
+        txt (c, "End   " + fmtTime (selB), monoFont (9), ink3, x + 128, 20, 120, 12);
+        txt (c, "Len   " + fmtTime (std::max (0.0, selB - selA)), monoFont (9), ink3, x + 128, 31, 120, 12);
+    }
     // Auto Prep
     x = width() - 104;
     c.setColor (visage::Brush::linear (visage::Color (0xff55555a), visage::Color (0xff47474b), visage::Point (0, 11), visage::Point (0, 41)));
@@ -220,17 +237,18 @@ void HitsView::drawAudition (Canvas& c)
         add (x, y + 12, w, 26, std::string ("toggle:") + tn[i]);
         x += w + 4;
     }
-    // master meter (sum of the tracks' meters, roughly)
-    x = width() - 210;
+    // master meter (sum of the tracks' meters, roughly): whatever room is left after the toggles, up to 180 px
+    const float mw = std::min (180.0f, width() - 16 - (x + 14));
+    x = width() - 16 - mw - 14;
     float l = -100, r = -100;
     for (int t = 0; t < (int) model.tracks().size(); ++t) { auto m = model.meter (t); l = std::max (l, m.first); r = std::max (r, m.second); }
-    for (int ch = 0; ch < 2; ++ch)
+    for (int ch = 0; mw > 30 && ch < 2; ++ch)
     {
         const float yy = y + 17 + ch * 10, lv = std::clamp ((ch ? r : l) + 60, 0.0f, 60.0f) / 60.0f;
         txt (c, ch ? "R" : "L", bodyFont (10), 0xff9c9ca1, x, yy - 4, 10, 14);
-        c.setColor (0xff161617); c.fill (x + 14, yy, 180, 6);
+        c.setColor (0xff161617); c.fill (x + 14, yy, mw, 6);
         c.setColor (visage::Brush::horizontal (visage::Gradient (visage::Color (0xff2fbf6a), visage::Color (0xff2fbf6a), visage::Color (0xffe0c23c), visage::Color (0xffe0663c))));
-        c.fill (x + 14, yy, 180 * lv, 6);
+        c.fill (x + 14, yy, mw * lv, 6);
     }
 }
 
@@ -413,7 +431,6 @@ void HitsView::drawTracks (Canvas& c)
         if (selB > selA) { c.setColor (0x29ffffff); c.fill (xOf (selA), y, xOf (selB) - xOf (selA), h - 1); }
         c.setClampBounds (0, 0, width(), height());
         add (lx, y, lw, h, "lane:" + std::to_string (t));
-        add (0, y, lx - 100, h, "head:" + std::to_string (t));
     }
     // playhead
     const float px = xOf (model.position());
@@ -560,9 +577,13 @@ void HitsView::drawPopup (Canvas& c)
 // ------------------------------------------------------------------------------------------------ input
 const HitsView::Hit* HitsView::hitAt (float x, float y) const
 {
-    for (auto it = hits.rbegin(); it != hits.rend(); ++it)   // last drawn is on top
-        if (x >= it->x && x < it->x + it->w && y >= it->y && y < it->y + it->h) return &*it;
-    return nullptr;
+    // the smallest target under the pointer wins: a button inside a row, never the row over the button, whatever
+    // order they were added in (ties: the last drawn, which is on top)
+    const Hit* best = nullptr;
+    for (auto& h : hits)
+        if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h)
+            if (best == nullptr || h.w * h.h <= best->w * best->h) best = &h;
+    return best;
 }
 
 void HitsView::mouseDown (const visage::MouseEvent& e)
@@ -706,7 +727,13 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
     else if ((k == K::Up || k == K::Down) && e.isCtrlDown() && e.isAltDown())
         heightIdx = std::clamp (heightIdx + (k == K::Up ? 1 : -1), 0, 3);
     else if (k == K::L && e.isMainModifier() && e.isShiftDown()) { loopOn = ! loopOn; model.setLoop (selA, selB, loopOn); }
-    else if (k == K::Z && e.isMainModifier()) { if (auto* um = model.undoManager()) e.isShiftDown() ? um->redo() : um->undo(); }
+    else if (k == K::Z && e.isMainModifier())
+    {
+        // the session's history: every setting on every step (monitor faders and pans aren't part of it)
+        if (e.isShiftDown()) { if (model.canRedo()) { model.redo(); setStatus ("Redone."); } }
+        else if (model.canUndo()) { model.undo(); setStatus ("Undone."); }
+        else setStatus ("Nothing to undo.");
+    }
     else if (k == K::O && e.isMainModifier()) { if (onOpen) onOpen(); }
     else if (k == K::Escape) popTrack = -1;
     else if (k == K::Left || k == K::Right) selectHit (selHit + (k == K::Right ? 1 : -1), false);

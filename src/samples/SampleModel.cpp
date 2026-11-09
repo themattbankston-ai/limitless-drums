@@ -132,6 +132,11 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     state = st;
     name = folder;
     sourceFiles.clear();
+    ++takeGen;
+    prepping = false;     // an Auto Prep for the previous take is dropped when it lands
+    undoStack.clear();
+    redoStack.clear();
+    scoreCache.clear();
     auto& S = state->session;
 
     // each track's audio as one file (a stereo pair becomes one stereo file), for Tracktion to play
@@ -218,19 +223,24 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
     prepping = true;
     auto copy = std::make_shared<EngineState> (*state);
     auto alivePtr = alive;
-    std::thread ([this, copy, alivePtr, done]
+    const int gen = takeGen;
+    std::thread ([this, copy, alivePtr, done, gen]
     {
         fprintf (stderr, "[prep] start\n");
         copy->prepared = hl::autoPrep (copy->session);
         fprintf (stderr, "[prep] done, prepared=%d\n", (int) copy->prepared);
         if (! copy->prepared) copy->advice = hl::hitCountAdvice (copy->session);
         else renderAndMeasure (*copy);
-        juce::MessageManager::callAsync ([this, copy, alivePtr, done]
+        juce::MessageManager::callAsync ([this, copy, alivePtr, done, gen]
         {
             fprintf (stderr, "[prep] back on the message thread\n");
             if (! *alivePtr) return;
+            if (gen != takeGen) { releaseFreedMemory(); return; }   // another take was opened meanwhile
             prepping = false;
             state = copy;
+            undoStack.clear();
+            redoStack.clear();
+            scoreCache.clear();
             releaseFreedMemory();
             buildHits();
             applyAlignment();
@@ -266,21 +276,135 @@ void SampleModel::applyAlignment()
                 a->setShiftMs ((float) (tr.lag / S.sr * 1000.0));   // lag: later than the lead, so play it that much earlier
                 if (std::getenv ("LD_FRAMELOG")) fprintf (stderr, "[align] %s: lag %.2f smp (%.3f ms), pol %d, %d all-pass\n", tr.name.c_str(), tr.lag, tr.lag / S.sr * 1000.0, tr.pol, (int) tr.ap.size());
                 a->setFlip (tr.pol < 0);
+                const bool apOn = tr.apOn && ! tr.ap.empty();
                 for (int b = 0; b < 2; ++b)
-                    a->setPhaseEq (b, b < (int) tr.ap.size() ? (float) tr.ap[(size_t) b].fc : 0.0f, b < (int) tr.ap.size() ? (float) tr.ap[(size_t) b].Q : 0.707f);
+                    a->setPhaseEq (b, apOn && b < (int) tr.ap.size() ? (float) tr.ap[(size_t) b].fc : 0.0f, apOn && b < (int) tr.ap.size() ? (float) tr.ap[(size_t) b].Q : 0.707f);
             }
 }
 
-void SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what)
+bool SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what, const std::string& gesture)
 {
-    if (! state) return;
+    if (! state || prepping) return false;
+    const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    if (gesture.empty() || gesture != lastGesture || now - lastGestureTime > 2.0)
+    {
+        undoStack.push_back ({ state->session, state->prepared });
+        if (undoStack.size() > 200) undoStack.erase (undoStack.begin());
+    }
+    lastGesture = gesture;
+    lastGestureTime = now;
+    redoStack.clear();
     f (state->session);
+    if (what == Redo::none) return true;
+    if (what == Redo::reprep)
+    {
+        state->prepared = false;   // export waits for Auto Prep
+        buildHits();
+        return true;
+    }
     if (what == Redo::align) applyAlignment();
     if (what == Redo::tune) { hl::computeTune (state->session); layoutHits(); }
     if (what == Redo::mix) wantMix = true;
-    if (! state->prepared) return;
+    buildHits();
+    if (! state->prepared) return true;
     ++renderWanted;
     startRender();
+    return true;
+}
+
+void SampleModel::reapply (bool mixToo)
+{
+    applyAlignment();
+    if (state->session.tuneAnalyzed) hl::computeTune (state->session);
+    buildHits();
+    layoutHits();
+    if (! state->prepared) return;
+    if (mixToo) wantMix = true;
+    ++renderWanted;
+    startRender();
+}
+
+void SampleModel::undo()
+{
+    if (! state || prepping || undoStack.empty()) return;
+    redoStack.push_back ({ state->session, state->prepared });
+    state->session = undoStack.back().session;
+    state->prepared = undoStack.back().prepared;
+    undoStack.pop_back();
+    lastGesture.clear();
+    reapply (true);
+}
+
+void SampleModel::redo()
+{
+    if (! state || prepping || redoStack.empty()) return;
+    undoStack.push_back ({ state->session, state->prepared });
+    state->session = redoStack.back().session;
+    state->prepared = redoStack.back().prepared;
+    redoStack.pop_back();
+    lastGesture.clear();
+    reapply (true);
+}
+
+juce::String SampleModel::exportBlocker() const
+{
+    if (! state || ! edit) return "Nothing open.";
+    if (prepping) return "Auto Prep is still running.";
+    const auto& S = state->session;
+    if (! state->prepared) return "Run Auto Prep: the hits or settings changed since it last ran.";
+    if ((int) S.onsets.size() != S.det.V * S.det.RR)
+        return "Expecting " + juce::String (S.det.V * S.det.RR) + " hits but " + juce::String ((int) S.onsets.size()) + " were found: run Auto Prep.";
+    if (! state->levels || ! state->levels->valid) return "The levels aren't measured: run Auto Prep.";
+    if (isBusy()) return "Still rendering the last change.";
+    return {};
+}
+
+std::pair<double, double> SampleModel::sumScore (int t)
+{
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    if (! state) return { nan, nan };
+    const auto& S = state->session;
+    if (t < 0 || t >= (int) S.tracks.size() || t == S.refIdx) return { nan, nan };
+    const auto& tr = S.tracks[(size_t) t];
+    const auto& res = tr.alignTo.size() == 1 ? tr.grp : tr.autoResult;
+    if (! res || ! res->valid) return { nan, nan };
+    const int r = hl::alignRef (S, t) >= 0 ? hl::alignRef (S, t) : S.refIdx;
+    ScoreKey k { tr.lag, tr.pol, tr.apOn, tr.ap.size(), tr.ap.empty() ? 0.0 : tr.ap[0].fc, r, state.get() };
+    auto it = scoreCache.find (t);
+    const bool have = it != scoreCache.end();
+    if (have)
+    {
+        const auto& o = it->second.first;
+        if (o.lag == k.lag && o.pol == k.pol && o.apOn == k.apOn && o.nAp == k.nAp && o.fc0 == k.fc0 && o.ref == k.ref && o.st == k.st) return it->second.second;
+    }
+    // measure where it sits now (and as recorded), the way Auto Prep measures, on another thread (it can take a few
+    // hundred ms on a long take); until it lands, show the last measurement
+    if (! scoring.count (t))
+    {
+        scoring.insert (t);
+        auto base = state;
+        auto alivePtr = alive;
+        const double lag = tr.lag; const int pol = tr.pol;
+        const auto ap = tr.apOn ? tr.ap : std::vector<hl::AllPass> {};
+        const double arrival = res->arrival;
+        std::thread ([this, base, alivePtr, t, r, lag, pol, ap, arrival, k]
+        {
+            const auto& S2 = base->session;
+            std::vector<int> ons (S2.onsets.begin(), S2.onsets.end());
+            const auto sc = hl::scoreMic (S2.tracks[(size_t) r].mono, S2.tracks[(size_t) t].ch, ons, S2.sr, lag, pol, ap, arrival);
+            const double nan2 = std::numeric_limits<double>::quiet_NaN();
+            const std::pair<double, double> v = sc.valid ? std::make_pair (sc.score, sc.asis) : std::make_pair (nan2, nan2);
+            juce::MessageManager::callAsync ([this, alivePtr, t, k, v, base]
+            {
+                if (! *alivePtr) return;
+                scoring.erase (t);
+                if (state != base) return;
+                scoreCache[t] = { k, v };
+                if (onChanged) onChanged();
+            });
+        }).detach();
+    }
+    return have ? it->second.second : std::make_pair (nan, nan);
 }
 
 void SampleModel::startRender()
@@ -297,6 +421,7 @@ void SampleModel::startRender()
     copy->prepared = state->prepared;
     auto base = state;
     auto alivePtr = alive;
+    // (a render for a take that has since been replaced lands with state != base and is dropped)
     std::thread ([this, copy, base, alivePtr, ticket, mix]
     {
         if (mix) renderAndMeasure (*copy);
@@ -362,30 +487,33 @@ juce::File SampleModel::prepFile (int t)
         if (differs)
         {
             auto f = cacheDir.getChildFile (juce::String (t) + "_prep_" + juce::String (++toneVersion) + ".wav");
-            if (writeFloatWav (f, pre, S.sr)) src = f;
+            if (! writeFloatWav (f, pre, S.sr)) return {};   // (not cached: tried again next time)
+            src = f;
         }
     }
     return prepFiles[(size_t) t] = src;
 }
 
-std::vector<live::AlignPlugin::HitScale> SampleModel::scalesFor (int t, int parity) const
+std::vector<live::AlignPlugin::HitScale> SampleModel::scalesFor (int t, const std::vector<int>* only) const
 {
     std::vector<live::AlignPlugin::HitScale> scales;
     const auto& R = state->levels->regions;
-    for (size_t i = 0; i < R.size(); ++i)
+    auto one = [&] (size_t i)
     {
-        if (parity >= 0 && (int) (i % 2) != parity) continue;
         // switch a fade's length early, so the change has finished before the hit (the last 10 ms of the previous
         // hit's tail take it instead)
         const double start = (double) R[i].start / state->session.sr;
         scales.push_back ({ kPad + start - live::AlignDsp::kFadeSeconds - 0.0005, 1.0 / hitRatio (i), hitGainDb (t, i) });
-    }
+    };
+    if (only) { for (int i : *only) one ((size_t) i); }
+    else for (size_t i = 0; i < R.size(); ++i) one (i);
+    std::sort (scales.begin(), scales.end(), [] (auto& x, auto& y) { return x.start < y.start; });
     return scales;
 }
 
-void SampleModel::layoutHits() { layoutHitsFor (-1); }
+void SampleModel::layoutHits() { layoutHitsFor (nullptr); }
 
-void SampleModel::layoutHitsFor (int parity)
+void SampleModel::layoutHitsFor (const std::vector<int>* only)
 {
     if (! state || ! edit || ! state->levels || ! state->levels->valid) return;
     const auto& S = state->session;
@@ -397,15 +525,18 @@ void SampleModel::layoutHitsFor (int parity)
     {
         auto* at = track (t);
         if (at == nullptr || t >= (int) sourceFiles.size()) continue;
-        const auto src = prepFile (t);
+        auto src = prepFile (t);
+        if (src == juce::File()) src = sourceFiles[(size_t) t];   // couldn't write the processed audio: export refuses, playback plays A's
         { auto clips = at->getClips(); for (auto* c : clips) c->removeFromParent(); }   // (a copy: removing changes the list)
-        for (size_t i = 0; i < R.size(); ++i)
+        std::vector<int> all;
+        if (! only) for (size_t i = 0; i < R.size(); ++i) all.push_back ((int) i);
+        for (int ii : only ? *only : all)
         {
-            if (parity >= 0 && (int) (i % 2) != parity) continue;
+            const size_t i = (size_t) ii;
             const double r = hitRatio (i);
             const double start = (double) R[i].start / sr;
-            // playing: each hit stops where the next starts. Exporting (one parity at a time): the whole tuned region
-            const double cap = parity >= 0 ? 1.0e9 : (i + 1 < R.size() ? (double) R[i + 1].start / sr : end) - start;
+            // playing: each hit stops where the next starts. Exporting (non-overlapping sets): the whole tuned region
+            const double cap = only ? 1.0e9 : (i + 1 < R.size() ? (double) R[i + 1].start / sr : end) - start;
             const double len = std::min ((double) (R[i].end - R[i].start) / sr / r, cap);
             if (len <= 0) continue;
             te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (kPad + start), te::TimeDuration::fromSeconds (len)), te::TimeDuration() };
@@ -417,15 +548,9 @@ void SampleModel::layoutHitsFor (int parity)
             // the source starts at the region's start: offsets are on the clip's own (sped-up) time
             clip->setPosition ({ pos.time, te::TimeDuration::fromSeconds ((double) R[i].start / sr / r) });
         }
-        if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, parity));
+        if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, only));
     }
-    // level match: A plays at the lead's average Level gain
-    {
-        double sum = 0; int n = 0;
-        for (size_t i = 0; i < R.size(); ++i) { sum += hitGainDb (S.refIdx, i); ++n; }
-        matchDb = n ? sum / n : 0;
-        setLevelMatch (levelMatchOn);
-    }
+    recomputeLevelMatch();
     edit->getUndoManager().clearUndoHistory();
     if (wasPlaying) play();
 }
@@ -434,10 +559,22 @@ void SampleModel::updateHitGains()
 {
     if (! state || ! edit || ! state->levels || ! state->levels->valid) return;
     for (int t = 0; t < (int) state->session.tracks.size(); ++t)
-        if (auto* at = track (t)) if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, -1));
+        if (auto* at = track (t)) if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, nullptr));
+    recomputeLevelMatch();
 }
 
-hl::Chs SampleModel::renderB (int t, double srOut, bool stereo)
+void SampleModel::recomputeLevelMatch()
+{
+    // A plays at the lead's average Level gain (B's loudness, on the lead)
+    if (! state || ! state->levels || ! state->levels->valid) return;
+    const auto& R = state->levels->regions;
+    double sum = 0; int n = 0;
+    for (size_t i = 0; i < R.size(); ++i) { sum += hitGainDb (state->session.refIdx, i); ++n; }
+    matchDb = n ? sum / n : 0;
+    setLevelMatch (levelMatchOn);
+}
+
+hl::Chs SampleModel::renderB (int t, double srOut, bool stereo, juce::String& err)
 {
     juce::TemporaryFile temp (".wav");
     auto all = te::getAllTracks (*edit);
@@ -454,11 +591,20 @@ hl::Chs SampleModel::renderB (int t, double srOut, bool stereo)
     p.useMasterPlugins = false;
     p.mustRenderInMono = ! stereo;
     p.ditheringEnabled = false;
-    te::Renderer::renderToFile ("Export", p);
     hl::Chs out;
+    if (te::Renderer::renderToFile ("Export", p) == juce::File() || ! temp.getFile().existsAsFile())
+    {
+        err = "Tracktion couldn't render " + juce::String (info[(size_t) t].name) + " (is the disk full?).";
+        return out;
+    }
     juce::AudioFormatManager fm; fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (temp.getFile()));
-    if (! r) return out;
+    const auto expect = (long) std::llround (edit->getLength().inSeconds() * srOut);
+    if (! r || std::abs ((long) r->lengthInSamples - expect) > 2)
+    {
+        err = "The render of " + juce::String (info[(size_t) t].name) + " came back the wrong length.";
+        return out;
+    }
     juce::AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
     r->read (&b, 0, b.getNumSamples(), 0, true, true);
     for (int c = 0; c < (stereo ? std::min (2, b.getNumChannels()) : 1); ++c) out.emplace_back (b.getReadPointer (c), b.getReadPointer (c) + b.getNumSamples());
@@ -468,42 +614,77 @@ hl::Chs SampleModel::renderB (int t, double srOut, bool stereo)
 juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::function<void (float)> progress)
 {
     count = 0;
-    if (! state || ! edit) return "Nothing open.";
-    if (! state->levels || ! state->levels->valid) return "Every hit has to be found before export: run Auto Prep.";
+    if (auto why = exportBlocker(); why.isNotEmpty()) return why;
     auto& S = state->session;
     const auto& L = *state->levels;
     const auto& R = L.regions;
     const int T = (int) S.tracks.size();
     const double sr = S.sr, srOut = S.exp.rate == "same" ? sr : std::stod (S.exp.rate);
     stop();
+    for (int t = 0; t < T; ++t)
+        if (prepFile (t) == juce::File()) return "Couldn't write the processed audio for " + juce::String (info[(size_t) t].name) + " (is the disk full?).";
 
-    // export as set: monitor faders, pans, mutes and solos out of the way; B playing
-    struct Mon { float db, pan; bool solo; };
-    std::vector<Mon> mon;
-    for (int t = 0; t < T; ++t) { mon.push_back ({ monDb (t), pan (t), solo (t) }); }
-    const auto userMuteWas = userMute;
-    const bool procWas = processedOn;
+    // export as set: monitor faders, pans, mutes and solos out of the way, B playing. Everything is put back as it
+    // was however this ends (a failed render included).
+    struct Restore
+    {
+        SampleModel& m;
+        std::vector<bool> solo, volOn, userMute;
+        bool processed;
+        ~Restore()
+        {
+            for (int t = 0; t < (int) solo.size(); ++t)
+            {
+                if (auto* at = m.track (t)) if (auto* v = at->getVolumePlugin()) v->setEnabled (volOn[(size_t) t]);
+                m.setSolo (t, solo[(size_t) t]);
+            }
+            m.userMute = userMute;
+            m.processedOn = processed;
+            m.applyMutes();
+            m.layoutHitsFor (nullptr);
+        }
+    } restore { *this, {}, {}, userMute, processedOn };
     for (int t = 0; t < T; ++t)
     {
-        if (auto* at = track (t)) { at->setSolo (false); if (auto* v = at->getVolumePlugin()) v->setEnabled (false); }
+        restore.solo.push_back (solo (t));
+        auto* v = track (t) ? track (t)->getVolumePlugin() : nullptr;
+        restore.volOn.push_back (v == nullptr || v->isEnabled());
+        if (auto* at = track (t)) { at->setSolo (false); if (v) v->setEnabled (false); }
         if (auto* at = trackA (t)) at->setSolo (false);
     }
     std::fill (userMute.begin(), userMute.end(), false);
     processedOn = true;
     applyMutes();
 
-    // every hit of every mic, with its whole tuned region: the even hits, then the odd (so no two overlap)
+    // every hit of every mic, with its whole tuned region, in sets that never overlap: a hit joins the first set
+    // whose last hit has ended (and whose gain switch, 10.5 ms early, won't touch it) before it starts
+    std::vector<std::vector<int>> sets;
+    {
+        std::vector<double> setEnd;
+        for (size_t i = 0; i < R.size(); ++i)
+        {
+            const double start = (double) R[i].start / sr, endT = start + (double) (R[i].end - R[i].start) / sr / hitRatio (i);
+            size_t k = 0;
+            while (k < sets.size() && setEnd[k] > start - live::AlignDsp::kFadeSeconds - 0.002) ++k;
+            if (k == sets.size()) { sets.emplace_back(); setEnd.push_back (0); }
+            sets[k].push_back ((int) i);
+            setEnd[k] = endT;
+        }
+    }
     std::vector<std::vector<hl::Chs>> hitAudio ((size_t) T, std::vector<hl::Chs> (R.size()));
     int step = 0;
-    const int steps = 2 * T + 1;
-    for (int parity = 0; parity < 2; ++parity)
+    const int steps = (int) sets.size() * T + 1;
+    juce::String err;
+    for (auto& set : sets)
     {
-        layoutHitsFor (parity);
-        for (int t = 0; t < T; ++t)
+        layoutHitsFor (&set);
+        for (int t = 0; t < T && err.isEmpty(); ++t)
         {
-            const auto whole = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1);
-            for (size_t i = (size_t) parity; i < R.size(); i += 2)
+            const auto whole = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1, err);
+            if (err.isNotEmpty()) break;
+            for (int ii : set)
             {
+                const size_t i = (size_t) ii;
                 const double stepIn = hitRatio (i) * sr / srOut;
                 const long a = (long) std::llround (((double) R[i].start / sr + kPad) * srOut);
                 const long n = std::max (1L, (long) std::llround ((double) (R[i].end - R[i].start) / stepIn));
@@ -518,31 +699,23 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
             }
             if (progress) progress ((float) ++step / (float) steps);
         }
+        if (err.isNotEmpty()) return err;
     }
     // the whole-track files (export mode "full" or "both"): the take as it plays
     std::vector<hl::Chs> fullAudio;
-    layoutHitsFor (-1);
+    layoutHitsFor (nullptr);
     const auto list = hl::exportList (S);
     const bool wantFull = std::any_of (list.begin(), list.end(), [] (auto& it) { return it.kind == "full"; });
     if (wantFull)
         for (int t = 0; t < T; ++t)
         {
-            auto x = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1);
+            auto x = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1, err);
+            if (err.isNotEmpty()) return err;
             const auto pad = (long) std::llround (kPad * srOut);
             for (auto& c : x) c.erase (c.begin(), c.begin() + std::min ((long) c.size(), pad));
             for (auto& c : x) c.resize ((size_t) std::llround ((double) S.tracks[(size_t) t].len / sr * srOut), 0.0f);
             fullAudio.push_back (std::move (x));
         }
-
-    // put the monitoring back
-    for (int t = 0; t < T; ++t)
-    {
-        if (auto* at = track (t)) if (auto* v = at->getVolumePlugin()) v->setEnabled (true);
-        setSolo (t, mon[(size_t) t].solo);
-    }
-    userMute = userMuteWas;
-    processedOn = procWas;
-    applyMutes();
 
     // the tails and fades, as the reference export does them
     const long fin = (long) std::llround (S.exp.fadeInMs * srOut / 1000);
@@ -572,7 +745,6 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
         for (int t = 0; t < T; ++t) for (auto& x : hitAudio[(size_t) t][i]) all.push_back (x);
         return plans[i] = hl::tailPlan (all, srOut, 0, S.exp.tailFloor);
     };
-    juce::String err;
     for (auto& it : list)
     {
         hl::Chs chs;
@@ -638,8 +810,12 @@ std::pair<float, float> SampleModel::meter (int t)
     return { l, r };
 }
 
-bool SampleModel::flip (int t) const { auto* at = track (t); auto* a = at ? at->pluginList.findFirstPluginOfType<live::AlignPlugin>() : nullptr; return a && a->flipValue.get(); }
-void SampleModel::setFlip (int t, bool f) { if (auto* at = track (t)) if (auto* a = live::alignOn (*at)) a->setFlip (f); }
+bool SampleModel::flip (int t) const { return state && t >= 0 && t < (int) state->session.tracks.size() && state->session.tracks[(size_t) t].pol < 0; }
+void SampleModel::setFlip (int t, bool f)
+{
+    // the session is the one place polarity lives (Hits and Align both change it here; export renders it)
+    if (flip (t) != f) change ([t] (hl::Session& S) { hl::flipMic (S, t); }, Redo::align);
+}
 float SampleModel::shiftMs (int t) const { auto* at = track (t); auto* a = at ? at->pluginList.findFirstPluginOfType<live::AlignPlugin>() : nullptr; return a ? a->shiftValue.get() : 0.0f; }
 
 void SampleModel::setProcessed (bool b)

@@ -213,24 +213,39 @@ TEST_CASE ("Live align: a hit right after the edit's lead-in comes through whole
     CHECK (renderTrack (*edit, *tracks[0], 37) == r);
 }
 
-TEST_CASE ("Live align: cost per track (benchmark)")
+TEST_CASE ("Live align: cost per track and the worst block (benchmark)")
 {
-    // ten seconds of stereo at 48 kHz through the DSP with a change every 0.25 s (the worst case: always fading)
-    const int n = 480000;
-    auto l = noise (n, 3), r = noise (n, 4);
-    AlignDsp d;
-    AlignDsp::Settings s; s.advanceSamples = 37.25; s.ap[0] = { 300, 0.7 };
-    d.setTarget (s);
-    d.prepare (SR, 2);
-    const auto t0 = juce::Time::getMillisecondCounterHiRes();
-    for (int at = 0, k = 0; at < n; at += 256, ++k)
+    // ten seconds of stereo at 96 kHz in 64-sample blocks (a 0.667 ms deadline), two all-passes on, and a change
+    // every other block so it is always crossfading; the phase EQ itself changes every 100 ms. Three identical runs:
+    // each block's time is the fastest of the three, so a pre-emption by the OS doesn't count but a block that is
+    // slow every time (a burst of setup work) does.
+    const double sr = 96000;
+    const int n = 960000, block = 64, blocks = (n + block - 1) / block;
+    std::vector<double> best ((size_t) blocks, 1e9);
+    double total = 0;
+    for (int run = 0; run < 3; ++run)
     {
-        if (k % 47 == 0) { s.advanceSamples = 30.37 + (k % 5); s.gainDb = -(k % 3); d.setTarget (s); }
-        float* ch[2] = { l.data() + at, r.data() + at };
-        d.process (ch, 2, std::min (256, n - at));
+        auto l = noise (n, 3), r = noise (n, 4);
+        AlignDsp d;
+        AlignDsp::Settings s; s.advanceSamples = 37.25; s.ap[0] = { 300, 0.7 }; s.ap[1] = { 1200, 0.9 };
+        d.setTarget (s);
+        d.prepare (sr, 2);
+        for (int at = 0, k = 0; at < n; at += block, ++k)
+        {
+            if (k % 2 == 0) { s.advanceSamples = 30.37 + (k % 5); s.gainDb = -(k % 3); s.flip = (k % 7) == 0; }
+            if (k % 150 == 0) s.ap[0].fc = 250 + (k % 11) * 10;
+            d.setTarget (s);
+            float* ch[2] = { l.data() + at, r.data() + at };
+            const auto t0 = juce::Time::getHighResolutionTicks();
+            d.process (ch, 2, std::min (block, n - at));
+            const double ms = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+            best[(size_t) k] = std::min (best[(size_t) k], ms);
+            if (run == 0) total += ms;
+        }
     }
-    const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
-    const double load = ms / 10000.0 * 100.0;
-    WARN ("Align on a stereo track: " << ms << " ms for 10 s of audio = " << load << " % of one core");
-    CHECK (load < 5.0);
+    const double worst = *std::max_element (best.begin(), best.end());
+    const double load = total / 10000.0 * 100.0;
+    WARN ("Align, stereo, 96 kHz, 64-sample blocks, always fading: " << load << " % of one core on average; worst block " << worst << " ms of a 0.667 ms deadline");
+    CHECK (load < 10.0);
+    CHECK (worst < 0.667 * 0.5);
 }

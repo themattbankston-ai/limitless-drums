@@ -40,13 +40,14 @@ void AlignDsp::prepare (double sampleRate, int numChannels)
 {
     sr = sampleRate;
     L = latencySamples (sr);
-    // room for the latency, a full shift later than recorded, and the taps
-    primeLen = (int) std::lround (kPrimeSeconds * sr);
-    const long need = (long) L + (long) maxShiftSamples (sr) + taps + primeLen + 2;
+    nch = std::max (1, numChannels);
+    // a slot being filled starts this far back: the furthest any tap reads, plus time for the all-passes to settle
+    history = (long) L + (long) maxShiftSamples (sr) + taps + (long) std::lround (kPrimeSeconds * sr);
     long size = 1;
-    while (size < need) size <<= 1;
+    while (size < 2 * history + 8) size <<= 1;   // (the history, plus what arrives while a slot catches up)
     mask = size - 1;
-    ring.assign ((size_t) std::max (1, numChannels), std::vector<float> ((size_t) size, 0.0f));
+    raw.assign ((size_t) nch, std::vector<float> ((size_t) size, 0.0f));
+    for (auto& sl : slots) sl.ring.assign ((size_t) nch, std::vector<float> ((size_t) size, 0.0f));
     fadeLen = std::max (1, (int) std::lround (kFadeSeconds * sr));
     fadeCurve.resize ((size_t) fadeLen);
     for (int i = 0; i < fadeLen; ++i)
@@ -56,13 +57,45 @@ void AlignDsp::prepare (double sampleRate, int numChannels)
 
 void AlignDsp::reset()
 {
-    for (auto& r : ring) std::fill (r.begin(), r.end(), 0.0f);
+    for (auto& r : raw) std::fill (r.begin(), r.end(), 0.0f);
+    for (auto& sl : slots) { for (auto& r : sl.ring) std::fill (r.begin(), r.end(), 0.0f); sl.st = {}; }
     pos = 0;
     fading = false;
+    building = false;
     fadePos = 0;
-    cur = make (target);   // a fresh start goes straight to the target, no fade
-    curState = {};
-    nextState = {};
+    curSlot = nextSlot = 0;
+    setSlot (slots[0], target.ap);   // a fresh start goes straight to the target, no fade
+    cur = make (target);
+}
+
+void AlignDsp::setSlot (Slot& sl, const std::array<AllPass, 2>& ap)
+{
+    sl.ap = ap;
+    sl.nAp = 0;
+    sl.st = {};
+    for (const auto& a : ap)
+    {
+        if (a.fc <= 0 || a.fc >= sr / 2) continue;
+        const double w0 = 2 * M_PI * a.fc / sr, al = std::sin (w0) / (2 * std::max (0.05, a.Q)), cw = std::cos (w0), a0 = 1 + al;
+        sl.bq[(size_t) sl.nAp++] = { (1 - al) / a0, -2 * cw / a0, 1.0, -2 * cw / a0, (1 - al) / a0 };
+    }
+}
+
+void AlignDsp::filterInto (Slot& sl, long at, int n)
+{
+    for (int c = 0; c < n; ++c)
+    {
+        double v = raw[(size_t) c][(size_t) (at & mask)];
+        for (int i = 0; i < sl.nAp; ++i)
+        {
+            const auto& b = sl.bq[(size_t) i];
+            auto& z = sl.st[(size_t) c][(size_t) i];
+            const double out = b.b0 * v + b.b1 * z[0] + b.b2 * z[1] - b.a1 * z[2] - b.a2 * z[3];
+            z[1] = z[0]; z[0] = v; z[3] = z[2]; z[2] = out;
+            v = out;
+        }
+        sl.ring[(size_t) c][(size_t) (at & mask)] = (float) v;
+    }
 }
 
 AlignDsp::Kernel AlignDsp::make (const Settings& s) const
@@ -76,12 +109,6 @@ AlignDsp::Kernel AlignDsp::make (const Settings& s) const
     const double frac = delay - (double) k.whole;
     const float g = (float) (std::pow (10.0, s.gainDb / 20.0) * (s.flip ? -1.0 : 1.0));
     k.g = g;
-    for (const auto& a : s.ap)
-    {
-        if (a.fc <= 0 || a.fc >= sr / 2) continue;
-        const double w0 = 2 * M_PI * a.fc / sr, al = std::sin (w0) / (2 * std::max (0.05, a.Q)), cw = std::cos (w0), a0 = 1 + al;
-        k.ap[(size_t) k.nAp++] = { (1 - al) / a0, -2 * cw / a0, 1.0, -2 * cw / a0, (1 - al) / a0 };
-    }
     if (frac < 1e-12)
     {
         k.impulse = true;
@@ -114,70 +141,71 @@ float AlignDsp::tapOut (const std::vector<float>& r, long at, const Kernel& k) c
     return (float) acc;
 }
 
-float AlignDsp::pathOut (const std::vector<float>& r, long at, const Kernel& k, std::array<std::array<double, 4>, 2>& st) const
+void AlignDsp::startChangeIfNeeded()
 {
-    double v = tapOut (r, at, k);
-    for (int i = 0; i < k.nAp; ++i)
+    if (fading) return;
+    if (building)
     {
-        const auto& b = k.ap[(size_t) i];
-        auto& z = st[(size_t) i];
-        const double out = b.b0 * v + b.b1 * z[0] + b.b2 * z[1] - b.a1 * z[2] - b.a2 * z[3];
-        z[1] = z[0]; z[0] = v; z[3] = z[2]; z[2] = out;
-        v = out;
+        // the phase EQ asked for changed again before the slot was ready: start that one instead
+        if (! sameAp (slots[nextSlot].ap, target.ap)) { setSlot (slots[nextSlot], target.ap); buildPos = pos - history; }
+        return;
     }
-    return (float) v;
-}
-
-void AlignDsp::prime (Kernel& k, State& st) const
-{
-    // run the new phase EQ over the recent past, so it fades in already settled instead of ringing up from silence
-    st = {};
-    if (k.nAp == 0) return;
-    for (size_t c = 0; c < ring.size(); ++c)
-        for (long at = pos - primeLen; at < pos; ++at)
-            pathOut (ring[c], at, k, st[c]);
-}
-
-void AlignDsp::startFadeIfNeeded()
-{
-    if (! fading && target != cur.s)
+    if (target == cur.s && sameAp (target.ap, slots[curSlot].ap)) return;
+    if (sameAp (target.ap, slots[curSlot].ap))
     {
+        nextSlot = curSlot;   // shift, gain or polarity: the same slot, straight into the fade
         next = make (target);
-        prime (next, nextState);
         fading = true;
         fadePos = 0;
+        return;
     }
+    nextSlot = 1 - curSlot;
+    setSlot (slots[nextSlot], target.ap);
+    buildPos = pos - history;
+    building = true;
 }
 
 void AlignDsp::process (float* const* channels, int numChannels, int numSamples)
 {
-    const int nch = std::min (numChannels, (int) ring.size());
-    startFadeIfNeeded();
-    for (int n = 0; n < numSamples; ++n)
+    const int n = std::min (numChannels, (int) raw.size());
+    startChangeIfNeeded();
+    for (int i = 0; i < numSamples; ++i)
     {
         const long at = pos;
-        for (int c = 0; c < nch; ++c) ring[(size_t) c][(size_t) (at & mask)] = channels[c][n];
-        if (! fading)
+        for (int c = 0; c < n; ++c) raw[(size_t) c][(size_t) (at & mask)] = channels[c][i];
+        filterInto (slots[curSlot], at, n);
+        if (building)
         {
-            for (int c = 0; c < nch; ++c) channels[c][n] = pathOut (ring[(size_t) c], at, cur, curState[(size_t) c]);
-            ++pos;
+            for (int k = 0; k < 4 && buildPos < at; ++k) filterInto (slots[nextSlot], buildPos++, n);
+            if (buildPos == at)
+            {
+                filterInto (slots[nextSlot], at, n);
+                building = false;
+                next = make (target);
+                fading = true;
+                fadePos = 0;
+            }
         }
+        else if (fading && nextSlot != curSlot) filterInto (slots[nextSlot], at, n);
+
+        if (! fading)
+            for (int c = 0; c < n; ++c) channels[c][i] = tapOut (slots[curSlot].ring[(size_t) c], at, cur);
         else
         {
             const float b = fadeCurve[(size_t) fadePos], a = 1.0f - b;
-            for (int c = 0; c < nch; ++c)
-                channels[c][n] = a * pathOut (ring[(size_t) c], at, cur, curState[(size_t) c]) + b * pathOut (ring[(size_t) c], at, next, nextState[(size_t) c]);
-            ++pos;
-            if (++fadePos >= fadeLen)
-            {
-                cur = next;
-                curState = nextState;
-                fading = false;
-                startFadeIfNeeded();   // a change that arrived during the fade starts now, not at the next block
-            }
+            for (int c = 0; c < n; ++c)
+                channels[c][i] = a * tapOut (slots[curSlot].ring[(size_t) c], at, cur) + b * tapOut (slots[nextSlot].ring[(size_t) c], at, next);
+        }
+        ++pos;
+        if (fading && ++fadePos >= fadeLen)
+        {
+            cur = next;
+            curSlot = nextSlot;
+            fading = false;
+            startChangeIfNeeded();   // a change that arrived during the fade starts now, not at the next block
         }
     }
-    for (int c = nch; c < numChannels; ++c) std::fill (channels[c], channels[c] + numSamples, 0.0f);
+    for (int c = n; c < numChannels; ++c) std::fill (channels[c], channels[c] + numSamples, 0.0f);
 }
 
 } // namespace ld::live

@@ -37,12 +37,12 @@ public:
     BusLayout getBusses() const override { return BusLayout::singleStereoInOut(); }
     void applyToBuffer (const te::PluginRenderContext&) override;
 
-    // the stored value is the truth (it's what undo and saving see); the parameter follows it at once
-    void setShiftMs (float ms) { shiftValue = ms; }
-    void setFlip (bool f) { flipValue = f; }
-    void setGainDb (float db) { gainValue = db; }
+    // the stored value is the truth (it's what undo and saving see); the audio hears a snapshot published from it
+    void setShiftMs (float ms) { shiftValue = ms; publish(); }
+    void setFlip (bool f) { flipValue = f; publish(); }
+    void setGainDb (float db) { gainValue = db; publish(); }
     /** Phase EQ band 0 or 1: an all-pass at fc (0 = off) with this Q. */
-    void setPhaseEq (int band, float fc, float q) { (band ? ap2Fc : ap1Fc) = fc; (band ? ap2Q : ap1Q) = q; }
+    void setPhaseEq (int band, float fc, float q) { (band ? ap2Fc : ap1Fc) = fc; (band ? ap2Q : ap1Q) = q; publish(); }
 
     /** From `start` (seconds on the timeline) the shift is multiplied by `scale` and `gainDb` is added, until the next
         entry. The hits use it: a hit tuned by ratio r plays its mics' offsets 1/r as long, as the export does (delay,
@@ -59,13 +59,19 @@ protected:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
 
 private:
-    AlignDsp::Settings settingsNow() const;
+    // The audio thread never reads the CachedValues (plain memory the message thread writes) or frees anything.
+    // The message thread publishes a whole Settings snapshot (shift in ms) and the current hit table under `lock`;
+    // the audio thread takes them with a try-lock (never waits: if it misses, it keeps last block's) and records
+    // which table it holds, so the message thread frees a table only once the audio thread has let go of it.
+    struct Snapshot { AlignDsp::Settings s; double shiftMs = 0; };
+    void publish();
     AlignDsp dsp;
     std::atomic<bool> jumpNext { true };   ///< after a reset or a seek: start on the right settings, don't fade into them
-    std::shared_ptr<const std::vector<HitScale>> scales;        ///< written on the message thread under tblLock
-    std::shared_ptr<const std::vector<HitScale>> audioScales;   ///< the audio thread's copy (taken with a try-lock)
-    juce::SpinLock tblLock;
-    std::vector<std::shared_ptr<const std::vector<HitScale>>> retired;   ///< freed on the message thread, never the audio thread
+    juce::SpinLock lock;
+    Snapshot pubSnap, audioSnap;                                   ///< pub: under lock; audio: audio thread only
+    const std::vector<HitScale>* pubTbl = nullptr;                 ///< under lock
+    const std::vector<HitScale>* audioTbl = nullptr;               ///< changed only by the audio thread, under lock
+    std::vector<std::unique_ptr<std::vector<HitScale>>> tables;    ///< owned by the message thread, freed under lock
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AlignPlugin)
 };

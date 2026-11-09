@@ -26,9 +26,17 @@ public:
         view.onAutoPrep = [this] { autoPrep(); };
         view.onExport = [this] { exportTake(); };
         view.onLoadReference = [this] { loadReference(); };
-        model.onChanged = [this] { view.takeChanged (false); };
+        model.onChanged = [this]
+        {
+            view.takeChanged (false);
+            // an export asked for while a change was still rendering goes now, on the settings it was asked with
+            if (pendingExport != juce::File() && ! model.isBusy()) { auto d = pendingExport; pendingExport = juce::File(); writeExport (d); }
+        };
         if (const char* step = std::getenv ("LD_STEP")) view.setStep (std::atoi (step));
         setSize (1440, 900);
+        if (const char* sz = std::getenv ("LD_WINDOW"))   // e.g. 1100x700, for checking the smallest layout
+            setSize (juce::jmax (1100, juce::String (sz).upToFirstOccurrenceOf ("x", false, false).getIntValue()),
+                     juce::jmax (700, juce::String (sz).fromFirstOccurrenceOf ("x", false, false).getIntValue()));
         startTimerHz (30);
     }
 
@@ -53,6 +61,7 @@ public:
     void open (const juce::Array<juce::File>& items)
     {
         model.stop();
+        pendingExport = juce::File();
         const auto err = model.open (items);
         view.setStatus (err.toStdString());
         if (err.isEmpty()) view.takeChanged();
@@ -71,12 +80,18 @@ public:
         });
     }
 
-    void exportTake()
+    void writeExport (juce::File dir)
     {
-        if (! model.isPrepared()) { view.setStatus ("Run Auto Prep first: every hit has to be found."); return; }
-        auto go = [this] (juce::File dir)
         {
             view.exportFolder = dir.getFullPathName().toStdString();
+            if (model.isBusy() && ! model.isPrepping())
+            {
+                // export one settled revision, never the one before the last change: wait for the render
+                pendingExport = dir;
+                view.setStatus ("Exporting as soon as the last change has rendered\xe2\x80\xa6");
+                return;
+            }
+            if (auto why = model.exportBlocker(); why.isNotEmpty()) { view.setStatus (why.toStdString()); return; }
             view.setExportProgress (0);
             view.setStatus ("Writing the files\xe2\x80\xa6");
            #if JUCE_LINUX
@@ -86,7 +101,13 @@ public:
             const auto err = model.exportTo (dir, count, [this] (float p) { view.setExportProgress (p); });
             view.setExportProgress (-1);
             view.setStatus (err.isEmpty() ? "Wrote " + std::to_string (count) + " files to " + dir.getFullPathName().toStdString() : err.toStdString());
-        };
+        }
+    }
+
+    void exportTake()
+    {
+        if (auto why = model.exportBlocker(); why.isNotEmpty() && ! model.isBusy()) { view.setStatus (why.toStdString()); return; }
+        auto go = [this] (juce::File dir) { writeExport (dir); };
         if (const char* to = std::getenv ("LD_EXPORT_TO")) { go (juce::File (to)); return; }
         chooser = std::make_unique<juce::FileChooser> ("Export to", juce::File::getSpecialLocation (juce::File::userDesktopDirectory));
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
@@ -118,6 +139,7 @@ private:
     HitsView view;
     std::unique_ptr<ui::VisageHost> host;
     std::unique_ptr<juce::FileChooser> chooser;
+    juce::File pendingExport;
 
     void chooseFiles()
     {

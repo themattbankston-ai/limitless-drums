@@ -22,9 +22,23 @@ inline const char* stepNames[8] = { "Setup", "Hits", "Align", "Tune", "Tone", "C
 inline const char* modeNames[6] = { "Hit", "Layer", "Sweep", "Groove", "MIDI", "Mono" };
 inline const char* heightNames[4] = { "Small", "Medium", "Large", "Jumbo" };
 
+/** Text in a box; text too wide for the box is cut short with an ellipsis rather than spilling into its neighbours. */
 inline void txt (Canvas& c, const std::string& s, const visage::Font& f, unsigned col, float x, float y, float w, float h, visage::Font::Justification j = visage::Font::kLeft)
 {
     c.setColor (col);
+    if (w > 8 && textWidth (f, s) > w)
+    {
+        const std::string ell = "\xe2\x80\xa6";
+        std::string t = s;
+        while (! t.empty() && textWidth (f, t + ell) > w)
+        {
+            t.pop_back();
+            while (! t.empty() && (static_cast<unsigned char> (t.back()) & 0xc0) == 0x80) t.pop_back();   // (whole UTF-8 characters)
+            if (! t.empty() && (static_cast<unsigned char> (t.back()) & 0xc0) == 0xc0) t.pop_back();
+        }
+        draw::text (c, t + ell, f, j, x, y, w, h);
+        return;
+    }
     draw::text (c, s, f, j, x, y, w, h);
 }
 

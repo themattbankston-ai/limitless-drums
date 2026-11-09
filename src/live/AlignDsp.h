@@ -55,6 +55,11 @@ public:
     void process (float* const* channels, int numChannels, int numSamples);
 
 private:
+    // A path is a set of taps (shift, gain, polarity) reading one slot's ring. The phase EQ is linear and time-
+    // invariant, like the taps, so it runs first, on the input, in a "slot": a ring of the input after that slot's
+    // all-passes. A shift, gain or polarity change fades between two tap sets on the same slot and needs no setup.
+    // A phase-EQ change fills the other slot from the recent past first, four history samples per incoming sample
+    // (so its cost is spread evenly and never depends on the block size), then fades over.
     struct Kernel
     {
         Settings s;
@@ -62,25 +67,33 @@ private:
         std::array<float, taps> h {};   ///< interpolation taps (gain and polarity folded in)
         bool impulse = false;           ///< a whole-sample delay: one tap
         float g = 1;                    ///< gain and polarity for the impulse case
-        struct Biquad { double b0, b1, b2, a1, a2; };
-        std::array<Biquad, 2> ap {};    ///< the phase EQ, in order (fixed size: nothing allocates on the audio thread)
-        int nAp = 0;
     };
-    using State = std::array<std::array<std::array<double, 4>, 2>, 2>;   ///< [channel][all-pass] x1 x2 y1 y2
-    float pathOut (const std::vector<float>& ring, long at, const Kernel&, std::array<std::array<double, 4>, 2>& st) const;
-    void prime (Kernel&, State&) const;
+    struct Biquad { double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0; };
+    struct Slot
+    {
+        std::array<AllPass, 2> ap {};
+        std::array<Biquad, 2> bq {};
+        int nAp = 0;
+        std::vector<std::vector<float>> ring;                       ///< [channel] the input after this slot's all-passes
+        std::array<std::array<std::array<double, 4>, 2>, 2> st {};  ///< [channel][all-pass] x1 x2 y1 y2
+    };
     Kernel make (const Settings&) const;
+    void setSlot (Slot&, const std::array<AllPass, 2>&);
+    void filterInto (Slot&, long at, int nch);
     float tapOut (const std::vector<float>& ring, long at, const Kernel&) const;
-    void startFadeIfNeeded();
+    void startChangeIfNeeded();
+    bool sameAp (const std::array<AllPass, 2>& a, const std::array<AllPass, 2>& b) const { return a[0] == b[0] && a[1] == b[1]; }
 
     double sr = 48000;
     int L = 0;
-    std::vector<std::vector<float>> ring;
+    std::vector<std::vector<float>> raw;   ///< [channel] the input as it came
     long mask = 0, pos = 0;
     Settings target;
     Kernel cur, next;
-    State curState {}, nextState {};
-    int primeLen = 4096;
+    Slot slots[2];
+    int curSlot = 0, nextSlot = 0, nch = 1;
+    bool building = false;
+    long buildPos = 0, history = 0;
     bool fading = false;
     int fadePos = 0, fadeLen = 480;
     std::vector<float> fadeCurve;

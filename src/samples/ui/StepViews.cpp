@@ -110,7 +110,7 @@ void HitsView::setSliderValue (const std::string& key, double v)
     const int mic = selMic;
     using R = SampleModel::Redo;
     const R redo = key.rfind ("lev.", 0) == 0 || key == "exp.ceil" ? R::levels : key == "tune.cents" ? R::tune : R::mix;
-    model.change ([key, v, mic] (hl::Session& S)
+    const bool ok = model.change ([key, v, mic] (hl::Session& S)
     {
         const bool m = mic >= 0 && mic < (int) S.tracks.size();
         hl::ToneMoves& T = m ? S.tracks[(size_t) mic].strip.tone : (hl::ToneMoves&) S.tone;
@@ -133,7 +133,8 @@ void HitsView::setSliderValue (const std::string& key, double v)
         else if (key == "lev.offset") S.lev.offsetDb = v;
         else if (key == "tune.cents") S.tune.cents = v;
         else if (key == "exp.ceil") S.exp.ceilDb = v;
-    }, redo);
+    }, redo, key);   // one drag undoes as one step
+    if (! ok) setStatus ("Auto Prep is running: try again when it finishes.");
 }
 
 void HitsView::slider (Canvas& c, float x, float y, float w, const std::string& label, const std::string& key)
@@ -396,14 +397,16 @@ void HitsView::drawAlign (Canvas& c)
         std::string det = std::string (tr.pol < 0 ? "\xc3\x98 on" : "\xc3\x98 off");
         if (! tr.ap.empty() && tr.apOn) det += " \xc2\xb7 EQ " + fmt ("%.0f Hz", tr.ap[0].fc) + (tr.ap.size() > 1 ? fmt (" + %.0f", tr.ap[1].fc) : std::string());
         txt (c, det, monoFont (10), ink3, cx + 120, y + 30, 130, 16);
-        if (! isLead && tr.autoResult && tr.autoResult->valid)
+        const auto sums = isLead ? std::make_pair (std::nan (""), std::nan ("")) : model.sumScore (t);
+        if (std::isfinite (sums.first) && std::isfinite (sums.second))
         {
-            const double before = tr.autoResult->asis * 100, after = tr.autoResult->score * 100;
+            // measured where it sits now (every nudge, flip and phase EQ counts), against as recorded
+            const double before = sums.second * 100, after = sums.first * 100;
             for (int k = 0; k < 2; ++k)
             {
                 const double v = std::clamp (k ? after : before, -100.0, 100.0);
                 const float by = y + 12 + k * 18, bx = cx + 292, bw = 50;
-                txt (c, k ? "After" : "Before", bodyFont (10), ink3, cx + 250, by - 3, 50, 14);
+                txt (c, k ? "Now" : "As rec.", bodyFont (10), ink3, cx + 250, by - 3, 50, 14);
                 c.setColor (0xff161617); c.fill (bx, by, bw, 8);
                 c.setColor (v >= 0 ? 0xff3fbf78 : 0xffd4544b);
                 c.fill (v >= 0 ? bx + bw / 2 : bx + bw / 2 - (float) (-v / 100 * bw / 2), by, (float) (std::abs (v) / 100 * bw / 2), 8);
@@ -420,8 +423,8 @@ void HitsView::drawAlign (Canvas& c)
     c.setColor (0x8cffffff); for (int i = 0; i < 3; ++i) c.fill (190 + i * 8, ly + 16, 5, 2);
     txt (c, "As recorded", bodyFont (11), ink2, 220, ly, 100, 34);
     c.setColor (0xff4f9be8); c.fill (320, ly + 16, 22, 2);
-    txt (c, "Where it sits now (heard live)", bodyFont (11), ink2, 348, ly, 220, 34);
-    txt (c, "Sums with the lead: \xe2\x88\x92" "100 fights it, +100 adds fully. Tab: next hit.", bodyFont (11), ink3, width() - 460, ly, 446, 34, visage::Font::kRight);
+    txt (c, "Where it sits now: shift and polarity (the phase EQ is heard, not drawn)", bodyFont (11), ink2, 348, ly, 420, 34);
+    txt (c, "Sums: \xe2\x88\x92" "100 fights, +100 adds fully. Tab: next hit.", bodyFont (11), ink3, width() - 330, ly, 316, 34, visage::Font::kRight);
 }
 
 // ------------------------------------------------------------------------------------------------ 4 Tune
@@ -779,21 +782,23 @@ void HitsView::drawExport (Canvas& c)
     const bool toneOn = S->tone.match + std::abs (S->tone.bright) + std::abs (S->tone.crack) + S->tone.smooth + S->tone.tame + std::abs (S->shape.atk) + std::abs (S->shape.sus) + S->shape.match > 0;
     struct Check { bool ok; std::string title, detail; };
     std::vector<Check> checks {
-        { (int) model.hits().size() == want, "All " + std::to_string (want) + " hits", std::to_string (S->det.V) + " velocities \xc3\x97 " + std::to_string (S->det.RR) + " round robins" },
+        { (int) model.hits().size() == want, "All " + std::to_string (want) + " hits", std::to_string (S->det.V) + (S->det.V == 1 ? " velocity \xc3\x97 " : " velocities \xc3\x97 ") + std::to_string (S->det.RR) + (S->det.RR == 1 ? " round robin" : " round robins") },
         { S->phaseAnalyzed, "Aligned", std::to_string (aligned) + " mics moved, " + std::to_string (flipped) + " flipped" },
         { true, S->tune.on ? "Tuned" : "Not tuned", S->tune.on && S->tuneInfo && S->tuneInfo->valid ? "to " + hl::noteName (S->tuneInfo->targetMidi) : std::string ("as played") },
         { true, toneOn ? "Toned" : "Tone flat", toneOn ? "the Tone step's moves" : "as recorded" },
         { true, S->dnOn ? "Cleaned" : "Not cleaned", S->dnOn ? fmt ("noise down %.0f dB", S->dnDb) : std::string ("as recorded") },
-        { L && L->valid && L->peakMax + L->trimDb <= 0.0, "Levelled \xc2\xb7 nothing clips", L && L->valid ? fmt ("loudest %.1f dBFS", L->peakMax + L->trimDb) : std::string ("run Auto Prep") } };
+        { L && L->valid && L->peakMax + L->trimDb <= 0.0, "Levelled \xc2\xb7 nothing clips", L && L->valid ? fmt ("loudest %.1f dBFS", L->peakMax + L->trimDb) : std::string ("run Auto Prep") },
+        { model.exportBlocker().isEmpty(), model.exportBlocker().isEmpty() ? std::string ("Ready to write") : std::string ("Not ready yet"),
+          model.exportBlocker().isEmpty() ? std::string ("rendered through the same engine and plugins B plays") : model.exportBlocker().toStdString() } };
     for (auto& k : checks)
     {
         c.setColor (k.ok ? 0xff3fbf78 : 0xffe0663c); c.circle (30, y + 4, 12);
         txt (c, k.ok ? "\xe2\x9c\x93" : "!", boldFont (9), 0xff101011, 30, y + 4, 12, 12, visage::Font::kCenter);
         txt (c, k.title, boldFont (12), ink, 52, y, pw - 60, 18);
         txt (c, k.detail, bodyFont (11), ink3, 52, y + 18, pw - 60, 16);
-        y += 44;
+        y += 40;
     }
-    y += 6;
+    y += 4;
     txt (c, "Name", bodyFont (12), ink3, 30, y, 60, 22);
     c.setColor (field); c.roundedRectangle (30, y + 24, pw - 32, 26, 3);
     txt (c, S->exp.hitTemplate, monoFont (11), ink, 38, y + 24, pw - 48, 26);
@@ -853,35 +858,33 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
     if (has ("lead:"))
     {
         const int t = arg();
-        model.change ([t] (hl::Session& S) { S.refIdx = t; }, R::align);
-        if (onAutoPrep) onAutoPrep();   // everything is measured against the lead: measure again
+        if (model.change ([t] (hl::Session& S) { S.refIdx = t; }, R::reprep) && onAutoPrep) onAutoPrep();   // everything is measured against the lead: measure again
         return true;
     }
     if (id == "leadnext")
     {
         const int T = (int) model.tracks().size();
         const int t = (model.leadTrack() + 1) % std::max (1, T);
-        model.change ([t] (hl::Session& S) { S.refIdx = t; }, R::align);
-        if (onAutoPrep) onAutoPrep();
+        if (model.change ([t] (hl::Session& S) { S.refIdx = t; }, R::reprep) && onAutoPrep) onAutoPrep();
         return true;
     }
     if (has ("drum:"))
     {
         static const char* d[] = { "kick", "snare", "tom", "hat", "ride", "crash" };
         const std::string drum = d[std::clamp (arg(), 0, 5)];
-        model.change ([drum] (hl::Session& S) { S.drum = drum; hl::applyDrumDefaults (S, drum); }, R::align);
-        setStatus ("Drum set. Auto Prep finds the hits with its settings.");
+        model.change ([drum] (hl::Session& S) { S.drum = drum; hl::applyDrumDefaults (S, drum); }, R::reprep);
+        setStatus ("Drum set. Run Auto Prep: export waits until it has.");
         return true;
     }
     if (has ("v:") || has ("rr:"))
     {
         const bool rr = id[0] == 'r';
         const int d = arg();
-        model.change ([rr, d] (hl::Session& S) { int& n = rr ? S.det.RR : S.det.V; n = std::clamp (n + d, 1, 32); }, R::align);
-        setStatus ("Counts changed. Auto Prep finds that many hits.");
+        model.change ([rr, d] (hl::Session& S) { int& n = rr ? S.det.RR : S.det.V; n = std::clamp (n + d, 1, 32); }, R::reprep);
+        setStatus ("Counts changed. Run Auto Prep to find that many hits: export waits until it has.");
         return true;
     }
-    if (has ("order:")) { const bool loud = arg() == 1; model.change ([loud] (hl::Session& S) { S.det.order = loud ? "loud" : "soft"; }, R::levels); return true; }
+    if (has ("order:")) { const bool loud = arg() == 1; model.change ([loud] (hl::Session& S) { S.det.order = loud ? "loud" : "soft"; }, R::reprep); setStatus ("Order changed. Run Auto Prep: export waits until it has."); return true; }
     if (has ("timing:"))
     {
         static const char* m[] = { "tight", "pro", "natural" };
@@ -934,14 +937,14 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
     if (id == "clean:on") { model.change ([] (hl::Session& S) { S.dnOn = ! S.dnOn; }, R::mix); return true; }
     if (has ("levmode:")) { const bool linked = arg() == 1; model.change ([linked] (hl::Session& S) { S.lev.mode = linked ? "linked" : "permic"; }, R::levels); return true; }
     if (has ("levcurve:")) { static const char* cv[] = { "midi", "even", "step", "range" }; const std::string k = cv[std::clamp (arg(), 0, 3)]; model.change ([k] (hl::Session& S) { S.lev.curve = k; }, R::levels); return true; }
-    if (has ("bits:")) { const int b = arg() == 0 ? 16 : arg() == 1 ? 24 : 32; model.change ([b] (hl::Session& S) { S.exp.bits = b; }, R::align); return true; }
-    if (has ("rate:")) { static const char* r[] = { "same", "44100", "48000", "96000" }; const std::string k = r[std::clamp (arg(), 0, 3)]; model.change ([k] (hl::Session& S) { S.exp.rate = k; }, R::align); return true; }
-    if (has ("tails:")) { const bool f = arg() == 1; model.change ([f] (hl::Session& S) { S.exp.tailMode = f ? "fade" : "natural"; }, R::align); return true; }
+    if (has ("bits:")) { const int b = arg() == 0 ? 16 : arg() == 1 ? 24 : 32; model.change ([b] (hl::Session& S) { S.exp.bits = b; }, R::none); return true; }
+    if (has ("rate:")) { static const char* r[] = { "same", "44100", "48000", "96000" }; const std::string k = r[std::clamp (arg(), 0, 3)]; model.change ([k] (hl::Session& S) { S.exp.rate = k; }, R::none); return true; }
+    if (has ("tails:")) { const bool f = arg() == 1; model.change ([f] (hl::Session& S) { S.exp.tailMode = f ? "fade" : "natural"; }, R::none); return true; }
     if (has ("tpl:"))
     {
         static const char* tp[] = { "{DRUM}_{ARTIC}_RR{RR}_VEL{VEL}/{MIC}.wav", "{MIC}/{DRUM}_{ARTIC}_{MIC}_V{VEL}_RR{RR}.wav", "{DRUM}_{ARTIC}_{MIC}_V{VEL}_RR{RR}.wav" };
         const std::string k = tp[std::clamp (arg(), 0, 2)];
-        model.change ([k] (hl::Session& S) { S.exp.hitTemplate = k; }, R::align);
+        model.change ([k] (hl::Session& S) { S.exp.hitTemplate = k; }, R::none);
         return true;
     }
     if (id == "export") { if (onExport) onExport(); return true; }

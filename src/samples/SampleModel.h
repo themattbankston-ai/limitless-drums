@@ -6,6 +6,7 @@
 #include "live/AlignPlugin.h"
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
 
 namespace ld::samples
@@ -65,12 +66,25 @@ public:
     juce::String autoPrepNow();
 
     // ---- the steps change the session through here
-    enum class Redo { align, tune, levels, mix };
-    /** Changes the session. align: heard at once (the Align plugins), levels re-measured in the background. tune: the
-        clips' ratios at once, then levels. levels: re-measured in the background (gains live when done). mix: clean-up and
-        tone re-rendered in the background, then the hits play the new audio. Playback keeps going throughout. */
-    void change (const std::function<void (hl::Session&)>& f, Redo what);
+    enum class Redo { none, align, tune, levels, mix, reprep };
+    /** Changes the session (refused while Auto Prep runs: its result would replace the change). none: export settings
+        only. align: heard at once (the Align plugins), levels re-measured in the background. tune: the clips' ratios at
+        once, then levels. levels: re-measured in the background (gains live when done). mix: clean-up and tone re-rendered
+        in the background, then the hits play the new audio. reprep: what Auto Prep found no longer holds (counts, drum,
+        lead, order): export is blocked until it runs again. Playback keeps going throughout. Every change can be
+        undone; changes with the same `gesture` (one slider drag) within 2 s undo as one. Returns false if refused. */
+    bool change (const std::function<void (hl::Session&)>& f, Redo what, const std::string& gesture = {});
     bool isRendering() const { return rendering; }
+    /** A background render is running or wanted, or Auto Prep is: what plays isn't yet the current settings. */
+    bool isBusy() const { return prepping || rendering || renderDone != renderWanted; }
+    /** Why export can't run now (empty: it can). */
+    juce::String exportBlocker() const;
+    bool canUndo() const { return ! undoStack.empty(); }
+    bool canRedo() const { return ! redoStack.empty(); }
+    void undo();
+    void redo();
+    /** How well mic t sums with what it lines up to, as it is set now (-1..1), and as recorded. NaN when unknown. */
+    std::pair<double, double> sumScore (int t);
     const hl::Session* session() const { return state ? &state->session : nullptr; }
     const hl::MixRender* mixRender() const { return state && state->mix ? &*state->mix : nullptr; }
     const hl::LevelResult* levelResult() const { return state && state->levels ? &*state->levels : nullptr; }
@@ -123,6 +137,15 @@ private:
     juce::String name;
     juce::File cacheDir;
     bool prepping = false, processedOn = true;
+    int takeGen = 0;   ///< bumped by every open: work started for an older take is dropped when it lands
+    struct Undo { hl::Session session; bool prepared = false; };
+    std::vector<Undo> undoStack, redoStack;
+    std::string lastGesture;
+    double lastGestureTime = 0;
+    void reapply (bool mixToo);
+    struct ScoreKey { double lag = 0; int pol = 1; bool apOn = false; size_t nAp = 0; double fc0 = 0; int ref = -1; const void* st = nullptr; };
+    std::map<int, std::pair<ScoreKey, std::pair<double, double>>> scoreCache;
+    std::set<int> scoring;   ///< tracks being measured on another thread
     int toneVersion = 0;
     bool rendering = false;
     int renderWanted = 0, renderDone = 0;   ///< edit counters: a render that lands stale starts another
@@ -132,12 +155,15 @@ private:
     bool levelMatchOn = true;
     double matchDb = 0;   ///< what A needs to sound as loud as B
     void applyMutes();
+    void recomputeLevelMatch();
     std::vector<juce::File> prepFiles;
     const void* prepFor = nullptr;
     juce::File prepFile (int t);
-    std::vector<live::AlignPlugin::HitScale> scalesFor (int t, int parity) const;
-    void layoutHitsFor (int parity);   ///< -1: playing; 0 / 1: only the even / odd hits, uncapped (export)
-    hl::Chs renderB (int t, double srOut, bool stereo);
+    std::vector<live::AlignPlugin::HitScale> scalesFor (int t, const std::vector<int>* only) const;
+    /** null: playing (every hit, each ending where the next starts). Otherwise only the hits listed, each with its whole
+        tuned region (export: the lists are chosen so no two overlap). */
+    void layoutHitsFor (const std::vector<int>* only);
+    hl::Chs renderB (int t, double srOut, bool stereo, juce::String& err);
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 
     std::map<int, std::pair<te::LevelMeasurer*, std::unique_ptr<te::LevelMeasurer::Client>>> meters;

@@ -2,7 +2,8 @@
 // every mic through Tracktion with the processing off (A) and on (B). Checks the hit count against the file names,
 // that A comes back as recorded (the timeline holds), and that B lines each touched mic up with the lead at least
 // as well as A. LD_CORPUS = a folder of take folders; LD_CORPUS_REPORT = where to write the table (optional).
-// Without LD_CORPUS the test says so loudly and does nothing.
+// Without LD_CORPUS the test says so loudly and does nothing (set LD_CORPUS_REQUIRED=1 to make that a failure);
+// LD_CORPUS set but no takes run is always a failure.
 #include <catch2/catch_test_macros.hpp>
 #include "TestSignals.h"
 #include "samples/SampleModel.h"
@@ -18,7 +19,11 @@ namespace te = tracktion;
 
 namespace
 {
-std::vector<float> renderTrack (te::Edit& edit, int idx, double sr)
+using Chans = std::vector<std::vector<float>>;
+
+/** One track rendered by Tracktion, mono or stereo as the track is (as the export renders it), the edit's lead-in
+    removed. Fails the test if the render comes back empty or the wrong length. */
+Chans renderTrack (te::Edit& edit, int idx, double sr, bool stereo)
 {
     juce::TemporaryFile temp (".wav");
     auto all = te::getAllTracks (edit);
@@ -34,12 +39,23 @@ std::vector<float> renderTrack (te::Edit& edit, int idx, double sr)
     p.tracksToDo = which;
     p.usePlugins = true;
     p.useMasterPlugins = false;
-    p.mustRenderInMono = true;
+    p.mustRenderInMono = ! stereo;
     p.ditheringEnabled = false;
-    te::Renderer::renderToFile ("Render", p);
-    auto b = ld::readMono (temp.getFile());
+    REQUIRE (te::Renderer::renderToFile ("Render", p) != juce::File());
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (temp.getFile()));
+    REQUIRE (r != nullptr);
+    REQUIRE (std::abs ((double) r->lengthInSamples - edit.getLength().inSeconds() * sr) <= 1.0);
+    juce::AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
+    r->read (&b, 0, b.getNumSamples(), 0, true, true);
     const int pad = (int) std::lround (ld::samples::SampleModel::kPad * sr);   // the take sits this far into the edit
-    return std::vector<float> (b.getReadPointer (0) + std::min (pad, b.getNumSamples()), b.getReadPointer (0) + b.getNumSamples());
+    Chans out;
+    for (int c = 0; c < (stereo ? 2 : 1); ++c)
+    {
+        REQUIRE (c < b.getNumChannels());
+        out.emplace_back (b.getReadPointer (c) + std::min (pad, b.getNumSamples()), b.getReadPointer (c) + b.getNumSamples());
+    }
+    return out;
 }
 
 // how well two mics add up over the first 25 ms of every hit: 1 = in step, 0 = unrelated, below 0 = fighting
@@ -87,6 +103,7 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
     if (dirEnv == nullptr)
     {
         WARN ("LD_CORPUS not set: the real-recording corpus was NOT tested");
+        CHECK (std::getenv ("LD_CORPUS_REQUIRED") == nullptr);
         return;
     }
     juce::File root (dirEnv);
@@ -95,9 +112,11 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
     auto folders = root.findChildFiles (juce::File::findDirectories, false);
     folders.sort();
     REQUIRE (! folders.isEmpty());
+    int tested = 0;
     for (auto& f : folders)
     {
         if (const char* only = std::getenv ("LD_CORPUS_ONLY")) if (! f.getFileName().containsIgnoreCase (only)) continue;
+        ++tested;
         INFO ("take: " << f.getFileName());
         [&]
         {
@@ -129,19 +148,25 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
             juce::String micLine;
             double worstA = 0;
             model.setProcessed (true);
-            std::vector<std::vector<float>> B;
-            for (int t = 0; t < (int) S.tracks.size(); ++t) B.push_back (renderTrack (*edit, t, sr));
+            std::vector<Chans> B;
+            for (int t = 0; t < (int) S.tracks.size(); ++t) B.push_back (renderTrack (*edit, t, sr, S.tracks[(size_t) t].ch.size() > 1));
             model.setProcessed (false);
             model.setLevelMatch (false);   // A exactly as recorded
-            std::vector<std::vector<float>> A;
+            std::vector<Chans> A;
             for (int t = 0; t < (int) S.tracks.size(); ++t)
             {
-                A.push_back (renderTrack (*edit, (int) S.tracks.size() + t, sr));
-                // A is the recording: same samples on the same timeline (mono: channel 0 of the take)
-                const auto& orig = S.tracks[(size_t) t].ch[0];
-                std::vector<float> o (orig.begin(), orig.end());
-                worstA = std::max (worstA, maxDiff (A.back(), o));
-                for (auto v : B[(size_t) t]) REQUIRE (std::isfinite (v));
+                const auto& tr = S.tracks[(size_t) t];
+                A.push_back (renderTrack (*edit, (int) S.tracks.size() + t, sr, tr.ch.size() > 1));
+                // A is the recording: every channel, every sample, on the same timeline, and nothing after it
+                for (size_t c = 0; c < tr.ch.size(); ++c)
+                {
+                    const auto& orig = tr.ch[c];
+                    const auto& got = A.back()[c];
+                    REQUIRE (got.size() >= orig.size());
+                    for (size_t n = 0; n < got.size(); ++n)
+                        worstA = std::max (worstA, (double) std::abs (got[n] - (n < orig.size() ? orig[n] : 0.0f)));
+                }
+                for (auto& ch : B[(size_t) t]) for (auto v : ch) REQUIRE (std::isfinite (v));
             }
             CHECK (worstA < 1.0e-4);
 
@@ -155,64 +180,32 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                 const auto& Rg = st->levels->regions;
                 for (int t = 0; t < (int) S.tracks.size(); ++t)
                 {
-                    double e = 0, d = 0;
+                    // every channel of every hit; the last 12 ms before the next hit is left out (the next hit's gain
+                    // crossfade starts there by design)
+                    double e = 0, d = 0, worstHit = -300;
                     for (size_t i = 0; i < Rg.size(); ++i)
                     {
                         const auto ref = ld::hl::renderHitMic (Sx, *st->mix, t, i, Rg[i], sr, std::pow (10.0, model.hitGainDb (t, i) / 20));
                         const long n0 = Rg[i].start;
-                        const long cap = (i + 1 < Rg.size() ? Rg[i + 1].start : (long) B[(size_t) t].size()) - n0 - (long) (0.012 * sr);
-                        for (long n = 0; n < std::min ((long) ref[0].size(), cap); ++n)
+                        double eh = 0, dh = 0;
+                        for (size_t c = 0; c < ref.size() && c < B[(size_t) t].size(); ++c)
                         {
-                            if (n0 + n >= (long) B[(size_t) t].size()) break;
-                            const double r = ref[0][(size_t) n], b = B[(size_t) t][(size_t) (n0 + n)];
-                            e += r * r; d += (r - b) * (r - b);
-                        }
-                    }
-                    if (std::getenv ("LD_CORPUS_DEBUG"))
-                        for (size_t i = 0; i < std::min<size_t> (3, Rg.size()); ++i)
-                        {
-                            const auto ref = ld::hl::renderHitMic (S, *st->mix, t, i, Rg[i], sr, std::pow (10.0, model.hitGainDb (t, i) / 20));
-                            const long n0 = Rg[i].start, W = std::min<long> ((long) ref[0].size(), (long) (0.1 * sr));
-                            double best = -1e9; int bl = 0; double rr = 0, bb = 0;
-                            for (int l = -300; l <= 300; ++l)
+                            const auto& b = B[(size_t) t][c];
+                            const long cap = (i + 1 < Rg.size() ? Rg[i + 1].start : (long) b.size()) - n0 - (long) (0.012 * sr);
+                            for (long n = 0; n < std::min ((long) ref[c].size(), cap) && n0 + n < (long) b.size(); ++n)
                             {
-                                double c = 0;
-                                for (long n = 0; n < W; ++n) { const long k = n0 + n + l; if (k >= 0 && k < (long) B[(size_t) t].size()) c += ref[0][(size_t) n] * B[(size_t) t][(size_t) k]; }
-                                if (c > best) { best = c; bl = l; }
+                                const double r = ref[c][(size_t) n], x = b[(size_t) (n0 + n)];
+                                eh += r * r; dh += (r - x) * (r - x);
                             }
-                            for (long n = 0; n < W; ++n) { rr += ref[0][(size_t) n] * ref[0][(size_t) n]; const long k = n0 + n + bl; if (k < (long) B[(size_t) t].size()) bb += B[(size_t) t][(size_t) k] * B[(size_t) t][(size_t) k]; }
-                            {
-                                juce::String segs;
-                                const long seg = (long) (0.5 * sr);
-                                for (long s0 = 0; s0 < (long) ref[0].size(); s0 += seg)
-                                {
-                                    double ee = 0, dd = 0;
-                                    for (long n = s0; n < std::min (s0 + seg, (long) ref[0].size()) && n0 + n < (long) B[(size_t) t].size(); ++n)
-                                    { const double r = ref[0][(size_t) n], b = B[(size_t) t][(size_t) (n0 + n)]; ee += r * r; dd += (r - b) * (r - b); }
-                                    segs << juce::String (10 * std::log10 (std::max (dd, 1e-30) / std::max (ee, 1e-30)), 0) << " ";
-                                }
-                                fprintf (stderr, "  [dbg] null per 0.5 s: %s\n", segs.toRawUTF8());
-                            }
-                            fprintf (stderr, "  [dbg] %s hit %zu: region %ld..%ld ratio %.4f gain %.2f dB, best lag %d, level B/ref %.2f dB, corr %.3f, Arender peak %.3f orig peak %.3f\n", S.tracks[(size_t) t].mic.c_str(), i, Rg[i].start, Rg[i].end,
-                                     model.hitRatio (i), model.hitGainDb (t, i), bl, 10 * std::log10 (bb / rr), best / std::sqrt (rr * bb),
-                                     (double) *std::max_element (A[(size_t) t].begin(), A[(size_t) t].end()), (double) *std::max_element (S.tracks[(size_t) t].ch[0].begin(), S.tracks[(size_t) t].ch[0].end()));
                         }
-                    if (const char* dumpDir = std::getenv ("LD_CORPUS_DUMP"))
-                    {
-                        const auto ref = ld::hl::renderHitMic (Sx, *st->mix, t, 0, Rg[0], sr, std::pow (10.0, model.hitGainDb (t, 0) / 20));
-                        const auto& M = *st->mix;
-                        const auto& pre = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];
-                        auto dump = [&] (const juce::String& nm, const float* p, size_t n) { juce::File (dumpDir).getChildFile (nm).replaceWithData (p, n * sizeof (float)); };
-                        const juce::String base = juce::String (t) + "_";
-                        dump (base + "src.f32", pre[0].data(), pre[0].size());
-                        dump (base + "ref.f32", ref[0].data(), ref[0].size());
-                        dump (base + "b.f32", B[(size_t) t].data() + Rg[0].start, std::min<size_t> (ref[0].size(), B[(size_t) t].size() - (size_t) Rg[0].start));
-                        juce::File (dumpDir).getChildFile (base + "meta.txt").replaceWithText (juce::String (Rg[0].start) + " " + juce::String (S.tracks[(size_t) t].lag, 6) + " " + juce::String (S.tracks[(size_t) t].pol) + " " + juce::String (model.hitGainDb (t, 0), 6) + " " + juce::String ((int) S.tracks[(size_t) t].ap.size()) + " " + juce::String (sr));
+                        e += eh; d += dh;
+                        if (eh > 0) worstHit = std::max (worstHit, 10 * std::log10 (std::max (dh, 1e-30) / eh));
                     }
                     const double nullDb = 10 * std::log10 (std::max (d, 1e-30) / std::max (e, 1e-30));
-                    nullLine << S.tracks[(size_t) t].mic << " " << juce::String (nullDb, 1) << " dB  ";
-                    INFO (S.tracks[(size_t) t].name << ": B vs the reference export " << nullDb << " dB");
+                    nullLine << S.tracks[(size_t) t].mic << " " << juce::String (nullDb, 1) << " (worst hit " << juce::String (worstHit, 1) << ") dB  ";
+                    INFO (S.tracks[(size_t) t].name << ": B vs the reference export " << nullDb << " dB, worst single hit " << worstHit << " dB");
                     CHECK (nullDb < -30);
+                    CHECK (worstHit < -25);
                 }
             }
             fprintf (stderr, "[corpus] %s null vs reference: %s\n", f.getFileName().toRawUTF8(), nullLine.toRawUTF8());
@@ -246,6 +239,7 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                     CHECK (ra->bitsPerSample == rb->bitsPerSample);
                     const double lenDiff = std::abs ((double) ra->lengthInSamples - (double) rb->lengthInSamples) / ra->sampleRate;
                     worstLen = std::max (worstLen, lenDiff);
+                    CHECK (ra->lengthInSamples == rb->lengthInSamples);   // to the frame
                     juce::AudioBuffer<float> a ((int) ra->numChannels, (int) ra->lengthInSamples), b ((int) rb->numChannels, (int) rb->lengthInSamples);
                     ra->read (&a, 0, a.getNumSamples(), 0, true, true); rb->read (&b, 0, b.getNumSamples(), 0, true, true);
                     double e = 0, d = 0;
@@ -257,15 +251,14 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                 }
                 fprintf (stderr, "[corpus] %s export: %d files (reference %d) in %.2f s, worst null %.1f dB (%s), worst length difference %.1f ms\n", f.getFileName().toRawUTF8(), count, refCount, exS, worst, worstName.c_str(), worstLen * 1000);
                 CHECK (worst < -30);
-                CHECK (worstLen < 0.002);
                 report << "  export: " << count << " files in " << juce::String (exS, 2) << " s, worst null vs reference " << juce::String (worst, 1) << " dB, length within " << juce::String (worstLen * 1000, 1) << " ms\n";
             }
             const int L = S.refIdx;
             for (int t = 0; t < (int) S.tracks.size(); ++t)
             {
                 const auto& tr = S.tracks[(size_t) t];
-                const double cA = t == L ? 1 : coherence (A[(size_t) L], A[(size_t) t], S.onsets, sr);
-                const double cB = t == L ? 1 : coherence (B[(size_t) L], B[(size_t) t], S.onsets, sr);
+                const double cA = t == L ? 1 : coherence (A[(size_t) L][0], A[(size_t) t][0], S.onsets, sr);
+                const double cB = t == L ? 1 : coherence (B[(size_t) L][0], B[(size_t) t][0], S.onsets, sr);
                 const bool timed = std::abs (tr.lag) > 0.01 || ! tr.ap.empty();
                 double pA = 0, pB = 0;
                 if (t != L && timed)
@@ -276,8 +269,8 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                 else if (t != L)
                 {
                     // kept on its own arrival (rooms): judge polarity at that arrival
-                    pA = arrivalPeak (A[(size_t) L], A[(size_t) t], S.onsets, sr);
-                    pB = arrivalPeak (B[(size_t) L], B[(size_t) t], S.onsets, sr);
+                    pA = arrivalPeak (A[(size_t) L][0], A[(size_t) t][0], S.onsets, sr);
+                    pB = arrivalPeak (B[(size_t) L][0], B[(size_t) t][0], S.onsets, sr);
                     INFO (tr.name << ": strongest arrival " << pA << " -> " << pB);
                     // reported, not checked: Auto Prep judges a room's polarity on the whole 60 ms window band by band
                     // (as Hitline), which can disagree with the first arrival on its own
@@ -293,5 +286,6 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                      S.det.V, S.det.RR, so, sp, worstA, micLine.toRawUTF8());
         }();
     }
+    CHECK (tested > 0);   // a corpus filtered down to nothing tests nothing: that's a failure, not a pass
     if (const char* rep = std::getenv ("LD_CORPUS_REPORT")) juce::File (rep).appendText (report);
 }
