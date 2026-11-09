@@ -47,6 +47,8 @@ target_sources(LDShared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Naming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Import.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Project.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/live/AlignDsp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/live/AlignPlugin.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Wav.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Detect.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hl/Fft.cpp
@@ -226,6 +228,7 @@ if(LD_BUILD_TESTS)
     tests/MemoryProbe.cpp
     tests/SongTests.cpp
     tests/AuditFixTests.cpp
+    tests/LiveAlignTests.cpp
     tests/ExtPluginTests.cpp
         tests/TuneAdviceTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/NewSessionTests.cpp
