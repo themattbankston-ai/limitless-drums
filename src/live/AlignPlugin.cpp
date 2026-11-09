@@ -72,12 +72,47 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
 {
     if (rc.destBuffer == nullptr) return;
     SCOPED_REALTIME_CHECK
-    dsp.setTarget (settingsNow());
+    const auto base = settingsNow();
     auto& b = *rc.destBuffer;
-    float* ch[2] = { nullptr, nullptr };
     const int nch = std::min (2, b.getNumChannels());
-    for (int c = 0; c < nch; ++c) ch[c] = b.getWritePointer (c, rc.bufferStartSample);
-    dsp.process (ch, nch, rc.bufferNumSamples);
+    const auto tbl = std::atomic_load (&scales);
+    if (tbl == nullptr || tbl->empty())
+    {
+        dsp.setTarget (base);
+        float* ch[2] = { nullptr, nullptr };
+        for (int c = 0; c < nch; ++c) ch[c] = b.getWritePointer (c, rc.bufferStartSample);
+        dsp.process (ch, nch, rc.bufferNumSamples);
+        return;
+    }
+    // Tracktion hands the plugin its input L samples ahead of the time it reports (that's how it compensates the
+    // latency), so this block comes out at editTime + L on the timeline. Switch at the exact sample (measured against
+    // the reference export: -50..-60 dB nulls this way, -9..-18 dB without).
+    const double sr = sampleRate, t0 = rc.editTime.getStart().inSeconds() + AlignDsp::latencySamples (sr) / sr;
+    int done = 0;
+    while (done < rc.bufferNumSamples)
+    {
+        const double t = t0 + done / sr + 0.5 / sr;
+        auto it = std::upper_bound (tbl->begin(), tbl->end(), t, [] (double x, const HitScale& h) { return x < h.start; });
+        const double scale = it == tbl->begin() ? 1.0 : std::prev (it)->scale, extra = it == tbl->begin() ? 0.0 : std::prev (it)->gainDb;
+        int seg = rc.bufferNumSamples - done;
+        if (it != tbl->end()) seg = std::clamp ((int) std::ceil ((it->start - t) * sr), 1, seg);
+        auto s = base;
+        s.advanceSamples *= scale;
+        s.gainDb += extra;
+        dsp.setTarget (s);
+        float* ch[2] = { nullptr, nullptr };
+        for (int c = 0; c < nch; ++c) ch[c] = b.getWritePointer (c, rc.bufferStartSample + done);
+        dsp.process (ch, nch, seg);
+        done += seg;
+    }
+}
+
+void AlignPlugin::setHitScales (std::vector<HitScale> v)
+{
+    auto p = std::make_shared<const std::vector<HitScale>> (std::move (v));
+    if (auto old = std::atomic_exchange (&scales, p)) retired.push_back (std::move (old));
+    // keep the last couple alive: the audio thread may still hold one for the block it's in
+    while (retired.size() > 4) retired.erase (retired.begin());
 }
 
 void registerLivePlugins (te::Engine& engine)

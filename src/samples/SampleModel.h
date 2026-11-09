@@ -78,8 +78,11 @@ public:
     void setFlip (int t, bool);
     float shiftMs (int t) const;
 
-    // A/B: A as recorded, B with everything applied
+    // A/B: A as recorded, B with everything applied. Level match plays A at B's loudness.
     void setProcessed (bool b);
+    void setLevelMatch (bool on);
+    bool levelMatch() const { return levelMatchOn; }
+    te::AudioTrack* trackA (int t) const;   ///< the as-recorded copy of track t (for tests and tools)
     bool processed() const { return processedOn; }
 
     // transport
@@ -102,13 +105,27 @@ private:
     juce::String name;
     juce::File cacheDir;
     bool prepping = false, processedOn = true;
+    int toneVersion = 0;
+    std::vector<bool> userMute;
+    bool levelMatchOn = true;
+    double matchDb = 0;   ///< what A needs to sound as loud as B
+    void applyMutes();
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 
     std::map<int, std::pair<te::LevelMeasurer*, std::unique_ptr<te::LevelMeasurer::Client>>> meters;
     void dropMeters();
+    std::vector<juce::File> sourceFiles;   ///< each track as recorded (what A plays)
     te::AudioTrack* track (int t) const;
     void buildHits();
     void applyAlignment();
+public:
+    te::AudioTrack* trackB (int t) const { return track (t); }
+    /** Each hit becomes its own clip on every track (all cut at the same place), tuned by its ratio (varispeed, best
+        sinc), and the Align plugin gets each hit's Level gain and offset scale. Needs the levels; until then each
+        track plays as one clip. Called after Auto Prep and whenever Tune or Level change. */
+    void layoutHits();
+    double hitGainDb (int t, size_t i) const;   ///< Level gain of this hit on this mic (dB, trim included)
+    double hitRatio (size_t i) const;           ///< Tune: varispeed ratio of this hit (1 = untouched)
 };
 
 } // namespace ld::samples

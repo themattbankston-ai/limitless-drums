@@ -31,6 +31,8 @@ public:
         bool operator== (const AllPass& o) const { return fc == o.fc && (fc == 0 || Q == o.Q); }
     };
 
+    static constexpr double kFadeSeconds = 0.010;   ///< every change crossfades over this long
+
     struct Settings
     {
         double advanceSamples = 0;   ///< + plays the track earlier, - later

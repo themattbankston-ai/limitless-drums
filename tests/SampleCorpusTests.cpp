@@ -7,6 +7,7 @@
 #include "TestSignals.h"
 #include "samples/SampleModel.h"
 #include "core/Session.h"
+#include "hl/Session.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -127,10 +128,11 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
             std::vector<std::vector<float>> B;
             for (int t = 0; t < (int) S.tracks.size(); ++t) B.push_back (renderTrack (*edit, t, sr));
             model.setProcessed (false);
+            model.setLevelMatch (false);   // A exactly as recorded
             std::vector<std::vector<float>> A;
             for (int t = 0; t < (int) S.tracks.size(); ++t)
             {
-                A.push_back (renderTrack (*edit, t, sr));
+                A.push_back (renderTrack (*edit, (int) S.tracks.size() + t, sr));
                 // A is the recording: same samples on the same timeline (mono: channel 0 of the take)
                 const auto& orig = S.tracks[(size_t) t].ch[0];
                 std::vector<float> o (orig.begin(), orig.end());
@@ -138,6 +140,78 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                 for (auto v : B[(size_t) t]) REQUIRE (std::isfinite (v));
             }
             CHECK (worstA < 1.0e-4);
+
+            // B against the reference renderer (Hitline's export path): every hit of every mic
+            juce::String nullLine;
+            const auto* st = model.engineState();
+            auto Sx = S;
+            if (const char* tp = std::getenv ("LD_CORPUS_REF_TAPS")) Sx.tuneTaps = std::atoi (tp);
+            if (st->mix && st->levels && st->levels->valid)
+            {
+                const auto& Rg = st->levels->regions;
+                for (int t = 0; t < (int) S.tracks.size(); ++t)
+                {
+                    double e = 0, d = 0;
+                    for (size_t i = 0; i < Rg.size(); ++i)
+                    {
+                        const auto ref = ld::hl::renderHitMic (Sx, *st->mix, t, i, Rg[i], sr, std::pow (10.0, model.hitGainDb (t, i) / 20));
+                        const long n0 = Rg[i].start;
+                        const long cap = (i + 1 < Rg.size() ? Rg[i + 1].start : (long) B[(size_t) t].size()) - n0 - (long) (0.012 * sr);
+                        for (long n = 0; n < std::min ((long) ref[0].size(), cap); ++n)
+                        {
+                            if (n0 + n >= (long) B[(size_t) t].size()) break;
+                            const double r = ref[0][(size_t) n], b = B[(size_t) t][(size_t) (n0 + n)];
+                            e += r * r; d += (r - b) * (r - b);
+                        }
+                    }
+                    if (std::getenv ("LD_CORPUS_DEBUG"))
+                        for (size_t i = 0; i < std::min<size_t> (3, Rg.size()); ++i)
+                        {
+                            const auto ref = ld::hl::renderHitMic (S, *st->mix, t, i, Rg[i], sr, std::pow (10.0, model.hitGainDb (t, i) / 20));
+                            const long n0 = Rg[i].start, W = std::min<long> ((long) ref[0].size(), (long) (0.1 * sr));
+                            double best = -1e9; int bl = 0; double rr = 0, bb = 0;
+                            for (int l = -300; l <= 300; ++l)
+                            {
+                                double c = 0;
+                                for (long n = 0; n < W; ++n) { const long k = n0 + n + l; if (k >= 0 && k < (long) B[(size_t) t].size()) c += ref[0][(size_t) n] * B[(size_t) t][(size_t) k]; }
+                                if (c > best) { best = c; bl = l; }
+                            }
+                            for (long n = 0; n < W; ++n) { rr += ref[0][(size_t) n] * ref[0][(size_t) n]; const long k = n0 + n + bl; if (k < (long) B[(size_t) t].size()) bb += B[(size_t) t][(size_t) k] * B[(size_t) t][(size_t) k]; }
+                            {
+                                juce::String segs;
+                                const long seg = (long) (0.5 * sr);
+                                for (long s0 = 0; s0 < (long) ref[0].size(); s0 += seg)
+                                {
+                                    double ee = 0, dd = 0;
+                                    for (long n = s0; n < std::min (s0 + seg, (long) ref[0].size()) && n0 + n < (long) B[(size_t) t].size(); ++n)
+                                    { const double r = ref[0][(size_t) n], b = B[(size_t) t][(size_t) (n0 + n)]; ee += r * r; dd += (r - b) * (r - b); }
+                                    segs << juce::String (10 * std::log10 (std::max (dd, 1e-30) / std::max (ee, 1e-30)), 0) << " ";
+                                }
+                                fprintf (stderr, "  [dbg] null per 0.5 s: %s\n", segs.toRawUTF8());
+                            }
+                            fprintf (stderr, "  [dbg] %s hit %zu: region %ld..%ld ratio %.4f gain %.2f dB, best lag %d, level B/ref %.2f dB, corr %.3f, Arender peak %.3f orig peak %.3f\n", S.tracks[(size_t) t].mic.c_str(), i, Rg[i].start, Rg[i].end,
+                                     model.hitRatio (i), model.hitGainDb (t, i), bl, 10 * std::log10 (bb / rr), best / std::sqrt (rr * bb),
+                                     (double) *std::max_element (A[(size_t) t].begin(), A[(size_t) t].end()), (double) *std::max_element (S.tracks[(size_t) t].ch[0].begin(), S.tracks[(size_t) t].ch[0].end()));
+                        }
+                    if (const char* dumpDir = std::getenv ("LD_CORPUS_DUMP"))
+                    {
+                        const auto ref = ld::hl::renderHitMic (Sx, *st->mix, t, 0, Rg[0], sr, std::pow (10.0, model.hitGainDb (t, 0) / 20));
+                        const auto& M = *st->mix;
+                        const auto& pre = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];
+                        auto dump = [&] (const juce::String& nm, const float* p, size_t n) { juce::File (dumpDir).getChildFile (nm).replaceWithData (p, n * sizeof (float)); };
+                        const juce::String base = juce::String (t) + "_";
+                        dump (base + "src.f32", pre[0].data(), pre[0].size());
+                        dump (base + "ref.f32", ref[0].data(), ref[0].size());
+                        dump (base + "b.f32", B[(size_t) t].data() + Rg[0].start, std::min<size_t> (ref[0].size(), B[(size_t) t].size() - (size_t) Rg[0].start));
+                        juce::File (dumpDir).getChildFile (base + "meta.txt").replaceWithText (juce::String (Rg[0].start) + " " + juce::String (S.tracks[(size_t) t].lag, 6) + " " + juce::String (S.tracks[(size_t) t].pol) + " " + juce::String (model.hitGainDb (t, 0), 6) + " " + juce::String ((int) S.tracks[(size_t) t].ap.size()) + " " + juce::String (sr));
+                    }
+                    const double nullDb = 10 * std::log10 (std::max (d, 1e-30) / std::max (e, 1e-30));
+                    nullLine << S.tracks[(size_t) t].mic << " " << juce::String (nullDb, 1) << " dB  ";
+                    INFO (S.tracks[(size_t) t].name << ": B vs the reference export " << nullDb << " dB");
+                    CHECK (nullDb < -30);
+                }
+            }
+            fprintf (stderr, "[corpus] %s null vs reference: %s\n", f.getFileName().toRawUTF8(), nullLine.toRawUTF8());
             const int L = S.refIdx;
             for (int t = 0; t < (int) S.tracks.size(); ++t)
             {

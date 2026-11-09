@@ -9,7 +9,7 @@ namespace ld::live
 namespace
 {
 constexpr double kMaxShiftSeconds = 0.05;   // 50 ms each way: further than any room mic needs
-constexpr double kFadeSeconds = 0.010;
+// (kFadeSeconds: in the header)
 constexpr double kPrimeSeconds = 0.085;     // a new phase EQ is run over this much of the past before it fades in
 constexpr double kBeta = 10.0;              // Kaiser shape: about -100 dB sidelobes
 
