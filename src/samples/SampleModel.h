@@ -18,6 +18,7 @@ struct TrackInfo
     std::string name;
     unsigned colour = 0xffe0a43c;
     int channels = 1;
+    float peakDb = -100;   ///< the loudest sample of the recording
     std::shared_ptr<ui::Wave> wave;
 };
 

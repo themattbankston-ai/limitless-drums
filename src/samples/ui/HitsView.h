@@ -1,6 +1,7 @@
 #pragma once
 
 #include "samples/SampleModel.h"
+#include "hl/Session.h"
 #include <visage/ui.h>
 #include <functional>
 #include <string>
@@ -61,7 +62,11 @@ private:
     int alignUnits = 0;               ///< ms, samples, feet
     int selMic = -1;                  ///< the mic the Align, Tone and Level steps act on (-1: all / the lead)
     float exportProgress = -1;
-    float barEnd = 0;                 ///< where the step bar's controls end (the status goes after)
+    float barEnd = 0;
+    std::string exportKey;
+    std::vector<ld::hl::ExportItem> exportCache;
+    bool lastActive = true;
+    double lastPos = 0;           ///< something moved last tick (playing, rendering, a meter)                 ///< where the step bar's controls end (the status goes after)
 
     // gestures
     enum class Drag { none, select, fader, pan, slider } drag = Drag::none;

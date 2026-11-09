@@ -213,9 +213,7 @@ void HitsView::drawSetup (Canvas& c)
         c.setColor (tr.channels > 1 ? 0xff1f3f5c : 0xff38383c); c.roundedRectangle (cols[1], y + 7, 56, 16, 3);
         txt (c, tr.channels > 1 ? "Stereo" : "Mono", boldFont (10), tr.channels > 1 ? 0xffbcdcff : 0xffd6d6d8, cols[1], y + 7, 56, 16, visage::Font::kCenter);
         txt (c, fmtTime (model.length()), monoFont (11), ink2, cols[2], y, 90, 30);
-        float pk = 0;
-        if (S) for (auto& ch : S->tracks[(size_t) t].ch.get()) for (size_t n = 0; n < ch.size(); n += 2) pk = std::max (pk, std::abs (ch[n]));
-        txt (c, fmt ("%.1f dB", pk > 0 ? 20 * std::log10 (pk) : -100.0), monoFont (11), ink2, cols[3], y, 90, 30);
+        txt (c, fmt ("%.1f dB", tr.peakDb), monoFont (11), ink2, cols[3], y, 90, 30);
         c.setColor (lead ? accent : 0xff55555a); c.ring (cols[4], y + 8, 14, lead ? 4.0f : 1.5f);
         add (cols[4] - 4, y, 120, 30, "lead:" + std::to_string (t));
         if (lead) txt (c, "everything lines up to it", bodyFont (11), accentInk, cols[4] + 22, y, 200, 30);
@@ -810,7 +808,10 @@ void HitsView::drawExport (Canvas& c)
     add (30, y, 180, 34, "export");
     // the files
     const float gx = 14 + pw + 14, gw = width() - gx - 14;
-    const auto list = hl::exportList (*S);
+    // (the list is rebuilt only when what it depends on changes: 30 times a second it would cost 25 ms a frame)
+    const std::string key = S->exp.hitTemplate + "|" + S->exp.fullTemplate + "|" + S->exp.mode + "|" + S->drum + "|" + S->artic + "|" + std::to_string (S->onsets.size()) + "|" + std::to_string (S->det.V) + "x" + std::to_string (S->det.RR);
+    if (key != exportKey) { exportKey = key; exportCache = hl::exportList (*S); }
+    const auto& list = exportCache;
     panel (c, gx, y0 + 14, gw, height() - y0 - 28, std::to_string (list.size()) + " files");
     y = y0 + 40;
     const double srOut = S->exp.rate == "same" ? S->sr : std::stod (S->exp.rate);

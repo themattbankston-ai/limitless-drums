@@ -29,7 +29,17 @@ void HitsView::tick()
         const double p = model.position();
         if (p < scroll || p > timeAt (laneX() + laneW()) - 0.2) scroll = std::max (0.0, p - 0.1 * laneW() / pps);
     }
-    redraw();
+    // A then B: each pass of the loop switches
+    if (ab == 2 && model.isPlaying())
+    {
+        const double p = model.position();
+        if (p + 0.05 < lastPos) model.setProcessed (! model.processed());
+        lastPos = p;
+    }
+    // redraw only while something moves (and once more after, so the meters fall to rest): idle costs nothing
+    const bool active = model.isPlaying() || model.isRendering() || model.isPrepping() || drag != Drag::none;
+    if (active || lastActive) redraw();
+    lastActive = active;
 }
 
 float HitsView::trackH (int t) const
@@ -67,6 +77,11 @@ void HitsView::selectHit (int i, bool play, bool andRedraw)
     selHit = std::clamp (i, 0, (int) H.size() - 1);
     selA = H[(size_t) selHit].time;
     selB = H[(size_t) selHit].end;
+    if (playMode == 1)        // Layer: every round robin of this velocity, one after another
+        for (auto& h : H) if (h.vel == H[(size_t) selHit].vel) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
+    else if (playMode == 2)   // Sweep: every hit, softest to hardest
+        for (auto& h : H) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
+    selA = std::max (0.0, selA - 0.005);
     model.setLoop (selA, selB, loopOn);
     if (selA < scroll || selB > timeAt (laneX() + laneW())) scroll = std::max (0.0, selA - 0.25 * laneW() / pps);
     if (play) playSelection();
@@ -85,7 +100,7 @@ void HitsView::draw (Canvas& c)
 {
     static int frames = 0; static double t0 = juce::Time::getMillisecondCounterHiRes();
     const double d0 = juce::Time::getMillisecondCounterHiRes();
-    struct Log { double d0; int& n; double t0; ~Log() { if (std::getenv ("LD_FRAMELOG")) fprintf (stderr, "[draw] frame %d at %.1f s took %.1f ms\n", ++n, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000, juce::Time::getMillisecondCounterHiRes() - d0); } } log { d0, frames, t0 };
+    struct Log { double d0; int& n; double t0; int st; ~Log() { if (std::getenv ("LD_FRAMELOG")) fprintf (stderr, "[draw] frame %d at %.1f s step %d took %.1f ms\n", ++n, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000, st, juce::Time::getMillisecondCounterHiRes() - d0); } } log { d0, frames, t0, step };
     hits.clear();
     if (needsFit && width() > headW + inspW + 100 && model.isOpen())
     {
@@ -179,6 +194,7 @@ void HitsView::drawAudition (Canvas& c)
     {
         const float bx = x + 2 + i * 66;
         button (c, bx, y + 11, 64, 30, modeNames[i], playMode == i);
+        if (i >= 3) { c.setColor (0x99232325); c.fill (bx, y + 11, 64, 30); }   // not in this build yet
         if (playMode == i) { c.setColor (accent); c.fill (bx + 3, y + 39, 58, 2); }
         add (bx, y + 11, 64, 30, "mode:" + std::to_string (i));
     }
@@ -572,7 +588,13 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
     else if (id == "next") { selectHit (selHit + 1, model.isPlaying()); }
     else if (id == "autoprep") { if (onAutoPrep) onAutoPrep(); }
     else if (id == "open") { if (onOpen) onOpen(); }
-    else if (id.rfind ("mode:", 0) == 0) { playMode = arg(); }
+    else if (id.rfind ("mode:", 0) == 0)
+    {
+        const int m = arg();
+        if (m >= 3) { setStatus (std::string (modeNames[m]) + " audition isn't in this build yet: Hit, Layer and Sweep are."); return; }
+        playMode = m;
+        selectHit (selHit < 0 ? 0 : selHit, model.isPlaying(), false);
+    }
     else if (id.rfind ("ab:", 0) == 0) { ab = arg(); model.setProcessed (ab != 0); }
     else if (id.rfind ("toggle:", 0) == 0)
     {

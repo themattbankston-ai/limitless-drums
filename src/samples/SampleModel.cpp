@@ -151,6 +151,11 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
         ti.name = niceName (tr.mic.empty() ? tr.name : tr.mic);
         ti.colour = palette[t % (sizeof (palette) / sizeof (palette[0]))];
         ti.channels = (int) tr.ch.size();
+        {
+            float pk = 0;
+            for (auto& x : tr.ch.get()) for (auto v : x) pk = std::max (pk, std::abs (v));
+            ti.peakDb = pk > 0 ? 20 * std::log10 (pk) : -100.0f;
+        }
         ti.wave = std::make_shared<ui::Wave>();
         ti.wave->a = tr.ch.share();
         ti.wave->sampleRate = S.sr;
