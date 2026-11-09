@@ -76,7 +76,12 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
     const auto base = settingsNow();
     auto& b = *rc.destBuffer;
     const int nch = std::min (2, b.getNumChannels());
-    const auto tbl = std::atomic_load (&scales);
+    {
+        // never waits: if the message thread is swapping the table this very moment, this block keeps the last one
+        const juce::SpinLock::ScopedTryLockType l (tblLock);
+        if (l.isLocked() && audioScales != scales) audioScales = scales;   // (the old one stays alive in `retired`)
+    }
+    const auto& tbl = audioScales;
     const bool jump = jumpNext.exchange (false);
     if (tbl == nullptr || tbl->empty())
     {
@@ -114,7 +119,11 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
 void AlignPlugin::setHitScales (std::vector<HitScale> v)
 {
     auto p = std::make_shared<const std::vector<HitScale>> (std::move (v));
-    if (auto old = std::atomic_exchange (&scales, p)) retired.push_back (std::move (old));
+    {
+        const juce::SpinLock::ScopedLockType l (tblLock);
+        if (scales) retired.push_back (scales);
+        scales = p;
+    }
     // keep the last couple alive: the audio thread may still hold one for the block it's in
     while (retired.size() > 4) retired.erase (retired.begin());
 }

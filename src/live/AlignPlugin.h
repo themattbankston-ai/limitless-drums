@@ -62,7 +62,9 @@ private:
     AlignDsp::Settings settingsNow() const;
     AlignDsp dsp;
     std::atomic<bool> jumpNext { true };   ///< after a reset or a seek: start on the right settings, don't fade into them
-    std::shared_ptr<const std::vector<HitScale>> scales;
+    std::shared_ptr<const std::vector<HitScale>> scales;        ///< written on the message thread under tblLock
+    std::shared_ptr<const std::vector<HitScale>> audioScales;   ///< the audio thread's copy (taken with a try-lock)
+    juce::SpinLock tblLock;
     std::vector<std::shared_ptr<const std::vector<HitScale>>> retired;   ///< freed on the message thread, never the audio thread
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AlignPlugin)

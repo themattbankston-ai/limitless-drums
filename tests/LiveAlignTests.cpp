@@ -212,3 +212,25 @@ TEST_CASE ("Live align: a hit right after the edit's lead-in comes through whole
     CHECK (std::abs (r[pad + 48000] - 0.5f * std::pow (10.0f, -12.0f / 20.0f)) < 1e-4f);
     CHECK (renderTrack (*edit, *tracks[0], 37) == r);
 }
+
+TEST_CASE ("Live align: cost per track (benchmark)")
+{
+    // ten seconds of stereo at 48 kHz through the DSP with a change every 0.25 s (the worst case: always fading)
+    const int n = 480000;
+    auto l = noise (n, 3), r = noise (n, 4);
+    AlignDsp d;
+    AlignDsp::Settings s; s.advanceSamples = 37.25; s.ap[0] = { 300, 0.7 };
+    d.setTarget (s);
+    d.prepare (SR, 2);
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    for (int at = 0, k = 0; at < n; at += 256, ++k)
+    {
+        if (k % 47 == 0) { s.advanceSamples = 30.37 + (k % 5); s.gainDb = -(k % 3); d.setTarget (s); }
+        float* ch[2] = { l.data() + at, r.data() + at };
+        d.process (ch, 2, std::min (256, n - at));
+    }
+    const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+    const double load = ms / 10000.0 * 100.0;
+    WARN ("Align on a stereo track: " << ms << " ms for 10 s of audio = " << load << " % of one core");
+    CHECK (load < 5.0);
+}
