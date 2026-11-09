@@ -186,18 +186,14 @@ if(LD_BUILD_APP)
         assets/fonts/DejaVuSansMono-Bold.ttf
         assets/ui/header-plate.png)
 
+    # the sample build: a new, lean shell (the full app stays on main)
     target_sources(LimitlessDrums PRIVATE
-        src/app/Main.cpp
-        src/app/MainComponent.cpp
-        src/app/SessionModel.cpp
+        src/samples/SamplesMain.cpp
+        src/samples/SampleModel.cpp
+        src/samples/ui/HitsView.cpp
         src/app/Engine.cpp
-        src/app/Audition.cpp
-        src/app/ExtPlugins.cpp
-        src/app/Library.cpp
         src/app/ui/VisageHost.cpp
-        src/app/ui/Studio.cpp
-        src/app/ui/Wave.cpp
-        src/app/ui/NewSession.cpp)
+        src/app/ui/Wave.cpp)
     target_link_libraries(LimitlessDrums PRIVATE
         LDShared
         LDAssets
