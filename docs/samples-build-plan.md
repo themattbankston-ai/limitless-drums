@@ -6,7 +6,8 @@ and the insert plugin windows wait for a later, separate build (the current app 
 
 ## What it does
 - Steps, in this order: **Setup, Hits, Align, Tune, Tone, Clean, Level, Export.**
-- No gate. Tone keeps the tone-shaping tools: transient (attack, sustain), reference matching, simple body/air shape.
+- No gate. Tone keeps the tone-shaping tools from before: Enhance tone, Tone, Crack, Rings, Tame; Attack, Decay,
+  Sustain, Release, Enhance envelope; reference matching.
 - Processing has to be as good as or better than commercial tools, proven by measurement and level-matched listening:
   - Phase: Matt's own manual alignment is the reference; also Waves InPhase.
   - Tuning: Slate Trigger's pitch analysis and Matt's ears (not Melodyne: poor on drums).
@@ -27,5 +28,6 @@ and the insert plugin windows wait for a later, separate build (the current app 
   Loop, Follow, Level-match, Pads; phase meter and master meter. Velocity pads play a random round robin.
 - Edit-window behaviour: select across tracks and play or loop it, Tab between hits, zoom keys, zoom presets,
   waveform height, track height, undo for everything. Key commands follow the standard DAW defaults.
-- No commercial product names or borrowed labels anywhere in the app (Hitline's "Auto Prep" becomes **Enhance**).
+- No "Pro" in any label and no commercial product names: the old Pro tone and Pro envelope become **Enhance tone**
+  and **Enhance envelope**, and "pro libraries" become "reference libraries". **Auto Prep** keeps its name.
 - Design is approved screen by screen on the design canvas before it's built.
