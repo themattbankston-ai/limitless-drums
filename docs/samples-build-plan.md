@@ -31,3 +31,7 @@ and the insert plugin windows wait for a later, separate build (the current app 
 - No "Pro" in any label and no commercial product names: the old Pro tone and Pro envelope become **Enhance tone**
   and **Enhance envelope**, and "pro libraries" become "reference libraries". **Auto Prep** keeps its name.
 - Design is approved screen by screen on the design canvas before it's built.
+
+## Design
+Approved 8 Nov 2026: the eight screens on the "Limitless Drums — Sample Prep Screens" design canvas
+(https://claude.ai/artifact/UtHcNDpPKp5B1CfvxAPcor). The play button is a plain triangle; loop state shows on the Loop toggle.
