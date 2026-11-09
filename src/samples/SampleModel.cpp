@@ -189,6 +189,18 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
     }).detach();
 }
 
+juce::String SampleModel::autoPrepNow()
+{
+    if (! state || prepping) return "Nothing open.";
+    auto copy = std::make_shared<EngineState> (*state);
+    copy->prepared = hl::autoPrep (copy->session);
+    if (! copy->prepared) copy->advice = hl::hitCountAdvice (copy->session);
+    state = copy;
+    buildHits();
+    applyAlignment();
+    return copy->prepared ? juce::String() : juce::String (copy->advice.empty() ? "Not every hit was found." : copy->advice);
+}
+
 void SampleModel::applyAlignment()
 {
     if (! state || ! edit) return;

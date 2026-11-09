@@ -233,7 +233,9 @@ if(LD_BUILD_TESTS)
         src/app/Audition.cpp
         src/app/ExtPlugins.cpp
         src/app/Library.cpp
-        src/app/Engine.cpp)
+        src/app/Engine.cpp
+        tests/SampleCorpusTests.cpp
+        src/samples/SampleModel.cpp)
     target_compile_definitions(LDTests PRIVATE LD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(LDTests PRIVATE LDShared Catch2::Catch2 juce::juce_recommended_config_flags)
     enable_testing()

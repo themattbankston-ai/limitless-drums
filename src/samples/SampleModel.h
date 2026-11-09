@@ -55,6 +55,12 @@ public:
     void autoPrep (std::function<void (juce::String)> done);
     bool isPrepping() const { return prepping; }
     bool isPrepared() const { return state && state->prepared; }
+    /** Auto Prep on this thread, start to finish (for tests and tools). Returns the error, or empty. */
+    juce::String autoPrepNow();
+
+    // for tests and tools
+    te::Edit* getEdit() const { return edit.get(); }
+    const EngineState* engineState() const { return state.get(); }
 
     // monitoring: never part of what's exported
     float monDb (int t) const;
