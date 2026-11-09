@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <regex>
+#include <map>
 
 namespace te = tracktion;
 
@@ -212,6 +213,50 @@ TEST_CASE ("Sample corpus: real takes through Auto Prep and Tracktion")
                 }
             }
             fprintf (stderr, "[corpus] %s null vs reference: %s\n", f.getFileName().toRawUTF8(), nullLine.toRawUTF8());
+
+            // the export, rendered by Tracktion, against the reference export file by file
+            if (st->mix && st->levels && st->levels->valid)
+            {
+                auto outDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ld_corpus_export");
+                outDir.deleteRecursively(); outDir.createDirectory();
+                int count = 0;
+                const auto te0 = std::chrono::steady_clock::now();
+                const auto exErr = model.exportTo (outDir, count);
+                const double exS = std::chrono::duration<double> (std::chrono::steady_clock::now() - te0).count();
+                CHECK (exErr.toStdString() == "");
+                std::map<std::string, juce::MemoryBlock> refFiles;
+                const int refCount = ld::hl::writeSession (S, *st->mix, *st->levels, [&] (const std::string& path, const juce::MemoryBlock& mb) { refFiles[path] = mb; });
+                CHECK (count == refCount);
+                juce::AudioFormatManager fm; fm.registerBasicFormats();
+                double worst = -300, worstLen = 0; std::string worstName;
+                for (auto& [path, mb] : refFiles)
+                {
+                    auto mine = outDir.getChildFile (juce::String (path));
+                    INFO ("file " << path);
+                    CHECK (mine.existsAsFile());
+                    if (! mine.existsAsFile()) continue;
+                    std::unique_ptr<juce::AudioFormatReader> ra (fm.createReaderFor (std::make_unique<juce::MemoryInputStream> (mb, false)));
+                    std::unique_ptr<juce::AudioFormatReader> rb (fm.createReaderFor (mine));
+                    REQUIRE (ra != nullptr); REQUIRE (rb != nullptr);
+                    CHECK (ra->numChannels == rb->numChannels);
+                    CHECK (ra->sampleRate == rb->sampleRate);
+                    CHECK (ra->bitsPerSample == rb->bitsPerSample);
+                    const double lenDiff = std::abs ((double) ra->lengthInSamples - (double) rb->lengthInSamples) / ra->sampleRate;
+                    worstLen = std::max (worstLen, lenDiff);
+                    juce::AudioBuffer<float> a ((int) ra->numChannels, (int) ra->lengthInSamples), b ((int) rb->numChannels, (int) rb->lengthInSamples);
+                    ra->read (&a, 0, a.getNumSamples(), 0, true, true); rb->read (&b, 0, b.getNumSamples(), 0, true, true);
+                    double e = 0, d = 0;
+                    for (int c = 0; c < std::min (a.getNumChannels(), b.getNumChannels()); ++c)
+                        for (int n = 0; n < std::min (a.getNumSamples(), b.getNumSamples()); ++n)
+                        { const double x = a.getSample (c, n), y = b.getSample (c, n); e += x * x; d += (x - y) * (x - y); }
+                    const double nd = 10 * std::log10 (std::max (d, 1e-30) / std::max (e, 1e-30));
+                    if (nd > worst) { worst = nd; worstName = path; }
+                }
+                fprintf (stderr, "[corpus] %s export: %d files (reference %d) in %.2f s, worst null %.1f dB (%s), worst length difference %.1f ms\n", f.getFileName().toRawUTF8(), count, refCount, exS, worst, worstName.c_str(), worstLen * 1000);
+                CHECK (worst < -30);
+                CHECK (worstLen < 0.002);
+                report << "  export: " << count << " files in " << juce::String (exS, 2) << " s, worst null vs reference " << juce::String (worst, 1) << " dB, length within " << juce::String (worstLen * 1000, 1) << " ms\n";
+            }
             const int L = S.refIdx;
             for (int t = 0; t < (int) S.tracks.size(); ++t)
             {

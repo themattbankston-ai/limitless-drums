@@ -110,6 +110,12 @@ private:
     bool levelMatchOn = true;
     double matchDb = 0;   ///< what A needs to sound as loud as B
     void applyMutes();
+    std::vector<juce::File> prepFiles;
+    const void* prepFor = nullptr;
+    juce::File prepFile (int t);
+    std::vector<live::AlignPlugin::HitScale> scalesFor (int t, int parity) const;
+    void layoutHitsFor (int parity);   ///< -1: playing; 0 / 1: only the even / odd hits, uncapped (export)
+    hl::Chs renderB (int t, double srOut, bool stereo);
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 
     std::map<int, std::pair<te::LevelMeasurer*, std::unique_ptr<te::LevelMeasurer::Client>>> meters;
@@ -124,6 +130,12 @@ public:
         sinc), and the Align plugin gets each hit's Level gain and offset scale. Needs the levels; until then each
         track plays as one clip. Called after Auto Prep and whenever Tune or Level change. */
     void layoutHits();
+    /** Level changed only: new gains, live, no rebuild. */
+    void updateHitGains();
+
+    /** Writes the export (Level and Tune as set, every hit of every mic, the monitor faders ignored) into `dir`, rendered
+        by Tracktion through the same plugins playback uses. Returns the error, or empty; `count` gets the file count. */
+    juce::String exportTo (const juce::File& dir, int& count, std::function<void (float)> progress = {});
     double hitGainDb (int t, size_t i) const;   ///< Level gain of this hit on this mic (dB, trim included)
     double hitRatio (size_t i) const;           ///< Tune: varispeed ratio of this hit (1 = untouched)
 };

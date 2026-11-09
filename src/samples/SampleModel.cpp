@@ -1,4 +1,5 @@
 #include "SampleModel.h"
+#include "hl/Clean.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -266,7 +267,57 @@ double SampleModel::hitGainDb (int t, size_t i) const
     return L.gainsDbT[(size_t) t][i] + L.trimDb;
 }
 
-void SampleModel::layoutHits()
+juce::File SampleModel::prepFile (int t)
+{
+    const auto& S = state->session;
+    if (prepFiles.size() != S.tracks.size() || prepFor != state.get())
+    {
+        prepFiles.assign (S.tracks.size(), juce::File());
+        prepFor = state.get();
+    }
+    if (prepFiles[(size_t) t] != juce::File()) return prepFiles[(size_t) t];
+    // clean-up and tone (everything before the phase EQ, which Align plays live), when they change anything, are what
+    // the hits play; A stays as recorded. (The bus stage is empty where the phase EQ stage took it over.)
+    juce::File src = sourceFiles[(size_t) t];
+    if (state->mix && t < (int) state->mix->proc.size())
+    {
+        const auto& M = *state->mix;
+        const auto& pre = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];
+        const auto& orig = S.tracks[(size_t) t].ch;
+        bool differs = pre.size() != orig.size();
+        for (size_t c = 0; ! differs && c < pre.size(); ++c)
+        {
+            if (pre[c].size() != orig[c].size()) { differs = true; break; }
+            for (size_t n = 0; n < pre[c].size(); n += 3)
+                if (std::abs (pre[c][n] - orig[c][n]) > 1.0e-6f) { differs = true; break; }
+        }
+        if (differs)
+        {
+            auto f = cacheDir.getChildFile (juce::String (t) + "_prep_" + juce::String (++toneVersion) + ".wav");
+            if (writeFloatWav (f, pre, S.sr)) src = f;
+        }
+    }
+    return prepFiles[(size_t) t] = src;
+}
+
+std::vector<live::AlignPlugin::HitScale> SampleModel::scalesFor (int t, int parity) const
+{
+    std::vector<live::AlignPlugin::HitScale> scales;
+    const auto& R = state->levels->regions;
+    for (size_t i = 0; i < R.size(); ++i)
+    {
+        if (parity >= 0 && (int) (i % 2) != parity) continue;
+        // switch a fade's length early, so the change has finished before the hit (the last 10 ms of the previous
+        // hit's tail take it instead)
+        const double start = (double) R[i].start / state->session.sr;
+        scales.push_back ({ std::max (0.0, start - live::AlignDsp::kFadeSeconds - 0.0005), 1.0 / hitRatio (i), hitGainDb (t, i) });
+    }
+    return scales;
+}
+
+void SampleModel::layoutHits() { layoutHitsFor (-1); }
+
+void SampleModel::layoutHitsFor (int parity)
 {
     if (! state || ! edit || ! state->levels || ! state->levels->valid) return;
     const auto& S = state->session;
@@ -278,34 +329,15 @@ void SampleModel::layoutHits()
     {
         auto* at = track (t);
         if (at == nullptr || t >= (int) sourceFiles.size()) continue;
-        // clean-up and tone (everything before the phase EQ, which Align plays live), when they change anything, are what
-        // the hits play; A stays as recorded. (The bus stage is empty where the phase EQ stage took it over.)
-        juce::File src = sourceFiles[(size_t) t];
-        if (state->mix && t < (int) state->mix->proc.size())
-        {
-            const auto& M = *state->mix;
-            const auto& pre = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];
-            const auto& orig = S.tracks[(size_t) t].ch;
-            bool differs = pre.size() != orig.size();
-            for (size_t c = 0; ! differs && c < pre.size(); ++c)
-            {
-                if (pre[c].size() != orig[c].size()) { differs = true; break; }
-                for (size_t n = 0; n < pre[c].size(); n += 3)
-                    if (std::abs (pre[c][n] - orig[c][n]) > 1.0e-6f) { differs = true; break; }
-            }
-            if (differs)
-            {
-                auto f = cacheDir.getChildFile (juce::String (t) + "_prep_" + juce::String (++toneVersion) + ".wav");
-                if (writeFloatWav (f, pre, sr)) src = f;
-            }
-        }
+        const auto src = prepFile (t);
         { auto clips = at->getClips(); for (auto* c : clips) c->removeFromParent(); }   // (a copy: removing changes the list)
-        std::vector<live::AlignPlugin::HitScale> scales;
         for (size_t i = 0; i < R.size(); ++i)
         {
+            if (parity >= 0 && (int) (i % 2) != parity) continue;
             const double r = hitRatio (i);
             const double start = (double) R[i].start / sr;
-            const double cap = (i + 1 < R.size() ? (double) R[i + 1].start / sr : end) - start;
+            // playing: each hit stops where the next starts. Exporting (one parity at a time): the whole tuned region
+            const double cap = parity >= 0 ? 1.0e9 : (i + 1 < R.size() ? (double) R[i + 1].start / sr : end) - start;
             const double len = std::min ((double) (R[i].end - R[i].start) / sr / r, cap);
             if (len <= 0) continue;
             te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (start), te::TimeDuration::fromSeconds (len)), te::TimeDuration() };
@@ -316,11 +348,8 @@ void SampleModel::layoutHits()
             clip->setSpeedRatio (r);
             // the source starts at the region's start: offsets are on the clip's own (sped-up) time
             clip->setPosition ({ pos.time, te::TimeDuration::fromSeconds ((double) R[i].start / sr / r) });
-            // switch a fade's length early, so the change has finished before the hit (the last 10 ms of the previous
-            // hit's tail take it instead)
-            scales.push_back ({ std::max (0.0, start - live::AlignDsp::kFadeSeconds - 0.0005), 1.0 / r, hitGainDb (t, i) });
         }
-        if (auto* a = live::alignOn (*at)) a->setHitScales (std::move (scales));
+        if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, parity));
     }
     // level match: A plays at the lead's average Level gain
     {
@@ -331,6 +360,172 @@ void SampleModel::layoutHits()
     }
     edit->getUndoManager().clearUndoHistory();
     if (wasPlaying) play();
+}
+
+void SampleModel::updateHitGains()
+{
+    if (! state || ! edit || ! state->levels || ! state->levels->valid) return;
+    for (int t = 0; t < (int) state->session.tracks.size(); ++t)
+        if (auto* at = track (t)) if (auto* a = live::alignOn (*at)) a->setHitScales (scalesFor (t, -1));
+}
+
+hl::Chs SampleModel::renderB (int t, double srOut, bool stereo)
+{
+    juce::TemporaryFile temp (".wav");
+    auto all = te::getAllTracks (*edit);
+    juce::BigInteger which; which.setBit (all.indexOf (track (t)));
+    te::Renderer::Parameters p (*edit);
+    p.destFile = temp.getFile();
+    p.audioFormat = engine.getAudioFileFormatManager().getWavFormat();
+    p.bitDepth = 32;
+    p.sampleRateForAudio = srOut;
+    p.blockSizeForAudio = 512;
+    p.time = te::TimeRange (te::TimePosition(), edit->getLength());
+    p.tracksToDo = which;
+    p.usePlugins = true;
+    p.useMasterPlugins = false;
+    p.mustRenderInMono = ! stereo;
+    p.ditheringEnabled = false;
+    te::Renderer::renderToFile ("Export", p);
+    hl::Chs out;
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (temp.getFile()));
+    if (! r) return out;
+    juce::AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
+    r->read (&b, 0, b.getNumSamples(), 0, true, true);
+    for (int c = 0; c < (stereo ? std::min (2, b.getNumChannels()) : 1); ++c) out.emplace_back (b.getReadPointer (c), b.getReadPointer (c) + b.getNumSamples());
+    return out;
+}
+
+juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::function<void (float)> progress)
+{
+    count = 0;
+    if (! state || ! edit) return "Nothing open.";
+    if (! state->levels || ! state->levels->valid) return "Every hit has to be found before export: run Auto Prep.";
+    auto& S = state->session;
+    const auto& L = *state->levels;
+    const auto& R = L.regions;
+    const int T = (int) S.tracks.size();
+    const double sr = S.sr, srOut = S.exp.rate == "same" ? sr : std::stod (S.exp.rate);
+    stop();
+
+    // export as set: monitor faders, pans, mutes and solos out of the way; B playing
+    struct Mon { float db, pan; bool solo; };
+    std::vector<Mon> mon;
+    for (int t = 0; t < T; ++t) { mon.push_back ({ monDb (t), pan (t), solo (t) }); }
+    const auto userMuteWas = userMute;
+    const bool procWas = processedOn;
+    for (int t = 0; t < T; ++t)
+    {
+        if (auto* at = track (t)) { at->setSolo (false); if (auto* v = at->getVolumePlugin()) v->setEnabled (false); }
+        if (auto* at = trackA (t)) at->setSolo (false);
+    }
+    std::fill (userMute.begin(), userMute.end(), false);
+    processedOn = true;
+    applyMutes();
+
+    // every hit of every mic, with its whole tuned region: the even hits, then the odd (so no two overlap)
+    std::vector<std::vector<hl::Chs>> hitAudio ((size_t) T, std::vector<hl::Chs> (R.size()));
+    int step = 0;
+    const int steps = 2 * T + 1;
+    for (int parity = 0; parity < 2; ++parity)
+    {
+        layoutHitsFor (parity);
+        for (int t = 0; t < T; ++t)
+        {
+            const auto whole = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1);
+            for (size_t i = (size_t) parity; i < R.size(); i += 2)
+            {
+                const double stepIn = hitRatio (i) * sr / srOut;
+                const long a = (long) std::llround ((double) R[i].start / sr * srOut);
+                const long n = std::max (1L, (long) std::llround ((double) (R[i].end - R[i].start) / stepIn));
+                hl::Chs h;
+                for (auto& x : whole)
+                {
+                    hl::F32 y ((size_t) n, 0.0f);
+                    for (long k = 0; k < n && a + k < (long) x.size(); ++k) y[(size_t) k] = x[(size_t) (a + k)];
+                    h.push_back (std::move (y));
+                }
+                hitAudio[(size_t) t][i] = std::move (h);
+            }
+            if (progress) progress ((float) ++step / (float) steps);
+        }
+    }
+    // the whole-track files (export mode "full" or "both"): the take as it plays
+    std::vector<hl::Chs> fullAudio;
+    layoutHitsFor (-1);
+    const auto list = hl::exportList (S);
+    const bool wantFull = std::any_of (list.begin(), list.end(), [] (auto& it) { return it.kind == "full"; });
+    if (wantFull)
+        for (int t = 0; t < T; ++t)
+        {
+            auto x = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1);
+            for (auto& c : x) c.resize ((size_t) std::llround ((double) S.tracks[(size_t) t].len / sr * srOut), 0.0f);
+            fullAudio.push_back (std::move (x));
+        }
+
+    // put the monitoring back
+    for (int t = 0; t < T; ++t)
+    {
+        if (auto* at = track (t)) if (auto* v = at->getVolumePlugin()) v->setEnabled (true);
+        setSolo (t, mon[(size_t) t].solo);
+    }
+    userMute = userMuteWas;
+    processedOn = procWas;
+    applyMutes();
+
+    // the tails and fades, as the reference export does them
+    const long fin = (long) std::llround (S.exp.fadeInMs * srOut / 1000);
+    const bool fade = S.exp.tailMode == "fade" && S.exp.mode != "full";
+    const bool natural = S.exp.tailMode == "natural" && S.exp.mode != "full";
+    const long fout = (long) std::llround ((fade ? 30 : S.exp.fadeOutMs) * srOut / 1000);
+    std::vector<long> cuts;
+    if (fade)
+    {
+        const double thr = std::pow (10.0, S.exp.tailDb / 20);
+        const long hold = (long) std::llround (0.02 * srOut);
+        for (size_t i = 0; i < R.size(); ++i)
+        {
+            long last = 0;
+            for (int t = 0; t < T; ++t)
+                for (auto& x : hitAudio[(size_t) t][i])
+                    for (long n = (long) x.size() - 1; n > last; --n) if (std::abs (x[(size_t) n]) >= thr) { last = n; break; }
+            cuts.push_back (last + hold);
+        }
+    }
+    std::map<size_t, hl::TailPlan> plans;
+    auto planFor = [&] (size_t i) -> const hl::TailPlan&
+    {
+        auto it = plans.find (i);
+        if (it != plans.end()) return it->second;
+        hl::Chs all;
+        for (int t = 0; t < T; ++t) for (auto& x : hitAudio[(size_t) t][i]) all.push_back (x);
+        return plans[i] = hl::tailPlan (all, srOut, 0, S.exp.tailFloor);
+    };
+    juce::String err;
+    for (auto& it : list)
+    {
+        hl::Chs chs;
+        if (it.kind == "hit")
+        {
+            chs = hitAudio[(size_t) it.t][it.i];
+            if (natural) { chs = hl::applyTail (chs, planFor (it.i), srOut); hl::applyFades (chs, fin, 0); }
+            else
+            {
+                if (it.i < cuts.size() && cuts[it.i] != 0 && cuts[it.i] < (long) chs[0].size()) for (auto& x : chs) x.resize ((size_t) cuts[it.i]);
+                hl::applyFades (chs, fin, fout);
+            }
+        }
+        else if (it.kind == "full" && it.t < (int) fullAudio.size()) chs = fullAudio[(size_t) it.t];
+        else continue;   // the shared room: not in this build
+        auto f = dir.getChildFile (juce::String (it.path));
+        f.getParentDirectory().createDirectory();
+        const auto bytes = hl::encodeWav (chs, srOut, S.exp.bits);
+        if (! f.replaceWithData (bytes.getData(), bytes.getSize())) { err = "Couldn't write " + f.getFullPathName(); break; }
+        ++count;
+    }
+    if (progress) progress (1.0f);
+    return err;
 }
 
 float SampleModel::monDb (int t) const { auto* at = track (t); return at && at->getVolumePlugin() ? at->getVolumePlugin()->getVolumeDb() : 0.0f; }
