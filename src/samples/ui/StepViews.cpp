@@ -397,7 +397,10 @@ void HitsView::drawAlign (Canvas& c)
         std::string det = std::string (tr.pol < 0 ? "\xc3\x98 on" : "\xc3\x98 off");
         if (! tr.ap.empty() && tr.apOn) det += " \xc2\xb7 EQ " + fmt ("%.0f Hz", tr.ap[0].fc) + (tr.ap.size() > 1 ? fmt (" + %.0f", tr.ap[1].fc) : std::string());
         txt (c, det, monoFont (10), ink3, cx + 120, y + 30, 130, 16);
-        const auto sums = isLead ? std::make_pair (std::nan (""), std::nan ("")) : model.sumScore (t);
+        bool stale = false;
+        const auto sums = isLead ? std::make_pair (std::nan (""), std::nan ("")) : model.sumScore (t, &stale);
+        if (! isLead && stale && ! (std::isfinite (sums.first) && std::isfinite (sums.second)))
+            txt (c, "Measuring\xe2\x80\xa6", bodyFont (10), ink3, cx + 250, y + 9, 120, 14);
         if (std::isfinite (sums.first) && std::isfinite (sums.second))
         {
             // measured where it sits now (every nudge, flip and phase EQ counts), against as recorded
@@ -408,10 +411,10 @@ void HitsView::drawAlign (Canvas& c)
                 const float by = y + 12 + k * 18, bx = cx + 292, bw = 50;
                 txt (c, k ? "Now" : "As rec.", bodyFont (10), ink3, cx + 250, by - 3, 50, 14);
                 c.setColor (0xff161617); c.fill (bx, by, bw, 8);
-                c.setColor (v >= 0 ? 0xff3fbf78 : 0xffd4544b);
+                c.setColor (stale ? 0xff5a5a60 : v >= 0 ? 0xff3fbf78 : 0xffd4544b);   // grey while the new score is measured
                 c.fill (v >= 0 ? bx + bw / 2 : bx + bw / 2 - (float) (-v / 100 * bw / 2), by, (float) (std::abs (v) / 100 * bw / 2), 8);
                 c.setColor (0xff8a8a90); c.fill (bx + bw / 2, by - 1, 1, 10);
-                txt (c, fmt ("%+.0f", v), monoFont (10), ink2, bx + bw + 4, by - 3, 30, 14);
+                txt (c, stale ? std::string ("\xe2\x80\xa6") : fmt ("%+.0f", v), monoFont (10), ink2, bx + bw + 4, by - 3, 30, 14);
             }
         }
     }

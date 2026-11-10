@@ -51,6 +51,8 @@ public:
         what it corrects from fc to fc*r, so it has to move with it. */
     struct HitScale { double start = 0; double scale = 1; double gainDb = 0; double freqScale = 1; };
     void setHitScales (std::vector<HitScale>);   ///< message thread; sorted by start
+    /** How many hit tables are still allocated (the published one and the one the audio thread holds: never more than 2). */
+    int tablesHeld() const { const juce::SpinLock::ScopedLockType l (lock); return (int) tables.size(); }
 
     juce::CachedValue<float> shiftValue, gainValue;
     juce::CachedValue<bool> flipValue;
@@ -69,7 +71,7 @@ private:
     void publish();
     AlignDsp dsp;
     std::atomic<bool> jumpNext { true };   ///< after a reset or a seek: start on the right settings, don't fade into them
-    juce::SpinLock lock;
+    mutable juce::SpinLock lock;
     Snapshot pubSnap, audioSnap;                                   ///< pub: under lock; audio: audio thread only
     const std::vector<HitScale>* pubTbl = nullptr;                 ///< under lock
     const std::vector<HitScale>* audioTbl = nullptr;               ///< changed only by the audio thread, under lock

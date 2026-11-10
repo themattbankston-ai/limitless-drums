@@ -1,14 +1,20 @@
-// The sample build's model under the scenarios the 9 Nov audit reproduced (SA01-SA03, SA07, SA08, SA12 and the
-// overlapping-export case). A small synthetic take (three mics, four hits) so it runs anywhere, CI included.
+// The sample build's model under the scenarios the 9 Nov audit reproduced (SA01-SA03, SA07, SA08, SA12, the
+// overlapping-export case) and the review that followed (CR01, CR03), plus the Hits screen's target and range logic (SA09, SA11). A small synthetic take (three mics, four hits) so it runs anywhere, CI included.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "TestSignals.h"
 #include "samples/SampleModel.h"
 #include "core/Session.h"
 #include "hl/Session.h"
+#include "hl/Align.h"
+#include "hl/Detect.h"
+#include "samples/ui/HitsLogic.h"
 #include <cmath>
 
 namespace te = tracktion;
 using ld::samples::SampleModel;
+using ld::samples::HitInfo;
+using Catch::Approx;
 
 namespace
 {
@@ -351,4 +357,126 @@ TEST_CASE ("Sample model: a tuned hit's phase EQ moves with the tuning (matches 
     INFO ("tuned hits with a phase EQ against the reference: " << nullDb << " dB");
     CHECK (nullDb < -50);   // (without the phase EQ following the tuning this is about -15 dB)
     if (std::getenv ("LD_TEST_VERBOSE")) fprintf (stderr, "null %.1f dB\n", nullDb);
+}
+
+namespace
+{
+int scoreTrack (SampleModel& m)
+{
+    for (int i = 0; i < (int) m.tracks().size(); ++i)
+        if (i != m.leadTrack() && m.session()->tracks[(size_t) i].alignTo != "none") return i;
+    return -1;
+}
+
+/** Pumps until mic t's score is current (not stale) and returns it. */
+std::pair<double, double> settledScore (SampleModel& m, int t)
+{
+    std::pair<double, double> v;
+    bool stale = true;
+    for (int k = 0; k < 1000 && stale; ++k) { v = m.sumScore (t, &stale); juce::MessageManager::getInstance()->runDispatchLoopUntil (5); }
+    REQUIRE_FALSE (stale);
+    return v;
+}
+} // namespace
+
+TEST_CASE ("Sample model CR03: the Align score goes stale when any phase EQ band or Q changes")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("cr03") }).isEmpty());
+    prep (m);
+    const int t = scoreTrack (m);
+    REQUIRE (t >= 0);
+    auto setAp = [&] (double q2)
+    {
+        REQUIRE (m.change ([t, q2] (ld::hl::Session& S)
+        {
+            auto& tr = S.tracks[(size_t) t];
+            tr.apOn = true; tr.ap = { { 400, 0.7 }, { 2500, q2 } };
+        }, SampleModel::Redo::none, ""));
+    };
+    setAp (0.7);
+    const auto a = settledScore (m, t);
+    bool stale = false;
+    m.sumScore (t, &stale);
+    CHECK_FALSE (stale);
+    setAp (4.0);   // only the second band's Q
+    m.sumScore (t, &stale);
+    CHECK (stale);   // the old score isn't passed off as current
+    const auto b = settledScore (m, t);
+    INFO ("Q 0.7: " << a.first << ", Q 4: " << b.first);
+    CHECK (std::isfinite (b.first));
+    CHECK (a.first != b.first);   // measured again with the new band
+    setAp (0.7);
+    CHECK (std::abs (settledScore (m, t).first - a.first) < 1e-12);   // and the same inputs give the same score
+}
+
+TEST_CASE ("Sample model CR01: scoring while Undo and Redo replace the session (run under ThreadSanitizer too)")
+{
+    // the workers read only what was captured when they started; undo/redo/flip churn underneath them, then the
+    // shown score has to equal a fresh measurement of the session as it finally is
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("cr01") }).isEmpty());
+    prep (m);
+    const int t = scoreTrack (m);
+    REQUIRE (t >= 0);
+    for (int k = 0; k < 6; ++k)
+        REQUIRE (m.change ([t, k] (ld::hl::Session& S) { S.tracks[(size_t) t].lag += 0.5 + k; }, SampleModel::Redo::align, ""));
+    juce::Random rnd (11);
+    for (int k = 0; k < 300; ++k)
+    {
+        for (int i = 0; i < (int) m.tracks().size(); ++i) m.sumScore (i);
+        const int op = rnd.nextInt (4);
+        if (op == 0) m.undo();
+        else if (op == 1) m.redo();
+        else if (op == 2) m.setFlip (t, ! m.flip (t));
+        else m.change ([t, k] (ld::hl::Session& S) { auto& tr = S.tracks[(size_t) t]; tr.apOn = ! tr.apOn; tr.ap = { { 300.0 + k, 0.7 } }; }, SampleModel::Redo::none, "");
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (rnd.nextInt (3));
+    }
+    const auto shown = settledScore (m, t);
+    pumpUntilIdle (m);
+    // a fresh measurement of the final session, the way the worker does it
+    const auto& S = *m.session();
+    const auto& tr = S.tracks[(size_t) t];
+    const auto& res = tr.alignTo.size() == 1 ? tr.grp : tr.autoResult;
+    REQUIRE (res);
+    const int r = ld::hl::alignRef (S, t) >= 0 ? ld::hl::alignRef (S, t) : S.refIdx;
+    const auto ap = tr.apOn ? tr.ap : std::vector<ld::hl::AllPass> {};
+    const auto sc = ld::hl::scoreMic (ld::hl::monoOf (S.tracks[(size_t) r].ch), tr.ch, std::vector<int> (S.onsets.begin(), S.onsets.end()), S.sr, tr.lag, tr.pol, ap, res->arrival);
+    REQUIRE (sc.valid);
+    INFO ("shown " << shown.first << ", fresh " << sc.score);
+    CHECK (std::abs (shown.first - sc.score) < 1e-12);
+    CHECK (std::abs (shown.second - sc.asis) < 1e-12);
+}
+
+TEST_CASE ("Hits screen SA09: the smallest target under the pointer wins, whatever order they were added")
+{
+    using ld::samples::Target;
+    const Target row { 0, 0, 400, 30 }, button { 350, 5, 40, 20 }, other { 500, 0, 40, 20 };
+    CHECK (ld::samples::pickTarget (std::vector<Target> { row, button }, 360, 10) == 1);
+    CHECK (ld::samples::pickTarget (std::vector<Target> { button, row }, 360, 10) == 0);   // added before the row: still the button
+    CHECK (ld::samples::pickTarget (std::vector<Target> { button, row }, 100, 10) == 1);   // outside the button: the row
+    CHECK (ld::samples::pickTarget (std::vector<Target> { row, button, other }, 600, 10) == -1);
+    CHECK (ld::samples::pickTarget (std::vector<Target> { button, button }, 360, 10) == 1);   // ties: the last drawn (on top)
+    CHECK (ld::samples::pickTarget (std::vector<Target> { row }, 400, 10) == -1);   // right edge is exclusive
+}
+
+TEST_CASE ("Hits screen SA11: Hit, Layer and Sweep select the right range")
+{
+    // two velocities x three round robins, deliberately out of time order
+    std::vector<HitInfo> H;
+    auto add = [&] (double time, int vel, int rr) { HitInfo h; h.time = time; h.end = time + 0.4; h.vel = vel; h.rr = rr; H.push_back (h); };
+    add (1.0, 0, 0); add (2.0, 0, 1); add (0.5, 0, 2);
+    add (4.0, 1, 0); add (3.0, 1, 1); add (5.0, 1, 2);
+    auto r = ld::samples::auditionRange (H, 1, 0);   // Hit
+    CHECK (r.first == Approx (2.0 - 0.005)); CHECK (r.second == Approx (2.4));
+    r = ld::samples::auditionRange (H, 1, 1);        // Layer: velocity 0's round robins only
+    CHECK (r.first == Approx (0.5 - 0.005)); CHECK (r.second == Approx (2.4));
+    r = ld::samples::auditionRange (H, 3, 1);        // Layer of velocity 1
+    CHECK (r.first == Approx (3.0 - 0.005)); CHECK (r.second == Approx (5.4));
+    r = ld::samples::auditionRange (H, 3, 2);        // Sweep: everything
+    CHECK (r.first == Approx (0.5 - 0.005)); CHECK (r.second == Approx (5.4));
+    H[2].time = 0.001;
+    CHECK (ld::samples::auditionRange (H, 2, 0).first == 0.0);   // never before the start
+    CHECK (ld::samples::auditionRange (std::vector<HitInfo> {}, 0, 2) == std::make_pair (0.0, 0.0));
+    CHECK (ld::samples::auditionRange (H, 99, 0).first == Approx (5.0 - 0.005));   // out of range clamps
 }

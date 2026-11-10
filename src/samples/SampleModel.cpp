@@ -1,6 +1,7 @@
 #include "SampleModel.h"
 #include "hl/Clean.h"
 #include "hl/Tune.h"
+#include "hl/Detect.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -361,47 +362,70 @@ juce::String SampleModel::exportBlocker() const
     return {};
 }
 
-std::pair<double, double> SampleModel::sumScore (int t)
+SampleModel::ScoreKey SampleModel::scoreKey (int t) const
 {
-    const double nan = std::numeric_limits<double>::quiet_NaN();
-    if (! state) return { nan, nan };
+    ScoreKey k;
+    if (! state) return k;
     const auto& S = state->session;
-    if (t < 0 || t >= (int) S.tracks.size() || t == S.refIdx) return { nan, nan };
+    if (t < 0 || t >= (int) S.tracks.size() || t == S.refIdx) return k;
     const auto& tr = S.tracks[(size_t) t];
     const auto& res = tr.alignTo.size() == 1 ? tr.grp : tr.autoResult;
-    if (! res || ! res->valid) return { nan, nan };
-    const int r = hl::alignRef (S, t) >= 0 ? hl::alignRef (S, t) : S.refIdx;
-    ScoreKey k { tr.lag, tr.pol, tr.apOn, tr.ap.size(), tr.ap.empty() ? 0.0 : tr.ap[0].fc, r, state.get() };
+    if (! res || ! res->valid) return k;
+    k.ref = hl::alignRef (S, t) >= 0 ? hl::alignRef (S, t) : S.refIdx;
+    if (k.ref < 0 || k.ref >= (int) S.tracks.size()) { k.ref = -1; return k; }
+    k.lag = tr.lag; k.pol = tr.pol; k.apOn = tr.apOn;
+    if (tr.apOn) for (auto& a : tr.ap) k.ap.push_back ({ a.fc, a.Q });   // every band, frequency and Q
+    k.arrival = res->arrival; k.sr = S.sr; k.gen = takeGen;
+    k.onsets.assign (S.onsets.begin(), S.onsets.end());
+    // the audio is immutable once loaded (SharedChs copies on write), so the buffers themselves identify it; holding
+    // them also keeps the worker's input alive whatever Undo, Redo or a new take does to the session meanwhile
+    k.refCh = S.tracks[(size_t) k.ref].ch.share();
+    k.ch = tr.ch.share();
+    return k;
+}
+
+bool SampleModel::ScoreKey::operator== (const ScoreKey& o) const
+{
+    const auto same = [] (double a, double b) { return a == b || (std::isnan (a) && std::isnan (b)); };   // NaN arrival = none
+    if (ref != o.ref || ! same (lag, o.lag) || pol != o.pol || apOn != o.apOn || ! same (arrival, o.arrival) || sr != o.sr || gen != o.gen) return false;
+    if (refCh != o.refCh || ch != o.ch || onsets != o.onsets || ap.size() != o.ap.size()) return false;
+    for (size_t i = 0; i < ap.size(); ++i) if (! same (ap[i].first, o.ap[i].first) || ! same (ap[i].second, o.ap[i].second)) return false;
+    return true;
+}
+
+std::pair<double, double> SampleModel::sumScore (int t, bool* stale)
+{
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    if (stale) *stale = false;
+    auto k = scoreKey (t);
+    if (k.ref < 0) return { nan, nan };
     auto it = scoreCache.find (t);
     const bool have = it != scoreCache.end();
-    if (have)
-    {
-        const auto& o = it->second.first;
-        if (o.lag == k.lag && o.pol == k.pol && o.apOn == k.apOn && o.nAp == k.nAp && o.fc0 == k.fc0 && o.ref == k.ref && o.st == k.st) return it->second.second;
-    }
+    if (have && it->second.first == k) return it->second.second;
+    if (stale) *stale = true;
     // measure where it sits now (and as recorded), the way Auto Prep measures, on another thread (it can take a few
-    // hundred ms on a long take); until it lands, show the last measurement
+    // hundred ms on a long take); until it lands, show the last measurement, marked stale. Everything the worker reads
+    // was captured above on this thread (audio buffers by shared ownership, the rest by value): it never touches the
+    // session, which Undo and Redo replace
     if (! scoring.count (t))
     {
         scoring.insert (t);
-        auto base = state;
         auto alivePtr = alive;
-        const double lag = tr.lag; const int pol = tr.pol;
-        const auto ap = tr.apOn ? tr.ap : std::vector<hl::AllPass> {};
-        const double arrival = res->arrival;
-        std::thread ([this, base, alivePtr, t, r, lag, pol, ap, arrival, k]
+        auto key = std::make_shared<const ScoreKey> (std::move (k));
+        std::thread ([this, alivePtr, t, key]
         {
-            const auto& S2 = base->session;
-            std::vector<int> ons (S2.onsets.begin(), S2.onsets.end());
-            const auto sc = hl::scoreMic (S2.tracks[(size_t) r].mono, S2.tracks[(size_t) t].ch, ons, S2.sr, lag, pol, ap, arrival);
+            const auto refMono = hl::monoOf (*key->refCh);
+            std::vector<hl::AllPass> ap;
+            for (auto& a : key->ap) ap.push_back ({ a.first, a.second });
+            const auto sc = hl::scoreMic (refMono, *key->ch, key->onsets, key->sr, key->lag, key->pol, ap, key->arrival);
             const double nan2 = std::numeric_limits<double>::quiet_NaN();
             const std::pair<double, double> v = sc.valid ? std::make_pair (sc.score, sc.asis) : std::make_pair (nan2, nan2);
-            juce::MessageManager::callAsync ([this, alivePtr, t, k, v, base]
+            juce::MessageManager::callAsync ([this, alivePtr, t, key, v]
             {
                 if (! *alivePtr) return;
                 scoring.erase (t);
-                if (state != base) return;
-                scoreCache[t] = { k, v };
+                if (key->gen != takeGen) return;
+                scoreCache[t] = { *key, v };   // keyed by its inputs, so it's only shown while they still match
                 if (onChanged) onChanged();
             });
         }).detach();

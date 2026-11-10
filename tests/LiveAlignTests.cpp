@@ -3,6 +3,8 @@
 #include "TestSignals.h"
 #include "live/AlignDsp.h"
 #include "live/AlignPlugin.h"
+#include <atomic>
+#include <thread>
 #include "hl/Align.h"
 #include <cmath>
 #include <random>
@@ -213,15 +215,72 @@ TEST_CASE ("Live align: a hit right after the edit's lead-in comes through whole
     CHECK (renderTrack (*edit, *tracks[0], 37) == r);
 }
 
-TEST_CASE ("Live align: cost per track and the worst block (benchmark)")
+TEST_CASE ("Live align SA05: hit tables are swapped while the audio thread plays them, and never pile up")
 {
-    // ten seconds of stereo at 96 kHz in 64-sample blocks (a 0.667 ms deadline), two all-passes on, and a change
-    // every other block so it is always crossfading; the phase EQ itself changes every 100 ms. Three identical runs:
-    // each block's time is the fastest of the three, so a pre-emption by the OS doesn't count but a block that is
-    // slow every time (a burst of setup work) does.
-    const double sr = 96000;
+    // the audio thread plays blocks the way Tracktion calls it while the message thread replaces the hit table
+    // thousands of times. Under AddressSanitizer or ThreadSanitizer a table freed while the audio thread still read
+    // it fails here; in a plain build it checks the output stays sane and only two tables are ever held.
+    registerOnce();
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ld_live_sa05");
+    dir.deleteRecursively(); dir.createDirectory();
+    writeFloatWav (dir.getChildFile ("X.wav"), std::vector<float> (48000, 0.0f));
+    auto edit = ld::createSessionEdit (ldtest::engine(), { { "X", dir.getChildFile ("X.wav") } }, 120.0, te::Edit::EditRole::forRendering);
+    REQUIRE (edit != nullptr);
+    auto* a = ld::live::alignOn (*te::getAudioTracks (*edit)[0]);
+    REQUIRE (a != nullptr);
+    a->initialise ({ te::TimePosition(), SR, 64 });
+    std::atomic<bool> stop { false };
+    std::atomic<int> blocks { 0 };
+    std::atomic<float> worst { 0.0f };
+    std::thread audio ([&]
+    {
+        juce::AudioBuffer<float> b (2, 64);
+        double t = 0;
+        while (! stop.load())
+        {
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < 64; ++i) b.setSample (c, i, 0.5f);
+            te::PluginRenderContext rc (&b, 0, 64, nullptr, 0.0, te::TimeRange (te::TimePosition::fromSeconds (t), te::TimePosition::fromSeconds (t + 64 / SR)), true, false, false, false);
+            a->applyToBuffer (rc);
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < 64; ++i)
+            {
+                const float v = std::abs (b.getSample (c, i));
+                if (! std::isfinite (v) || v > worst.load()) worst = std::isfinite (v) ? v : 1e9f;
+            }
+            t = std::fmod (t + 64 / SR, 1.0);   // loops a second, so it keeps crossing the table's segments
+            ++blocks;
+        }
+    });
+    for (int k = 0; k < 4000; ++k)
+    {
+        std::vector<ld::live::AlignPlugin::HitScale> v;
+        for (int h = 0; h < 1 + k % 9; ++h) v.push_back ({ h * 0.1, 1.0, -(double) ((k + h) % 13), 1.0 + 0.01 * (h % 3) });
+        a->setHitScales (std::move (v));
+        CHECK (a->tablesHeld() <= 2);
+        if (k % 50 == 0) std::this_thread::yield();
+    }
+    while (blocks.load() < 2000) std::this_thread::yield();
+    stop = true;
+    audio.join();
+    INFO ("blocks " << blocks.load() << ", largest output " << worst.load());
+    CHECK (worst.load() <= 0.5f * 1.001f);   // gains are all <= 0 dB: nothing reads garbage
+    a->setHitScales ({});
+    CHECK (a->tablesHeld() <= 2);
+}
+
+TEST_CASE ("Live align: compute cost per block (benchmark, not live-device evidence)")
+{
+    // COMPUTE ONLY: the DSP alone, offline, on whatever machine runs the tests. It says nothing about a real audio
+    // device's callbacks (their sizes, the driver, other tracks, the UI); dropout-free playback needs testing in the
+    // app on the device. Ten seconds of stereo at 96 kHz in 64-sample blocks (a 0.667 ms deadline), two all-passes,
+    // a change every other block so it is always crossfading, and the phase EQ changing every 100 ms. Three runs.
+    // Reported: the raw times of every block of every run (max, percentiles, deadline misses), and, separately, the
+    // "repeatable worst": each block's fastest of the three, then the slowest of those, which hides OS pre-emption
+    // to show setup bursts the DSP does every time. Only the averages and the repeatable worst are checked: raw
+    // timings on a shared CI machine are noise.
+    const double sr = 96000, deadline = 64 / sr * 1000.0;
     const int n = 960000, block = 64, blocks = (n + block - 1) / block;
-    std::vector<double> best ((size_t) blocks, 1e9);
+    std::vector<double> best ((size_t) blocks, 1e9), raw;
+    raw.reserve ((size_t) blocks * 3);
     double total = 0;
     for (int run = 0; run < 3; ++run)
     {
@@ -240,12 +299,20 @@ TEST_CASE ("Live align: cost per track and the worst block (benchmark)")
             d.process (ch, 2, std::min (block, n - at));
             const double ms = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
             best[(size_t) k] = std::min (best[(size_t) k], ms);
+            raw.push_back (ms);
             if (run == 0) total += ms;
         }
     }
+    std::vector<double> sorted = raw;
+    std::sort (sorted.begin(), sorted.end());
+    auto pct = [&] (double p) { return sorted[(size_t) std::min ((double) sorted.size() - 1, p / 100.0 * (double) sorted.size())]; };
+    const auto misses = std::count_if (raw.begin(), raw.end(), [&] (double v) { return v > deadline; });
     const double worst = *std::max_element (best.begin(), best.end());
     const double load = total / 10000.0 * 100.0;
-    WARN ("Align, stereo, 96 kHz, 64-sample blocks, always fading: " << load << " % of one core on average; worst block " << worst << " ms of a 0.667 ms deadline");
+    WARN ("Align DSP compute only (offline, not a device test), stereo, 96 kHz, 64-sample blocks, always fading, "
+          << raw.size() << " blocks: mean load " << load << " % of one core; raw max " << sorted.back() << " ms, p95 " << pct (95)
+          << ", p99 " << pct (99) << ", p99.9 " << pct (99.9) << " ms; raw blocks over the " << deadline << " ms deadline: " << misses
+          << "; repeatable worst (fastest of 3 per block) " << worst << " ms");
     CHECK (load < 10.0);
-    CHECK (worst < 0.667 * 0.5);
+    CHECK (worst < deadline * 0.5);
 }

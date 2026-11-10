@@ -1,4 +1,6 @@
 #include "HitsView.h"
+#include "HitsLogic.h"
+#include <tuple>
 #include "Style.h"
 #include <algorithm>
 #include <cmath>
@@ -75,18 +77,7 @@ void HitsView::selectHit (int i, bool play, bool andRedraw)
     const auto& H = model.hits();
     if (H.empty()) return;
     selHit = std::clamp (i, 0, (int) H.size() - 1);
-    selA = H[(size_t) selHit].time;
-    selB = H[(size_t) selHit].end;
-    if (playMode == 1)        // Layer: every round robin of this velocity, one after another
-    {
-        for (auto& h : H)
-            if (h.vel == H[(size_t) selHit].vel) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
-    }
-    else if (playMode == 2)   // Sweep: every hit, softest to hardest
-    {
-        for (auto& h : H) { selA = std::min (selA, h.time); selB = std::max (selB, h.end); }
-    }
-    selA = std::max (0.0, selA - 0.005);
+    std::tie (selA, selB) = auditionRange (H, selHit, playMode);   // Layer: every round robin of this velocity; Sweep: every hit
     model.setLoop (selA, selB, loopOn);
     if (selA < scroll || selB > timeAt (laneX() + laneW())) scroll = std::max (0.0, selA - 0.25 * laneW() / pps);
     if (play) playSelection();
@@ -577,13 +568,8 @@ void HitsView::drawPopup (Canvas& c)
 // ------------------------------------------------------------------------------------------------ input
 const HitsView::Hit* HitsView::hitAt (float x, float y) const
 {
-    // the smallest target under the pointer wins: a button inside a row, never the row over the button, whatever
-    // order they were added in (ties: the last drawn, which is on top)
-    const Hit* best = nullptr;
-    for (auto& h : hits)
-        if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h)
-            if (best == nullptr || h.w * h.h <= best->w * best->h) best = &h;
-    return best;
+    const int i = pickTarget (hits, x, y);   // the smallest target under the pointer wins
+    return i < 0 ? nullptr : &hits[(size_t) i];
 }
 
 void HitsView::mouseDown (const visage::MouseEvent& e)

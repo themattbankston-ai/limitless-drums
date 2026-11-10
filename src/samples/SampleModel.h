@@ -84,7 +84,7 @@ public:
     void undo();
     void redo();
     /** How well mic t sums with what it lines up to, as it is set now (-1..1), and as recorded. NaN when unknown. */
-    std::pair<double, double> sumScore (int t);
+    std::pair<double, double> sumScore (int t, bool* stale = nullptr);   ///< *stale: showing the last score while the new one is measured
     const hl::Session* session() const { return state ? &state->session : nullptr; }
     const hl::MixRender* mixRender() const { return state && state->mix ? &*state->mix : nullptr; }
     const hl::LevelResult* levelResult() const { return state && state->levels ? &*state->levels : nullptr; }
@@ -143,7 +143,16 @@ private:
     std::string lastGesture;
     double lastGestureTime = 0;
     void reapply (bool mixToo);
-    struct ScoreKey { double lag = 0; int pol = 1; bool apOn = false; size_t nAp = 0; double fc0 = 0; int ref = -1; const void* st = nullptr; };
+    /** Everything a score depends on: if any of it differs, the cached score is stale. */
+    struct ScoreKey
+    {
+        double lag = 0; int pol = 1; bool apOn = false; std::vector<std::pair<double, double>> ap;   ///< every band's fc and Q
+        int ref = -1; double arrival = 0, sr = 0; int gen = 0;
+        std::vector<int> onsets;
+        std::shared_ptr<const hl::Chs> refCh, ch;
+        bool operator== (const ScoreKey&) const;
+    };
+    ScoreKey scoreKey (int t) const;
     std::map<int, std::pair<ScoreKey, std::pair<double, double>>> scoreCache;
     std::set<int> scoring;   ///< tracks being measured on another thread
     int toneVersion = 0;
