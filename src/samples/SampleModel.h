@@ -1,4 +1,6 @@
 #pragma once
+#include <condition_variable>
+#include <mutex>
 
 #include <tracktion_engine/tracktion_engine.h>
 #include "app/Engine.h"
@@ -154,6 +156,22 @@ private:
     };
     ScoreKey scoreKey (int t) const;
     std::map<int, std::pair<ScoreKey, std::pair<double, double>>> scoreCache;
+    /** The background threads still running (Auto Prep, renders, scores). The destructor waits for them, so none
+        is left running into the process's shutdown (that crashed at exit: a thread locking a destroyed mutex). */
+    struct Workers
+    {
+        std::mutex m; std::condition_variable cv; int n = 0;
+        struct Running   ///< held by a worker thread for as long as it runs
+        {
+            std::shared_ptr<Workers> w;
+            explicit Running (std::shared_ptr<Workers> ws) : w (std::move (ws)) {}
+            Running (const Running&) = delete;
+            ~Running() { { const std::lock_guard<std::mutex> l (w->m); --w->n; } w->cv.notify_all(); }
+        };
+        /** Call on the message thread just before starting a worker; give the result to the thread. */
+        static std::shared_ptr<Running> start (const std::shared_ptr<Workers>& ws) { { const std::lock_guard<std::mutex> l (ws->m); ++ws->n; } return std::make_shared<Running> (ws); }
+    };
+    std::shared_ptr<Workers> workers = std::make_shared<Workers>();
     std::set<int> scoring;   ///< tracks being measured on another thread
     int toneVersion = 0;
     bool rendering = false;

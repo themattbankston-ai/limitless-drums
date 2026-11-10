@@ -602,4 +602,21 @@ TEST_CASE ("Sample model M1: rapid edits while rendering settle on the last one,
     CHECK (differ == 0);
     m.undo();   // the whole drag is one step
     CHECK (m.session()->tone.bright == 0.0);
+    // (the model is destroyed here with the undo's render still running: its destructor waits for it)
+}
+
+TEST_CASE ("Sample model M1: closing a take while it renders waits for the work, and nothing lands afterwards")
+{
+    bool landed = false;
+    {
+        SampleModel m (ldtest::engine());
+        REQUIRE (m.open ({ makeTake ("m1close") }).isEmpty());
+        prep (m);
+        m.onChanged = [&] { landed = true; };
+        landed = false;
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.7; }, SampleModel::Redo::mix));
+        REQUIRE (m.isBusy());
+    }   // destroyed mid-render
+    for (int k = 0; k < 50; ++k) juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+    CHECK_FALSE (landed);
 }

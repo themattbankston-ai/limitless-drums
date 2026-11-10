@@ -1,3 +1,4 @@
+#include <chrono>
 #include "SampleModel.h"
 #include "hl/Clean.h"
 #include "hl/Tune.h"
@@ -70,6 +71,11 @@ void SampleModel::dropMeters()
 SampleModel::~SampleModel()
 {
     *alive = false;
+    {
+        // let the background work finish (it only computes on its own copies; nothing lands here once alive is false)
+        std::unique_lock<std::mutex> l (workers->m);
+        workers->cv.wait_for (l, std::chrono::seconds (60), [this] { return workers->n == 0; });
+    }
     dropMeters();
     if (edit) edit->getTransport().stop (false, false);
     edit.reset();
@@ -226,7 +232,7 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
     auto copy = std::make_shared<EngineState> (*state);
     auto alivePtr = alive;
     const int gen = takeGen;
-    std::thread ([this, copy, alivePtr, done, gen]
+    std::thread ([this, copy, alivePtr, done, gen, running = Workers::start (workers)]
     {
         fprintf (stderr, "[prep] start\n");
         copy->prepared = hl::autoPrep (copy->session);
@@ -412,7 +418,7 @@ std::pair<double, double> SampleModel::sumScore (int t, bool* stale)
         scoring.insert (t);
         auto alivePtr = alive;
         auto key = std::make_shared<const ScoreKey> (std::move (k));
-        std::thread ([this, alivePtr, t, key]
+        std::thread ([this, alivePtr, t, key, running = Workers::start (workers)]
         {
             const auto refMono = hl::monoOf (*key->refCh);
             std::vector<hl::AllPass> ap;
@@ -450,7 +456,7 @@ void SampleModel::startRender()
     // (a render for a take that has since been replaced lands with state != base and is dropped)
     const auto dir = cacheDir;
     const int fileTag = ++toneVersion;
-    std::thread ([this, copy, base, alivePtr, ticket, mix, dir, fileTag]
+    std::thread ([this, copy, base, alivePtr, ticket, mix, dir, fileTag, running = Workers::start (workers)]
     {
         if (mix) renderAndMeasure (*copy);
         else if (base->mix) copy->levels = hl::measureLevels (copy->session, *base->mix);
