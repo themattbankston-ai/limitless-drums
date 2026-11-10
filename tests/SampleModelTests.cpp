@@ -480,3 +480,126 @@ TEST_CASE ("Hits screen SA11: Hit, Layer and Sweep select the right range")
     CHECK (ld::samples::auditionRange (std::vector<HitInfo> {}, 0, 2) == std::make_pair (0.0, 0.0));
     CHECK (ld::samples::auditionRange (H, 99, 0).first == Approx (5.0 - 0.005));   // out of range clamps
 }
+
+namespace
+{
+/** Every .wav under dir, by relative path, as raw bytes. */
+std::map<juce::String, juce::MemoryBlock> exportedBytes (const juce::File& dir)
+{
+    std::map<juce::String, juce::MemoryBlock> out;
+    for (auto& f : dir.findChildFiles (juce::File::findFiles, true, "*.wav"))
+    {
+        juce::MemoryBlock mb;
+        f.loadFileAsData (mb);
+        out[f.getRelativePathFrom (dir)] = mb;
+    }
+    return out;
+}
+} // namespace
+
+TEST_CASE ("Sample model M1: the same settings export the same bytes, and the files match the export list")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("m1det") }).isEmpty());
+    prep (m);
+    REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.5; }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    int n1 = 0, n2 = 0;
+    auto a = freshDir ("m1det_a"), b = freshDir ("m1det_b");
+    REQUIRE (m.exportTo (a, n1).isEmpty());
+    REQUIRE (m.exportTo (b, n2).isEmpty());
+    const auto A = exportedBytes (a), B = exportedBytes (b);
+    CHECK (n1 == n2);
+    CHECK ((int) A.size() == n1);
+    CHECK ((int) ld::hl::exportList (*m.session()).size() == n1);   // nothing in the list is skipped silently
+    REQUIRE (A.size() == B.size());
+    int differ = 0;
+    for (auto& [k, v] : A) if (! B.count (k) || B.at (k) != v) ++differ;
+    CHECK (differ == 0);
+}
+
+TEST_CASE ("Sample model M1: monitor faders, pans, mutes, solos, A/B and level match never reach the export, and come back after it")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("m1mon") }).isEmpty());
+    prep (m);
+    int n = 0;
+    auto base = freshDir ("m1mon_base");
+    REQUIRE (m.exportTo (base, n).isEmpty());
+    // everything a listener might leave set
+    m.setMonDb (0, -18.0f);
+    m.setPan (1, -0.7f);
+    m.setMute (2, true);
+    m.setSolo (1, true);
+    m.setProcessed (false);   // A playing
+    m.setLevelMatch (true);
+    pumpUntilIdle (m);
+    auto with = freshDir ("m1mon_with");
+    REQUIRE (m.exportTo (with, n).isEmpty());
+    const auto A = exportedBytes (base), B = exportedBytes (with);
+    REQUIRE (A.size() == B.size());
+    int differ = 0;
+    for (auto& [k, v] : A) if (! B.count (k) || B.at (k) != v) ++differ;
+    CHECK (differ == 0);
+    // and the monitoring is as the listener left it
+    CHECK (m.monDb (0) == Approx (-18.0f));
+    CHECK (m.pan (1) == Approx (-0.7f));
+    CHECK (m.mute (2));
+    CHECK (m.solo (1));
+    CHECK_FALSE (m.processed());
+    CHECK (m.levelMatch());
+}
+
+TEST_CASE ("Sample model M1: an unwritable destination fails before rendering, says where, and leaves everything as it was")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("m1dest") }).isEmpty());
+    prep (m);
+    m.setSolo (1, true);
+    // a folder inside a file can't be made
+    auto blocker = freshDir ("m1dest").getChildFile ("not-a-folder");
+    REQUIRE (blocker.replaceWithText ("x"));
+    const auto dest = blocker.getChildFile ("out");
+    int n = -1;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    const auto err = m.exportTo (dest, n);
+    const auto ms = juce::Time::getMillisecondCounterHiRes() - t0;
+    INFO ("error: " << err << " after " << ms << " ms");
+    CHECK (err.isNotEmpty());
+    CHECK (err.contains (dest.getFullPathName()));
+    CHECK (n == 0);
+    CHECK (ms < 1000);   // told at once, not after a full render
+    CHECK (m.solo (1));
+    CHECK (m.exportBlocker().isEmpty());   // and nothing about the take changed
+}
+
+TEST_CASE ("Sample model M1: rapid edits while rendering settle on the last one, and that's what exports")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("m1rapid") }).isEmpty());
+    prep (m);
+    for (int k = 0; k <= 10; ++k)
+    {
+        REQUIRE (m.change ([k] (ld::hl::Session& S) { S.tone.bright = k / 10.0; }, SampleModel::Redo::mix, "tone.bright"));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (3);
+    }
+    pumpUntilIdle (m);
+    int n = 0;
+    auto rapid = freshDir ("m1rapid_a");
+    REQUIRE (m.exportTo (rapid, n).isEmpty());
+    // a fresh model set straight to the last value
+    SampleModel m2 (ldtest::engine());
+    REQUIRE (m2.open ({ makeTake ("m1rapid") }).isEmpty());
+    prep (m2);
+    REQUIRE (m2.change ([] (ld::hl::Session& S) { S.tone.bright = 1.0; }, SampleModel::Redo::mix));
+    pumpUntilIdle (m2);
+    auto direct = freshDir ("m1rapid_b");
+    REQUIRE (m2.exportTo (direct, n).isEmpty());
+    const auto A = exportedBytes (rapid), B = exportedBytes (direct);
+    REQUIRE (A.size() == B.size());
+    int differ = 0;
+    for (auto& [k, v] : A) if (! B.count (k) || B.at (k) != v) ++differ;
+    CHECK (differ == 0);
+    m.undo();   // the whole drag is one step
+    CHECK (m.session()->tone.bright == 0.0);
+}

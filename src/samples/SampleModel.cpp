@@ -730,6 +730,15 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
 {
     count = 0;
     if (auto why = exportBlocker(); why.isNotEmpty()) return why;
+    // the destination first: a folder that can't be made or written is reported now, not after the whole render
+    {
+        const auto made = dir.createDirectory();
+        const auto probe = dir.getChildFile (".limitless-write-test");
+        if (made.failed() || ! dir.isDirectory() || ! probe.replaceWithText ("ok"))
+            return "Can't write to " + dir.getFullPathName() + (made.failed() ? " (" + made.getErrorMessage() + ")" : juce::String())
+                 + ". Pick a folder you can write to.";
+        probe.deleteFile();
+    }
     auto& S = state->session;
     const auto& L = *state->levels;
     const auto& R = L.regions;

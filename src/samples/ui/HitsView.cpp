@@ -4,6 +4,7 @@
 #include "Style.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 
 namespace ld::samples
@@ -111,6 +112,7 @@ void HitsView::draw (Canvas& c)
         drawStep (c);
         drawAudition (c);
         drawToolbar (c);
+        if (std::getenv ("LD_GALLERY")) gallery (c, 0, tbH + auH, width(), height() - tbH - auH);   // design review only
         return;
     }
     drawTracks (c);
@@ -121,17 +123,18 @@ void HitsView::draw (Canvas& c)
     drawAudition (c);
     drawToolbar (c);
     drawPopup (c);
+    if (std::getenv ("LD_GALLERY")) gallery (c, 0, tbH + auH, width(), height() - tbH - auH);   // design review only
 }
 
 void HitsView::drawToolbar (Canvas& c)
 {
-    c.setColor (visage::Brush::linear (visage::Color (0xff3d3d40), visage::Color (0xff333336), visage::Point (0, 0), visage::Point (0, tbH)));
+    c.setColor (visage::Brush::linear (visage::Color (0xff27272a), visage::Color (tok::ground), visage::Point (0, 0), visage::Point (0, tbH)));
     c.fill (0, 0, width(), tbH);
     c.setColor (line); c.fill (0, tbH - 1, width(), 1);
     // the mark
-    c.setColor (0xff1b1b1d); c.circle (14, 11, 30);
-    c.setColor (accent); c.ring (14, 11, 30, 1.5f);
-    txt (c, "\xe2\x88\x9e", boldFont (18), accent, 14, 11, 30, 30, visage::Font::kCenter);
+    c.setColor (tok::lane); c.circle (14, 11, 30);
+    c.setColor (tok::coral); c.ring (14, 11, 30, 1.5f);
+    txt (c, "\xe2\x88\x9e", boldFont (18), tok::coral, 14, 11, 30, 30, visage::Font::kCenter);
     // narrower windows (down to the 1100 px minimum) drop the take line and the counter's Start/End/Len, and the
     // steps share whatever room is left, so all eight and the transport always fit
     const bool compact = width() < 1400;
@@ -143,15 +146,18 @@ void HitsView::drawToolbar (Canvas& c)
     // steps
     float x = compact ? 176.0f : 240.0f;
     const float sw = std::clamp ((tx0 - 12 - x - 4) / 8.0f, 50.0f, 84.0f);
-    c.setColor (well); c.roundedRectangle (x, 12, 8 * sw + 4, 32, 5);
+    c.setColor (tok::lane); c.roundedRectangle (x, 12, 8 * sw + 4, 32, tok::radius);
     for (int i = 0; i < 8; ++i)
     {
         const float bx = x + 2 + i * sw;
         const bool on = i == step;
         const std::string label = sw >= 80 ? std::to_string (i + 1) + ". " + stepNames[i] : std::string (stepNames[i]);
-        if (on) { c.setColor (btnOn); c.roundedRectangle (bx, 14, sw - 2, 28, 3); }
-        txt (c, label, on ? boldFont (sw >= 66 ? 12 : 11) : bodyFont (sw >= 66 ? 12 : 11), on ? ink : ink2, bx, 14, sw - 2, 28, visage::Font::kCenter);
-        if (on) { c.setColor (accent); c.fill (bx + 3, 40, sw - 8, 2); }
+        if (on)   // the step you're on: the one coral tab
+        {
+            c.setColor (visage::Brush::linear (visage::Color (tok::coralFillTop), visage::Color (tok::coralFill), visage::Point (0, 14), visage::Point (0, 42)));
+            c.roundedRectangle (bx, 14, sw - 2, 28, tok::radius - 2);
+        }
+        txt (c, label, on ? boldFont (sw >= 66 ? 12 : 11) : bodyFont (sw >= 66 ? 12 : 11), on ? 0xffffffff : ink2, bx, 14, sw - 2, 28, visage::Font::kCenter);
         add (bx, 14, sw - 2, 28, "step:" + std::to_string (i));
     }
     // transport
@@ -161,11 +167,11 @@ void HitsView::drawToolbar (Canvas& c)
     {
         const float bw = i == 2 ? 44.f : 34.f, bx = x + (i < 3 ? i * 36.f : 36 * 2 + 46);
         const bool playBtn = i == 2;
-        c.setColor (playBtn ? visage::Brush::linear (visage::Color (0xff2fbfae), visage::Color (0xff239c8e), visage::Point (0, 11), visage::Point (0, 41))
-                            : visage::Brush::linear (visage::Color (0xff55555a), visage::Color (0xff47474b), visage::Point (0, 11), visage::Point (0, 41)));
-        c.roundedRectangle (bx, 11, bw, 30, 4);
+        c.setColor (playBtn ? visage::Brush::linear (visage::Color (tok::mint), visage::Color (tok::mintFill), visage::Point (0, 11), visage::Point (0, 41))
+                            : visage::Brush::linear (visage::Color (tok::controlHi), visage::Color (tok::control), visage::Point (0, 11), visage::Point (0, 41)));
+        c.roundedRectangle (bx, 11, bw, 30, tok::radius);
         const float cx = bx + bw / 2, cy = 26;
-        c.setColor (playBtn ? 0xff06201d : 0xffe8e8ea);
+        c.setColor (playBtn ? tok::mintText : tok::ink);
         if (i == 1) c.fill (cx - 5, cy - 5, 10, 10);
         else if (i == 2) c.triangle (cx - 4, cy - 6, cx - 4, cy + 6, cx + 6, cy);
         else if (i == 0) { c.fill (cx - 6, cy - 6, 2, 12); c.triangle (cx + 5, cy - 6, cx + 5, cy + 6, cx - 3, cy); }
@@ -174,8 +180,8 @@ void HitsView::drawToolbar (Canvas& c)
     }
     // counter
     x += 36 * 3 + 46 + 10;
-    c.setColor (0xff0f0f10); c.roundedRectangle (x, 7, counterW, 38, 4);
-    txt (c, fmtTime (model.position()), monoFont (17), accent, x + 10, 7, 120, 38);
+    c.setColor (0xff111113); c.roundedRectangle (x, 7, counterW, 38, tok::radius);
+    txt (c, fmtTime (model.position()), monoFont (17), tok::mint, x + 10, 7, 120, 38);
     if (! compact)
     {
         txt (c, "Start " + fmtTime (selA), monoFont (9), ink3, x + 128, 9, 120, 12);
@@ -184,8 +190,8 @@ void HitsView::drawToolbar (Canvas& c)
     }
     // Auto Prep
     x = width() - 104;
-    c.setColor (visage::Brush::linear (visage::Color (0xff55555a), visage::Color (0xff47474b), visage::Point (0, 11), visage::Point (0, 41)));
-    c.roundedRectangle (x, 11, 92, 30, 4);
+    c.setColor (visage::Brush::linear (visage::Color (tok::controlHi), visage::Color (tok::control), visage::Point (0, 11), visage::Point (0, 41)));
+    c.roundedRectangle (x, 11, 92, 30, tok::radius);
     txt (c, model.isPrepping() ? "Working\xe2\x80\xa6" : "Auto Prep", boldFont (12), ink, x, 11, 92, 30, visage::Font::kCenter);
     add (x, 11, 92, 30, "autoprep");
 }
@@ -195,25 +201,24 @@ void HitsView::drawAudition (Canvas& c)
     const float y = tbH;
     c.setColor (bar2); c.fill (0, y, width(), auH);
     c.setColor (line); c.fill (0, y + auH - 1, width(), 1);
-    txt (c, "AUDITION", boldFont (10), 0xff9c9ca1, 14, y, 80, auH);
+    txt (c, "AUDITION", boldFont (10), tok::ink3, 14, y, 80, auH);
     float x = 84;
-    c.setColor (well); c.roundedRectangle (x, y + 9, 6 * 66 + 4, 34, 5);
+    c.setColor (tok::lane); c.roundedRectangle (x, y + 9, 6 * 66 + 4, 34, tok::radius);
     for (int i = 0; i < 6; ++i)
     {
         const float bx = x + 2 + i * 66;
-        button (c, bx, y + 11, 64, 30, modeNames[i], playMode == i);
-        if (i >= 3) { c.setColor (0x99232325); c.fill (bx, y + 11, 64, 30); }   // not in this build yet
-        if (playMode == i) { c.setColor (accent); c.fill (bx + 3, y + 39, 58, 2); }
+        button (c, bx, y + 11, 64, 30, modeNames[i], playMode == i, tok::coralFill);
+        if (i >= 3) { c.setColor (0xa0161618); c.fill (bx, y + 11, 64, 30); }   // not in this build yet
         add (bx, y + 11, 64, 30, "mode:" + std::to_string (i));
     }
     x += 6 * 66 + 16;
-    c.setColor (well); c.roundedRectangle (x, y + 9, 128, 34, 5);
+    c.setColor (tok::lane); c.roundedRectangle (x, y + 9, 128, 34, tok::radius);
     const char* abn[3] = { "A", "B", "A\xe2\x86\x92" "B" };
     for (int i = 0; i < 3; ++i)
     {
         const float bx = x + 2 + i * 41.f, bw = i == 2 ? 42.f : 40.f;
-        if (ab == i) { c.setColor (i == 0 ? 0xff57575c : gold); c.roundedRectangle (bx, y + 11, bw, 30, 3); }
-        txt (c, abn[i], boldFont (12), ab == i && i > 0 ? 0xff1d1405 : ink2, bx, y + 11, bw, 30, visage::Font::kCenter);
+        if (ab == i) { c.setColor (i == 0 ? tok::controlHi : tok::coralFill); c.roundedRectangle (bx, y + 11, bw, 30, tok::radius - 2); }
+        txt (c, abn[i], boldFont (12), ab == i ? 0xffffffff : ink2, bx, y + 11, bw, 30, visage::Font::kCenter);
         add (bx, y + 11, bw, 30, "ab:" + std::to_string (i));
     }
     x += 128 + 16;
@@ -222,9 +227,9 @@ void HitsView::drawAudition (Canvas& c)
     for (int i = 0; i < 4; ++i)
     {
         const float w = textWidth (boldFont (12), tn[i]) + 22;
-        if (tv[i]) { c.setColor (accentDark); c.roundedRectangle (x, y + 12, w, 26, 13); c.setColor (0xff0d3f39); c.roundedRectangleBorder (x, y + 12, w, 26, 13, 1); }
-        else { c.setColor (0xff3a3a3e); c.roundedRectangleBorder (x, y + 12, w, 26, 13, 1); }
-        txt (c, tn[i], tv[i] ? boldFont (12) : bodyFont (12), tv[i] ? accentInk : 0xffb8b8bc, x, y + 12, w, 26, visage::Font::kCenter);
+        if (tv[i]) { c.setColor (tok::mintDeep); c.roundedRectangle (x, y + 12, w, 26, tok::pill); c.setColor (0xff1f5443); c.roundedRectangleBorder (x, y + 12, w, 26, tok::pill, 1); }
+        else { c.setColor (tok::divider); c.roundedRectangleBorder (x, y + 12, w, 26, tok::pill, 1); }
+        txt (c, tn[i], tv[i] ? boldFont (12) : bodyFont (12), tv[i] ? tok::mintInk : tok::ink2, x, y + 12, w, 26, visage::Font::kCenter);
         add (x, y + 12, w, 26, std::string ("toggle:") + tn[i]);
         x += w + 4;
     }
@@ -318,7 +323,7 @@ void HitsView::drawRulers (Canvas& c)
         const std::string n = std::to_string (i + 1);
         const float w = std::max (14.0f, textWidth (monoFont (9), n) + 4);
         c.setColor (sel ? accent : 0xff46464b); c.roundedRectangle (x, y0 + 2 * rulH + 3, w, 16, 2);
-        txt (c, n, monoFont (9), sel ? 0xff06201d : 0xffe2e2e4, x, y0 + 2 * rulH + 3, w, 16, visage::Font::kCenter);
+        txt (c, n, monoFont (9), sel ? 0xffffffff : 0xffe2e2e4, x, y0 + 2 * rulH + 3, w, 16, visage::Font::kCenter);
         add (x, y0 + 2 * rulH + 3, w, 16, "hit:" + std::to_string (i));
     }
     c.setClampBounds (0, 0, width(), height());
@@ -443,7 +448,7 @@ void HitsView::drawInspector (Canvas& c)
     const auto& H = model.hits();
     const bool all = (int) H.size() == V * RR;
     txt (c, "Found " + std::to_string (H.size()) + " of " + std::to_string (V * RR), boldFont (13), ink, x0 + 14, y0 + 12, 160, 20);
-    txt (c, all ? "Every slot filled" : (model.isPrepared() ? "Check the count" : "Run Auto Prep"), bodyFont (12), all ? 0xff8ff0e2 : 0xffffc78a, x0 + 14, y0 + 12, w - 28, 20, visage::Font::kRight);
+    txt (c, all ? "Every slot filled" : (model.isPrepared() ? "Check the count" : "Run Auto Prep"), bodyFont (12), all ? tok::mintInk : 0xffffc78a, x0 + 14, y0 + 12, w - 28, 20, visage::Font::kRight);
     txt (c, std::to_string (V) + " velocities \xc3\x97 " + std::to_string (RR) + " round robins, softest to hardest.", bodyFont (11), 0xffb4b4b8, x0 + 14, y0 + 36, w - 28, 16);
     // the grid: hardest on top
     const float gx = x0 + 44, gw = w - 58, cw = gw / RR, ch = 30;
@@ -522,7 +527,7 @@ void HitsView::drawCloseUp (Canvas& c)
     }
     const float sx = lx + (float) ((h.time - a) / (e - a) * lw);
     c.setColor (accent); c.fill (sx, y0, 2, closeH);
-    txt (c, "Start", bodyFont (11), 0xff8ff0e2, sx + 6, y0 + 6, 60, 14);
+    txt (c, "Start", bodyFont (11), tok::mintInk, sx + 6, y0 + 6, 60, 14);
     c.setColor (0xffff8a7a); c.fill (lx + lw - 2, y0, 2, closeH);
 }
 

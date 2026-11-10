@@ -251,11 +251,11 @@ void HitsView::drawSetup (Canvas& c)
     y += 34;
     const int want = S->det.V * S->det.RR;
     txt (c, model.hits().size() == (size_t) want ? "Every hit found (" + std::to_string (want) + ")." : "Expecting " + std::to_string (want) + " hits; found " + std::to_string (model.hits().size()) + ".",
-         bodyFont (12), model.hits().size() == (size_t) want ? 0xff8ff0e2 : 0xffffc78a, sx + 16, y, 340, 22);
+         bodyFont (12), model.hits().size() == (size_t) want ? tok::mintInk : 0xffffc78a, sx + 16, y, 340, 22);
     y += 34;
-    c.setColor (visage::Brush::linear (visage::Color (0xff2fbfae), visage::Color (0xff239c8e), visage::Point (0, y), visage::Point (0, y + 32)));
+    c.setColor (visage::Brush::linear (visage::Color (tok::coralFillTop), visage::Color (tok::coralFill), visage::Point (0, y), visage::Point (0, y + 32)));
     c.roundedRectangle (sx + 16, y, 160, 32, 4);
-    txt (c, model.isPrepping() ? "Working\xe2\x80\xa6" : "Auto Prep", boldFont (13), 0xff06201d, sx + 16, y, 160, 32, visage::Font::kCenter);
+    txt (c, model.isPrepping() ? "Working\xe2\x80\xa6" : "Auto Prep", boldFont (13), 0xffffffff, sx + 16, y, 160, 32, visage::Font::kCenter);
     add (sx + 16, y, 160, 32, "autoprep");
 }
 
@@ -810,9 +810,9 @@ void HitsView::drawExport (Canvas& c)
     y += 44;
     txt (c, "To: " + (exportFolder.empty() ? std::string ("(you'll pick a folder)") : exportFolder), bodyFont (11), ink2, 30, y, pw - 32, 18);
     y += 28;
-    c.setColor (visage::Brush::linear (visage::Color (0xff2fbfae), visage::Color (0xff239c8e), visage::Point (0, y), visage::Point (0, y + 34)));
+    c.setColor (visage::Brush::linear (visage::Color (tok::coralFillTop), visage::Color (tok::coralFill), visage::Point (0, y), visage::Point (0, y + 34)));
     c.roundedRectangle (30, y, 180, 34, 4);
-    txt (c, exportProgress >= 0 && exportProgress < 1 ? fmt ("Writing\xe2\x80\xa6 %.0f %%", exportProgress * 100) : std::string ("Export"), boldFont (13), 0xff06201d, 30, y, 180, 34, visage::Font::kCenter);
+    txt (c, exportProgress >= 0 && exportProgress < 1 ? fmt ("Writing\xe2\x80\xa6 %.0f %%", exportProgress * 100) : std::string ("Export"), boldFont (13), 0xffffffff, 30, y, 180, 34, visage::Font::kCenter);
     add (30, y, 180, 34, "export");
     // the files
     const float gx = 14 + pw + 14, gw = width() - gx - 14;
