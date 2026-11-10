@@ -29,12 +29,17 @@ namespace tok
     constexpr unsigned mint = 0xff4fd8a8, mintFill = 0xff3fbf92, mintDeep = 0xff17382e, mintInk = 0xff9ff0d4, mintText = 0xff0b2a20;
     // states
     constexpr unsigned warn = 0xffffc78a, error = 0xffff7a6b, focus = 0xff8ab4ff;
-    // spacing and shape
-    constexpr float s1 = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24, radius = 6, radiusLg = 10, pill = 13;
-    // type sizes
-    constexpr float tCaption = 10, tSmall = 11, tBody = 12, tLabel = 13, tTitle = 16, tValue = 17;
-    // control sizes
-    constexpr float rowH = 26, buttonH = 30, knobLg = 64, knobSm = 44, switchW = 36, switchH = 20;
+    // proportion: the golden ratio. Layouts split their width major : minor = phi : 1 (61.8 % / 38.2 %); spacing
+    // and sizes step along the Fibonacci numbers (each about phi times the last); type steps by sqrt(phi).
+    constexpr float phi = 1.6180340f, major = 0.6180340f, minor = 0.3819660f;
+    // spacing and shape (Fibonacci)
+    constexpr float s1 = 3, s2 = 5, s3 = 8, s4 = 13, s5 = 21, s6 = 34, radius = 5, radiusLg = 8, pill = 13;
+    // type sizes: 10 x sqrt(phi)^n = 10, 12.7, 16.2, 20.6, 26.2 (tSmall sits between the first two for dense labels)
+    constexpr float tCaption = 10, tSmall = 11, tBody = 12, tLabel = 13, tTitle = 16, tValue = 17, tHead = 21, tDisplay = 26;
+    // control sizes (Fibonacci where a size is free: 21, 34, 55; knobs 40 and 65 are phi apart)
+    constexpr float rowH = 26, buttonH = 34, knobLg = 65, knobSm = 40, switchW = 34, switchH = 21;
+    /** The narrower part of a golden split of `total`, kept between lo and hi (so small windows still fit their controls). */
+    constexpr float goldenMinor (float total, float lo, float hi) { return total * minor < lo ? lo : total * minor > hi ? hi : total * minor; }
 }
 
 // the names the steps already use, now on the tokens (so one palette drives every screen)

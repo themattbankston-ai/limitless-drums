@@ -198,7 +198,8 @@ void HitsView::drawSetup (Canvas& c)
     txt (c, "The take: " + model.takeName().toStdString(), boldFont (13), ink, 14, top, 500, sbH);
     barEnd = 14 + textWidth (boldFont (13), "The take: " + model.takeName().toStdString());
     // the recordings
-    const float px = 14, pw = width() - 14 - 380 - 28;
+    const float sideW = tok::goldenMinor (width() - 42, 380.0f, 560.0f);   // golden split: recordings : session
+    const float px = 14, pw = width() - 14 - sideW - 28;
     panel (c, px, y0 + 14, pw, height() - y0 - 28, "Recordings");
     const float cols[] = { px + 16, px + 250, px + 380, px + 470, px + 560 };
     const char* heads[] = { "Track", "Channels", "Length", "Peak", "Lead" };
@@ -221,8 +222,8 @@ void HitsView::drawSetup (Canvas& c)
         y += 32;
     }
     // the session
-    const float sx = width() - 380 - 14;
-    panel (c, sx, y0 + 14, 380, height() - y0 - 28, "Session");
+    const float sx = width() - sideW - 14;
+    panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "Session");
     if (! S) return;
     y = y0 + 44;
     txt (c, "Drum", bodyFont (12), ink3, sx + 16, y, 100, 22);
@@ -231,7 +232,7 @@ void HitsView::drawSetup (Canvas& c)
     for (size_t i = 0; i < drums.size(); ++i) if (juce::String (drums[i]).equalsIgnoreCase (juce::String (S->drum))) di = (int) i;
     segmented (c, sx + 16, y + 22, drums, di, "drum:", 26);
     y += 64;
-    txt (c, "Articulation: " + (S->artic.empty() ? std::string ("(from the file names)") : S->artic), bodyFont (12), ink2, sx + 16, y, 340, 22);
+    txt (c, "Articulation: " + (S->artic.empty() ? std::string ("(from the file names)") : S->artic), bodyFont (12), ink2, sx + 16, y, sideW - 40, 22);
     y += 34;
     for (int k = 0; k < 2; ++k)
     {
@@ -247,11 +248,11 @@ void HitsView::drawSetup (Canvas& c)
     txt (c, "Order", bodyFont (12), ink3, sx + 16, y, 100, 26);
     segmented (c, sx + 150, y - 2, { "Softest first", "Hardest first" }, S->det.order == "loud" ? 1 : 0, "order:", 24);
     y += 40;
-    txt (c, fmt ("%.0f Hz", S->sr) + " \xc2\xb7 " + std::to_string (S->tracks.size()) + " tracks \xc2\xb7 " + fmtTime (model.length()), bodyFont (12), ink3, sx + 16, y, 340, 22);
+    txt (c, fmt ("%.0f Hz", S->sr) + " \xc2\xb7 " + std::to_string (S->tracks.size()) + " tracks \xc2\xb7 " + fmtTime (model.length()), bodyFont (12), ink3, sx + 16, y, sideW - 40, 22);
     y += 34;
     const int want = S->det.V * S->det.RR;
     txt (c, model.hits().size() == (size_t) want ? "Every hit found (" + std::to_string (want) + ")." : "Expecting " + std::to_string (want) + " hits; found " + std::to_string (model.hits().size()) + ".",
-         bodyFont (12), model.hits().size() == (size_t) want ? tok::mintInk : 0xffffc78a, sx + 16, y, 340, 22);
+         bodyFont (12), model.hits().size() == (size_t) want ? tok::mintInk : 0xffffc78a, sx + 16, y, sideW - 40, 22);
     y += 34;
     c.setColor (visage::Brush::linear (visage::Color (tok::coralFillTop), visage::Color (tok::coralFill), visage::Point (0, y), visage::Point (0, y + 32)));
     c.roundedRectangle (sx + 16, y, 160, 32, 4);
@@ -455,10 +456,11 @@ void HitsView::drawTune (Canvas& c)
         x += 100;
     }
     barEnd = x;
-    const float pw = width() - 28 - 340;
+    const float sideW = tok::goldenMinor (width() - 42, 340.0f, 560.0f);   // golden split: pitches : the drum
+    const float pw = width() - 28 - sideW;
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "Every hit's pitch");
-    const float sx = width() - 340 - 14;
-    panel (c, sx, y0 + 14, 340, height() - y0 - 28, "The drum");
+    const float sx = width() - sideW - 14;
+    panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "The drum");
     if (! S->tuneAnalyzed || ! ti || ! ti->valid)
     {
         const bool cym = hl::soundsLikeCymbal (*S);
@@ -549,7 +551,7 @@ void HitsView::drawTone (Canvas& c)
     c.setColor (btn); c.roundedRectangle (x, top + 6, 56, 26, 3); txt (c, "Flat", boldFont (12), ink, x, top + 6, 56, 26, visage::Font::kCenter); add (x, top + 6, 56, 26, "tone:flat");
     barEnd = x + 56;
     // the controls
-    const float pw = 400;
+    const float pw = tok::goldenMinor (width() - 42, 400.0f, 560.0f);   // golden split: controls : waveform
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "");
     float y = y0 + 26;
     txt (c, "TONE", boldFont (10), 0xff9c9ca1, 30, y, 200, 16); y += 22;
@@ -642,7 +644,7 @@ void HitsView::drawClean (Canvas& c)
     const float top = tbH + auH, y0 = top + sbH;
     txt (c, "Noise under the tails, taken down only where the tail has faded into it. Heard on B.", bodyFont (12), ink2, 14, top, 700, sbH);
     barEnd = 14 + textWidth (bodyFont (12), "Noise under the tails, taken down only where the tail has faded into it. Heard on B.");
-    const float pw = 400;
+    const float pw = tok::goldenMinor (width() - 42, 400.0f, 560.0f);   // golden split: controls : what it does
     panel (c, 14, y0 + 14, pw, 170, "Noise");
     c.setColor (S->dnOn ? accentDark : 0xff3a3a3e); c.roundedRectangle (pw - 60, y0 + 24, 56, 22, 11);
     txt (c, S->dnOn ? "On" : "Off", boldFont (11), S->dnOn ? accentInk : ink2, pw - 60, y0 + 24, 56, 22, visage::Font::kCenter);
@@ -703,10 +705,11 @@ void HitsView::drawLevel (Canvas& c)
     segmented (c, x, top + 4, { "Velocity curve", "Even steps", "Fixed step", "Range" }, ci, "levcurve:", 26);
     barEnd = x + segmentedW ({ "Velocity curve", "Even steps", "Fixed step", "Range" });
     const auto* L = model.levelResult();
-    const float pw = width() - 28 - 360;
+    const float sideW = tok::goldenMinor (width() - 42, 360.0f, 560.0f);   // golden split: levels : layers
+    const float pw = width() - 28 - sideW;
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "What the exported hits will be");
-    const float sx = width() - 360 - 14;
-    panel (c, sx, y0 + 14, 360, height() - y0 - 28, "Layers");
+    const float sx = width() - sideW - 14;
+    panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "Layers");
     if (! L || ! L->valid) { txt (c, "Run Auto Prep: the levels are measured once every hit is found.", bodyFont (13), ink2, 34, y0 + 60, pw - 40, 22); return; }
     const int t = selMic >= 0 && selMic < (int) S->tracks.size() ? selMic : S->refIdx;
     txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 grey: as played, colour: as exported. Click a bar to hear the hit.", bodyFont (11), ink3, 300, y0 + 24, pw - 300, 16, visage::Font::kRight);
@@ -775,7 +778,7 @@ void HitsView::drawExport (Canvas& c)
     segmented (c, x, top + 4, { "Natural", "Fade" }, S->exp.tailMode == "fade" ? 1 : 0, "tails:", 26);
     barEnd = x + segmentedW ({ "Natural", "Fade" });
     // the checks
-    const float pw = 420;
+    const float pw = tok::goldenMinor (width() - 42, 420.0f, 560.0f);   // golden split: checks : file list
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "Before it writes");
     float y = y0 + 44;
     const int want = S->det.V * S->det.RR;
