@@ -624,6 +624,59 @@ TEST_CASE ("Sample model M1: closing a take while it renders waits for the work,
     CHECK_FALSE (landed);
 }
 
+TEST_CASE ("Sample model: a phase EQ band set by hand is what plays, survives nudges and flips, and Reset returns to measured")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("manualap") }).isEmpty());
+    prep (m);
+    const int t = scoreTrack (m);
+    REQUIRE (t >= 0);
+    const auto measured = m.session()->tracks[(size_t) t].ap;
+    using R = SampleModel::Redo;
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::setAllPass (S, t, 0, 430.0, 1.3); }, R::align));
+    {
+        const auto& tr = m.session()->tracks[(size_t) t];
+        REQUIRE (tr.ap.size() >= 1);
+        CHECK (tr.ap[0].fc == Approx (430.0)); CHECK (tr.ap[0].Q == Approx (1.3));
+        CHECK (tr.manualAp);
+    }
+    // the plugin on that mic gets the same band
+    auto* plug = ld::live::alignOn (*m.trackB (t));
+    REQUIRE (plug != nullptr);
+    CHECK (plug->ap1Fc.get() == Approx (430.0f));
+    CHECK (plug->ap1Q.get() == Approx (1.3f));
+    // a nudge and a flip re-resolve the alignment: the band stays
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::nudgeLag (S, t, 1); }, R::align));
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::flipMic (S, t); }, R::align));
+    CHECK (m.session()->tracks[(size_t) t].ap[0].fc == Approx (430.0));
+    // out-of-range values are kept sane; a second band can be added and removed
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::setAllPass (S, t, 1, 1e9, 0.0); }, R::align));
+    {
+        const auto& tr = m.session()->tracks[(size_t) t];
+        REQUIRE (tr.ap.size() == 2);
+        CHECK (tr.ap[1].fc <= 0.45 * SR); CHECK (tr.ap[1].Q >= 0.3);
+    }
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::removeAllPass (S, t, 1); }, R::align));
+    CHECK (m.session()->tracks[(size_t) t].ap.size() == 1);
+    // switched off: nothing plays; back on: the hand-set band again
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::setPhaseEq (S, t, false); }, R::align));
+    CHECK (m.session()->tracks[(size_t) t].ap.empty());
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::setPhaseEq (S, t, true); }, R::align));
+    CHECK (m.session()->tracks[(size_t) t].ap[0].fc == Approx (430.0));
+    // undo steps back through it; Reset returns to what was measured
+    m.undo();
+    CHECK (m.session()->tracks[(size_t) t].ap.empty());
+    m.redo();
+    REQUIRE (m.change ([t] (ld::hl::Session& S) { ld::hl::resetMic (S, t); }, R::align));
+    {
+        const auto& tr = m.session()->tracks[(size_t) t];
+        CHECK_FALSE (tr.manualAp);
+        REQUIRE (tr.ap.size() == measured.size());
+        for (size_t i = 0; i < measured.size(); ++i) CHECK (tr.ap[i].fc == Approx (measured[i].fc));
+    }
+    pumpUntilIdle (m);
+}
+
 TEST_CASE ("Views: Hit, Velocity layer and All layers show the right hits and never lose the selected one")
 {
     // 3 velocities x 4 round robins, layer by layer

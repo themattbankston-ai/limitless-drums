@@ -48,6 +48,10 @@ void nudgeLag (Session&, int t, int quarterSamples);        ///< negative: earli
 void setLag (Session&, int t, double lag);                  ///< by hand (snap to hottest, a drag)
 void flipMic (Session&, int t);
 void setPhaseEq (Session&, int t, bool on);
+/** The phase EQ by hand: sets band `band` (0 or 1; one past the end adds it) to fc Hz and Q. From then on the mic keeps
+    these bands through every nudge, flip and re-measure, until resetMic. fc is kept in 20 Hz..0.45 x the rate, Q in 0.3..8. */
+void setAllPass (Session&, int t, int band, double fc, double Q);
+void removeAllPass (Session&, int t, int band);
 void setLrLock (Session&, int t, bool on);
 void resetMic (Session&, int t);                            ///< back to measured
 /** The overlay's heat: how well the mic sums with what it lines up to around each delay near the current one

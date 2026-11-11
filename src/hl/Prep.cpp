@@ -406,6 +406,7 @@ void resolvePhase (Session& S)
     {
         auto& tr = S.tracks[(size_t) t];
         tr.lag = mics[(size_t) t].lag; tr.pol = mics[(size_t) t].pol; tr.ap = mics[(size_t) t].ap;
+        if (tr.manualAp) tr.ap = tr.apOn && t != S.refIdx ? tr.userAp : std::vector<AllPass> {};   // bands set by hand outlive the measured ones
         tr.autoAsis = tr.autoResult ? tr.autoResult->asis : NAN;
     }
 }
@@ -559,12 +560,33 @@ void flipMic (Session& S, int t)
 }
 
 void setPhaseEq (Session& S, int t, bool on) { S.tracks[(size_t) t].apOn = on; resolvePhase (S); }
+void setAllPass (Session& S, int t, int band, double fc, double Q)
+{
+    if (t < 0 || t >= (int) S.tracks.size() || t == S.refIdx || band < 0 || band > 1) return;
+    auto& tr = S.tracks[(size_t) t];
+    if (! tr.manualAp) { tr.userAp = tr.ap; tr.manualAp = true; }   // start from what's playing
+    if (band > (int) tr.userAp.size()) return;
+    if (band == (int) tr.userAp.size()) tr.userAp.push_back ({});
+    tr.userAp[(size_t) band] = { std::clamp (fc, 20.0, 0.45 * S.sr), std::clamp (Q, 0.3, 8.0) };
+    tr.apOn = true;
+    resolvePhase (S);
+}
+
+void removeAllPass (Session& S, int t, int band)
+{
+    if (t < 0 || t >= (int) S.tracks.size() || band < 0) return;
+    auto& tr = S.tracks[(size_t) t];
+    if (! tr.manualAp) { tr.userAp = tr.ap; tr.manualAp = true; }
+    if (band < (int) tr.userAp.size()) tr.userAp.erase (tr.userAp.begin() + band);
+    resolvePhase (S);
+}
+
 void setLrLock (Session& S, int t, bool on) { S.tracks[(size_t) t].lrLock = on; resolvePhase (S); }
 
 void resetMic (Session& S, int t)
 {
     auto& tr = S.tracks[(size_t) t];
-    tr.manualLag = false; tr.manualPol = false; tr.apOn = true; tr.amount = 1;
+    tr.manualLag = false; tr.manualPol = false; tr.apOn = true; tr.amount = 1; tr.manualAp = false; tr.userAp.clear();
     resolvePhase (S);
 }
 

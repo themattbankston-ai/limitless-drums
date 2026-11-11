@@ -3,6 +3,7 @@
 // alignment and tuning at once, levels and the clean-up/tone render in the background while playback carries on).
 #include "HitsView.h"
 #include "HitsLogic.h"
+#include <complex>
 #include "Style.h"
 #include "hl/Prep.h"
 #include "hl/Tune.h"
@@ -24,7 +25,9 @@ const std::map<std::string, Range>& ranges()
         { "shape.atk", { -1, 1 } }, { "shape.dec", { -1, 1 } }, { "shape.sus", { -1, 1 } }, { "shape.rel", { -1, 1 } }, { "shape.match", { 0, 1 } },
         { "ref.amt", { 0, 1 } }, { "ref.env", { 0, 1 } },
         { "clean.db", { 0, 36 } }, { "lev.step", { 0.5, 6 } }, { "lev.range", { 6, 48 } }, { "lev.offset", { -24, 6 } }, { "tune.cents", { -100, 100 } },
-        { "exp.ceil", { -6, 0 } } };
+        { "exp.ceil", { -6, 0 } },
+        // Align details: arrival in ms; band frequencies as log2 (Hz), 20 Hz .. 8 kHz; Q
+        { "al.lag", { -10, 60 } }, { "al.f0", { 4.3219, 12.9658 } }, { "al.q0", { 0.3, 8 } }, { "al.f1", { 4.3219, 12.9658 } }, { "al.q1", { 0.3, 8 } } };
     return r;
 }
 
@@ -76,6 +79,15 @@ double HitsView::sliderValue (const std::string& key) const
     const bool mic = selMic >= 0 && selMic < (int) S->tracks.size();
     const hl::ToneMoves& T = mic ? S->tracks[(size_t) selMic].strip.tone : (const hl::ToneMoves&) S->tone;
     const hl::ShapeMoves& H = mic ? S->tracks[(size_t) selMic].strip.shape : S->shape;
+    if (key.rfind ("al.", 0) == 0)
+    {
+        if (! mic) return 0;
+        const auto& tr = S->tracks[(size_t) selMic];
+        const size_t b = key.back() == '1' ? 1 : 0;
+        if (key == "al.lag") return tr.lag / S->sr * 1000.0;
+        if (b >= tr.ap.size()) return key[3] == 'f' ? std::log2 (200.0) : 0.7;
+        return key[3] == 'f' ? std::log2 (std::max (1.0, tr.ap[b].fc)) : tr.ap[b].Q;
+    }
     if (key == "tone.match") return T.match;
     if (key == "tone.bright") return T.bright;
     if (key == "tone.crack") return T.crack;
@@ -110,6 +122,23 @@ void HitsView::setSliderValue (const std::string& key, double v)
     v = std::clamp (v, it->second.lo, it->second.hi);
     const int mic = selMic;
     using R = SampleModel::Redo;
+    if (key.rfind ("al.", 0) == 0)
+    {
+        // arrival and the phase EQ's bands, by hand, on the selected mic: every hit of it
+        if (! model.change ([key, v, mic] (hl::Session& S)
+            {
+                if (mic < 0 || mic >= (int) S.tracks.size()) return;
+                const auto& tr = S.tracks[(size_t) mic];
+                const int b = key.back() == '1' ? 1 : 0;
+                if (key == "al.lag") hl::setLag (S, mic, v * S.sr / 1000.0);
+                else if (b <= (int) tr.ap.size())
+                {
+                    const hl::AllPass cur = b < (int) tr.ap.size() ? tr.ap[(size_t) b] : hl::AllPass { 200, 0.7 };
+                    hl::setAllPass (S, mic, b, key[3] == 'f' ? std::pow (2.0, v) : cur.fc, key[3] == 'q' ? v : cur.Q);
+                }
+            }, R::align, key)) setStatus ("Auto Prep is running: try again when it finishes.");
+        return;
+    }
     const R redo = key.rfind ("lev.", 0) == 0 || key == "exp.ceil" ? R::levels : key == "tune.cents" ? R::tune : R::mix;
     const bool ok = model.change ([key, v, mic] (hl::Session& S)
     {
@@ -196,6 +225,9 @@ std::string HitsView::valueText (const std::string& key, double v)
     const auto r = ranges().at (key);
     if (key == "clean.db" || key.rfind ("lev.", 0) == 0 || key == "exp.ceil") return fmt (key == "lev.offset" || key == "exp.ceil" ? "%+.1f dB" : "%.1f dB", v);
     if (key == "tune.cents") return fmt ("%+.0f ct", v);
+    if (key == "al.lag") return fmt ("%.2f ms", v);
+    if (key.rfind ("al.f", 0) == 0) return fmt ("%.0f Hz", std::pow (2.0, v));
+    if (key.rfind ("al.q", 0) == 0) return fmt ("%.2f", v);
     return pct (v, r.lo < 0 && r.hi > 0);
 }
 
@@ -222,13 +254,28 @@ void HitsView::knobCtl (Canvas& c, float cx, float cy, float d, const std::strin
 
 void HitsView::commitEdit (bool keep)
 {
-    if (keep && ! editKey.empty() && ! editText.empty())
+    if (keep && ! editText.empty() && (editKey.rfind ("mon:", 0) == 0 || editKey.rfind ("pan:", 0) == 0))
     {
-        const auto r = ranges().at (editKey);
-        const bool asPercent = valueText (editKey, 0).find ("dB") == std::string::npos && editKey != "tune.cents";   // shown x100
+        // a track's monitor gain (dB) or pan (-100 left .. 100 right)
+        const int t = std::stoi (editKey.substr (4));
         char* end = nullptr;
         const double typed = std::strtod (editText.c_str(), &end);
-        if (end != editText.c_str() && std::isfinite (typed)) setSliderValue (editKey, std::clamp (asPercent ? typed / 100 : typed, r.lo, r.hi));
+        if (end == editText.c_str() || ! std::isfinite (typed)) setStatus ("That isn't a number.");
+        else if (t >= 0 && t < (int) model.tracks().size())
+        {
+            if (editKey[0] == 'm') model.setMonDb (t, (float) std::clamp (typed, -90.0, 6.0));
+            else model.setPan (t, (float) std::clamp (typed / 100.0, -1.0, 1.0));
+        }
+    }
+    else if (keep && ! editKey.empty() && ! editText.empty())
+    {
+        const auto r = ranges().at (editKey);
+        const bool asIs = editKey == "tune.cents" || editKey == "al.lag" || editKey.rfind ("al.q", 0) == 0 || valueText (editKey, 0).find ("dB") != std::string::npos;
+        char* end = nullptr;
+        const double typed = std::strtod (editText.c_str(), &end);
+        // typed in the units shown: Hz for a band's frequency, percent for the amounts, otherwise the number itself
+        const double v = editKey.rfind ("al.f", 0) == 0 ? std::log2 (std::max (1.0, typed)) : asIs ? typed : typed / 100;
+        if (end != editText.c_str() && std::isfinite (typed)) setSliderValue (editKey, std::clamp (v, r.lo, r.hi));
         else setStatus ("That isn't a number.");
     }
     editKey.clear(); editText.clear();
@@ -399,6 +446,10 @@ void HitsView::drawAlign (Canvas& c)
         add (x, top + 6, bw, 26, "nudge:" + std::to_string (nq[i]));
         x += bw + 4;
     }
+    x += 8;
+    button (c, x, top + 6, 70, 26, "Details", alignDetails, tok::coralFill);
+    add (x, top + 6, 70, 26, "aldetails");
+    x += 70;
     barEnd = x;
     // rows
     const float colW = 380, lx = headW, lw = std::max (200.0f, width() - headW - colW), y0 = top + sbH;
@@ -509,8 +560,9 @@ void HitsView::drawAlign (Canvas& c)
             }
         }
         c.setClampBounds (0, rowsTop, width(), rowsBot - rowsTop);
-        // the columns
+        // the columns (the details panel takes their place when it's open)
         const float cx = lx + lw;
+        if (alignDetails) continue;
         c.setColor (bar2); c.fill (cx, y, colW, rowH - 1);
         std::string stTxt = isLead ? "LEAD" : tr.alignTo == "none" ? "AS RECORDED" : tr.manualLag ? "BY HAND" : "ALIGNED";
         const unsigned stCol = isLead ? accent : tr.alignTo == "none" ? 0xff8a8a90 : 0xff4fc28a;
@@ -546,8 +598,14 @@ void HitsView::drawAlign (Canvas& c)
         }
     }
     c.setClampBounds (0, 0, width(), height());
+    c.setClampBounds (0, 0, width(), height());
     clipHits (firstHit, rowsTop, rowsBot);
     columnHeads();   // over any row scrolled part-way under them
+    if (alignDetails)
+    {
+        c.setColor (ruler); c.fill (lx + lw, y0, colW, 24);
+        drawAlignDetails (c, lx + lw, rowsTop, colW, rowsBot - rowsTop);
+    }
     if (T * rowH > rowsBot - rowsTop)
     {
         const float vh = rowsBot - rowsTop, th = vh * vh / (T * rowH);
@@ -563,6 +621,101 @@ void HitsView::drawAlign (Canvas& c)
     c.setColor (0xff4f9be8); c.fill (320, ly + 16, 22, 2);
     txt (c, "Where it sits now: shift and polarity (the phase EQ is heard, not drawn)", bodyFont (11), ink2, 348, ly, 420, 34);
     txt (c, playMode == 0 ? "Sums: \xe2\x88\x92" "100 fights, +100 adds fully. Tab: next hit." : "Faint: other hits in view (own peak). Applies to every hit.", bodyFont (11), ink3, width() - 350, ly, 336, 34, visage::Font::kRight);
+}
+
+/** Align's details for the selected mic, beside the lanes: arrival, polarity and the phase EQ's real bands, and the
+    phase the implemented filters actually have. Everything here applies to every hit of that mic. */
+void HitsView::drawAlignDetails (Canvas& c, float x, float y, float w, float h)
+{
+    const auto* S = model.session();
+    if (! S || selMic < 0 || selMic >= (int) S->tracks.size()) return;
+    const auto& tr = S->tracks[(size_t) selMic];
+    c.setColor (tok::panel); c.fill (x, y, w, h);
+    c.setColor (tok::hairline); c.fill (x, y, 1, h);
+    const float px = x + 16, pw = w - 32;
+    float yy = y + 10;
+    txt (c, model.tracks()[(size_t) selMic].name, boldFont (tok::tTitle), tok::ink, px, yy, pw - 60, 22);
+    txt (c, tr.manualLag || tr.manualAp || tr.manualPol ? "BY HAND" : "AS MEASURED", boldFont (tok::tCaption), tr.manualLag || tr.manualAp || tr.manualPol ? tok::coralInk : tok::mintInk, px, yy + 2, pw, 18, visage::Font::kRight);
+    yy += 26;
+    scopeNote (c, px, yy, pw, "Applies to every hit of this mic, whatever is on show.");
+    yy += 26;
+    const float kd = 55, col = pw / 5;
+    knobCtl (c, px + col * 0.5f, yy + 18 + kd / 2, kd, "Arrival", "al.lag");
+    // polarity and the phase EQ switch beside it
+    toggleSwitch (c, px + col * 1.2f, yy + 22, tr.pol < 0, "Polarity inverted", 130);
+    add (px + col * 1.2f, yy + 18, 170, 28, "flipm:" + std::to_string (selMic));
+    const bool apOn = tr.apOn && ! tr.ap.empty();
+    toggleSwitch (c, px + col * 1.2f, yy + 54, tr.apOn, "Phase EQ", 130);
+    add (px + col * 1.2f, yy + 50, 170, 28, "apsw:" + std::to_string (selMic));
+    txt (c, "Arrival: how much earlier the mic is played.", bodyFont (tok::tCaption), tok::ink3, px, yy + 18 + kd + 24, pw, 14);
+    yy += 18 + kd + 44;
+    // the bands that really exist
+    txt (c, "PHASE EQ BANDS", boldFont (tok::tCaption), tok::ink3, px, yy, 200, 16);
+    if (tr.ap.size() < 2 && tr.apOn)
+    {
+        c.setColor (tok::control); c.roundedRectangle (px + pw - 84, yy - 3, 84, 20, 10);
+        txt (c, "Add a band", bodyFont (tok::tCaption), tok::ink, px + pw - 84, yy - 3, 84, 20, visage::Font::kCenter);
+        add (px + pw - 84, yy - 3, 84, 20, "apadd:0");
+    }
+    yy += 20;
+    if (tr.ap.empty())
+    {
+        txt (c, tr.apOn ? "None on this mic: measuring didn't find one that helps." : "Switched off for this mic.", bodyFont (tok::tSmall), tok::ink2, px, yy + 8, pw, 18);
+        yy += 40;
+    }
+    else
+    {
+        for (size_t b = 0; b < tr.ap.size() && b < 2; ++b)
+        {
+            const float bx = px + (float) b * pw / 2;
+            knobCtl (c, bx + col * 0.6f, yy + 18 + kd / 2, kd, b == 0 ? "Band 1" : "Band 2", b == 0 ? "al.f0" : "al.f1");
+            knobCtl (c, bx + col * 1.75f, yy + 18 + kd / 2, kd, "Q", b == 0 ? "al.q0" : "al.q1");
+            txt (c, "remove", bodyFont (tok::tCaption), tok::ink3, bx + col * 0.6f - 30, yy + 18 + kd + 26, 60, 14, visage::Font::kCenter);
+            add (bx + col * 0.6f - 30, yy + 18 + kd + 26, 60, 14, "aprem:" + std::to_string (b));
+        }
+        yy += 18 + kd + 46;
+    }
+    // the phase of the filters as implemented (the same coefficients the audio path uses), wrapped to +-180 degrees
+    const float gy = yy + 18, gh = y + h - gy - 22, gx = px + 30, gw = pw - 30;
+    if (gh < 50) return;
+    txt (c, "Phase of the phase EQ as it runs (degrees, wrapped)", bodyFont (tok::tCaption), tok::ink3, px, yy, pw, 14);
+    c.setColor (tok::lane); c.fill (gx, gy, gw, gh);
+    for (int d = -180; d <= 180; d += 90)
+    {
+        const float ly2 = gy + gh * (0.5f - d / 360.0f);
+        c.setColor (d == 0 ? tok::divider : 0xff222225); c.fill (gx, ly2, gw, 1);
+        txt (c, std::to_string (d), monoFont (9), tok::ink3, px - 4, ly2 - 7, 30, 14, visage::Font::kRight);
+    }
+    const double fLo = 20, fHi = 20000;
+    for (double f : { 100.0, 1000.0, 10000.0 })
+    {
+        const float fx = gx + gw * (float) (std::log (f / fLo) / std::log (fHi / fLo));
+        c.setColor (0xff222225); c.fill (fx, gy, 1, gh);
+        txt (c, f >= 1000 ? fmt ("%.0fk", f / 1000) : fmt ("%.0f", f), monoFont (9), tok::ink3, fx - 20, gy + gh + 2, 40, 14, visage::Font::kCenter);
+    }
+    if (apOn)
+    {
+        c.setColor (tok::coral);
+        float prev = 0; bool have = false;
+        for (int i = 0; i < (int) gw; ++i)
+        {
+            const double f = fLo * std::pow (fHi / fLo, (double) i / gw);
+            if (f >= S->sr / 2) break;
+            std::complex<double> H (1, 0);
+            const std::complex<double> z1 = std::polar (1.0, -2 * M_PI * f / S->sr), z2 = z1 * z1;
+            for (auto& a : tr.ap)
+            {
+                if (a.fc <= 0 || a.fc >= S->sr / 2) continue;
+                const double w0 = 2 * M_PI * a.fc / S->sr, al = std::sin (w0) / (2 * std::max (0.05, a.Q)), cw = std::cos (w0), a0 = 1 + al;
+                const double b0 = (1 - al) / a0, b1 = -2 * cw / a0;
+                H *= (b0 + b1 * z1 + z2) / (1.0 + b1 * z1 + b0 * z2);
+            }
+            const float deg = (float) (std::arg (H) * 180 / M_PI), py = gy + gh * (0.5f - deg / 360.0f);
+            if (have && std::abs (py - prev) < gh * 0.5f) c.fill (gx + i, std::min (prev, py), 1.5f, std::abs (py - prev) + 1.5f);   // no line across a wrap
+            prev = py; have = true;
+        }
+    }
+    else txt (c, "flat: no phase EQ on this mic", bodyFont (tok::tSmall), tok::ink3, gx, gy, gw, gh, visage::Font::kCenter);
 }
 
 // ------------------------------------------------------------------------------------------------ 4 Tune
@@ -660,7 +813,9 @@ void HitsView::drawTune (Canvas& c)
     knobCtl (c, sx + 16 + tok::knobLg / 2 + 6, y + 22 + tok::knobLg / 2, tok::knobLg, "Fine tune", "tune.cents");
     txt (c, "Varispeed, as a sampler does: pitch and length", bodyFont (11), ink3, sx + 110, y + 34, sideW - 126, 16);
     txt (c, "move together. Best-quality sinc resampling.", bodyFont (11), ink3, sx + 110, y + 50, sideW - 126, 16);
-    y += 124;
+    y += 110;
+    scopeNote (c, sx + 16, y, sideW - 32, S->tune.mode == "rr" ? "Each hit gets its own ratio, the same on every mic." : "One ratio for the whole drum, on every mic.");
+    y += 28;
     if (selHit >= 0 && selHit < N && std::isfinite (ti->f[(size_t) selHit]))
     {
         txt (c, "Hit " + std::to_string (selHit + 1), boldFont (12), ink, sx + 16, y, 200, 20); y += 24;
@@ -898,6 +1053,8 @@ void HitsView::drawLevel (Canvas& c)
         for (int i = 0; i < 3; ++i) knobCtl (c, sx + 16 + col * (i + 0.5f), y + 22 + kd / 2, kd, ks[i].first, ks[i].second);
         y += 22 + kd + 38;
     }
+    scopeNote (c, sx + 16, y, sideW - 32, S->lev.mode == "linked" ? "Applies to every hit, the mics moving together." : "Applies to every hit, each mic on its own.");
+    y += 26;
     double peakMax = -100;
     for (double p : L->peakAfter) peakMax = std::max (peakMax, p);
     txt (c, std::isfinite (L->peakMax) ? fmt ("Loudest hit after levelling: %.1f dBFS", L->peakMax + L->trimDb) : std::string(), bodyFont (12), ink2, sx + 16, y, 328, 20);
@@ -1007,6 +1164,10 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
     if (has ("scope:")) { selMic = arg() - 1; if (selMic >= 0) viewMic = selMic; return true; }
     if (has ("row:")) { if (step == 2) selMic = arg(); else viewMic = arg(); return true; }   // off Align, a row only changes what's shown
     if (has ("units:")) { alignUnits = arg(); return true; }
+    if (has ("apsw:")) { const int t = arg(); model.change ([t] (hl::Session& S) { hl::setPhaseEq (S, t, ! S.tracks[(size_t) t].apOn); }, R::align); return true; }
+    if (id == "aldetails") { alignDetails = ! alignDetails; return true; }
+    if (has ("apadd:")) { const int t = selMic; model.change ([t] (hl::Session& S) { if (t >= 0 && t < (int) S.tracks.size()) hl::setAllPass (S, t, (int) S.tracks[(size_t) t].ap.size(), 200, 0.7); }, R::align); return true; }
+    if (has ("aprem:")) { const int t = selMic, b = arg(); model.change ([t, b] (hl::Session& S) { hl::removeAllPass (S, t, b); }, R::align); return true; }
     if (has ("lead:"))
     {
         const int t = arg();

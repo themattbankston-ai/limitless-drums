@@ -47,9 +47,21 @@ clear). No change to what any control does to the sound. Screens: docs/gui/2026-
 Evidence: unit test of view membership and thinning (604 assertions with the Hits logic), screenshots of an
 8 x 5 snare at 1100 x 700. Screens: docs/gui/2026-11-10-three-views-1100x700.png.
 
+## Added after that: Align details, and the first engine addition (a phase EQ band set by hand)
+- "Details" on Align opens a panel beside the lanes for the selected mic: Arrival knob, polarity and phase EQ
+  switches, a knob pair (frequency, Q) for each band that really exists, add/remove a band, and the phase of the
+  filters as they run, computed from the same coefficients the audio path uses (degrees, wrapped).
+- ENGINE CHANGE (new capability, nothing existing changes): `hl::setAllPass` / `removeAllPass`. A band set by hand
+  is kept through every nudge, flip and re-measure until Reset; mics never touched by hand resolve exactly as
+  before. Regression test: the band reaches the plugin, survives a nudge and a flip, is clamped to a sane range,
+  switches off and on, undoes, and Reset returns to the measured bands (30 assertions).
+- Typed entry for each track's monitor gain (dB) and pan (-100..100); scope notes on Tune and Level.
+Evidence: the regression test, the full suite, a scripted run at 1100 x 700 (opened Details, added a band,
+typed +3.5 dB on a fader). Not yet listened to on real drums. Screen: docs/gui/2026-11-10-align-details.png.
+
 ## UI-only work still to do
-- Expandable Tune/Align details panel; scope notes on Tune, Level and Align; "Assign layer / round robin" naming on Hits.
-- Typed entry for the track faders' gain and pan; renaming tracks; audition modes in a compact menu.
+- A details panel for Tune; "Assign layer / round robin" naming on Hits.
+- Renaming tracks.
 - Keyboard and VoiceOver semantics (SA13) — waiting on Matt's go-ahead.
 
 ## Needs measured DSP work (not started; planned as its own versioned change)

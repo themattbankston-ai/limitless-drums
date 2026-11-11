@@ -64,6 +64,8 @@ private:
 
     int step = 1;                      ///< 0 Setup .. 7 Export
     int alignUnits = 0;               ///< ms, samples, feet
+    bool alignDetails = false;        ///< the details panel beside the Align lanes (the selected mic's arrival, polarity, phase EQ)
+    void drawAlignDetails (visage::Canvas&, float x, float y, float w, float h);
     int selMic = -1;                  ///< the mic the Align, Tone and Level steps act on (-1: all / the lead)
     float exportProgress = -1;
     float barEnd = 0;

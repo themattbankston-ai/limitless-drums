@@ -554,14 +554,19 @@ void HitsView::drawTrackHeader (Canvas& c, int t, float y, float h, bool withPol
     c.setColor (0xff6a6a70); c.fill (kx, yb + 3, 1, 12);
     add (fx - 6, yb - 2, fw + 12, 22, "mon:" + std::to_string (t));
     const float gx = fx + fw + 8;
-    txt (c, db <= -90 ? std::string ("-inf") : draw::fmt ("%+.1f", db), monoFont (tok::tSmall), ink, gx, yb, 40, 18, visage::Font::kRight);
+    const std::string monKey = "mon:" + std::to_string (t), panKey = "pan:" + std::to_string (t);
+    if (editKey == monKey) { c.setColor (tok::lane); c.roundedRectangle (gx - 2, yb, 44, 18, 3); focusRing (c, gx - 2, yb, 44, 18); }
+    txt (c, editKey == monKey ? editText + "|" : db <= -90 ? std::string ("-inf") : draw::fmt ("%+.1f", db), monoFont (tok::tSmall), ink, gx, yb, 40, 18, visage::Font::kRight);
+    add (gx - 2, yb, 44, 18, "ed:" + monKey);   // click the number to type one
     const float px = gx + 48, pw = 34, p = model.pan (t);
     c.setColor (tok::lane); c.roundedRectangle (px, yb + 7, pw, 4, 2);
     c.setColor (tok::mintFill); c.fill (p >= 0 ? px + pw / 2 : px + pw / 2 * (1 + p), yb + 7, pw / 2 * std::abs (p), 4);
     c.setColor (0xffd8d8da); c.roundedRectangle (px + pw / 2 * (1 + p) - 3, yb + 2, 6, 14, 2);
     const std::string ps = std::abs (p) < 0.01f ? "C" : (p < 0 ? "L" : "R") + std::to_string ((int) std::lround (std::abs (p) * 100));
-    txt (c, ps, monoFont (tok::tCaption), ink2, px + pw + 4, yb, 26, 18);
-    add (px - 4, yb - 2, pw + 34, 22, "pan:" + std::to_string (t));
+    if (editKey == panKey) { c.setColor (tok::lane); c.roundedRectangle (px + pw + 2, yb, 30, 18, 3); focusRing (c, px + pw + 2, yb, 30, 18); }
+    txt (c, editKey == panKey ? editText + "|" : ps, monoFont (tok::tCaption), ink2, px + pw + 4, yb, 26, 18);
+    add (px - 4, yb - 2, pw + 6, 22, panKey);
+    add (px + pw + 2, yb, 30, 18, "ed:" + panKey);
     // meter
     c.setColor (well); c.fill (lx - 14, y, 14, h - 1);
     const auto m = model.meter (t);
@@ -629,6 +634,7 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
         for (size_t i = 0; i < model.hits().size(); ++i) if (model.hits()[i].vel == arg()) c.push_back ((int) i);
         if (! c.empty()) selectHit (c[(size_t) juce::Random::getSystemRandom().nextInt ((int) c.size())], true);
     }
+    else if (id.rfind ("ed:", 0) == 0) { editKey = id.substr (3); editText.clear(); }
     else if (id == "clearsolo") { for (int t = 0; t < (int) model.tracks().size(); ++t) if (model.solo (t)) model.setSolo (t, false); }
     else if (id.rfind ("solo:", 0) == 0) model.setSolo (arg(), ! model.solo (arg()));
     else if (id.rfind ("mute:", 0) == 0) model.setMute (arg(), ! model.mute (arg()));

@@ -93,6 +93,7 @@ struct SessionTrack
     // alignment state (Hitline's track fields)
     double amount = 1;
     bool apOn = true, manualLag = false, manualPol = false;
+    bool manualAp = false; std::vector<AllPass> userAp;   ///< the phase EQ set by hand (sample build): kept through every re-resolve until Reset
     std::optional<AlignResult> autoResult, grp;
     std::optional<int> proPol;
     std::string label;                ///< "24-bit" etc.
