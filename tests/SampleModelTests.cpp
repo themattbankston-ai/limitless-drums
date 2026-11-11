@@ -2,11 +2,14 @@
 // overlapping-export case) and the review that followed (CR01, CR03), plus the Hits screen's target and range logic (SA09, SA11). A small synthetic take (three mics, four hits) so it runs anywhere, CI included.
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <complex>
 #include "TestSignals.h"
 #include "samples/SampleModel.h"
 #include "core/Session.h"
 #include "hl/Session.h"
 #include "hl/Align.h"
+#include "hl/Shape.h"
+#include "hl/Prep.h"
 #include "hl/Detect.h"
 #include "samples/ui/HitsLogic.h"
 #include <cmath>
@@ -619,4 +622,180 @@ TEST_CASE ("Sample model M1: closing a take while it renders waits for the work,
     }   // destroyed mid-render
     for (int k = 0; k < 50; ++k) juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
     CHECK_FALSE (landed);
+}
+
+// ------------------------------------------------------------------------------------------------ reference match
+// Fixtures for the reference Tone match (hl::loadReference), ahead of any change to it. A one-mic take with noise
+// clean-up off, so the "source" the match measures is the recording itself, and references built from that same
+// recording with a known difference. Cases the current engine fails are marked [!shouldfail]: they document the
+// defect and start failing the suite (as "unexpectedly passed") once it's fixed, so the tag gets removed then.
+namespace
+{
+void writeWav (const juce::File& f, const std::vector<std::vector<float>>& chans, double sr = SR)
+{
+    f.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), sr, (unsigned) chans.size(), 32, {}, 0));
+    REQUIRE (w != nullptr);
+    std::vector<const float*> p;
+    for (auto& c : chans) p.push_back (c.data());
+    w->writeFromFloatArrays (p.data(), (int) chans.size(), (int) chans[0].size());
+}
+
+struct RefFixture
+{
+    SampleModel m { ldtest::engine() };
+    juce::File dir;
+    std::vector<float> src;
+    RefFixture (const juce::String& name)
+    {
+        dir = makeTake ("ref_" + name, 1);
+        REQUIRE (m.open ({ dir }).isEmpty());
+        prep (m);
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.dnOn = false; }, SampleModel::Redo::mix));
+        pumpUntilIdle (m);
+        const auto b = readWav (dir.getChildFile ("SNARE_CENTER_TOP_V01_RR04.wav"));
+        src.assign (b.getReadPointer (0), b.getReadPointer (0) + b.getNumSamples());
+    }
+    ld::hl::Reference match (const std::vector<std::vector<float>>& chans, double sr = SR)
+    {
+        const auto f = dir.getSiblingFile (dir.getFileName() + "_reference.wav");
+        writeWav (f, chans, sr);
+        REQUIRE (m.mixRender() != nullptr);
+        return ld::hl::loadReference (*m.session(), *m.mixRender(), f);
+    }
+    static std::vector<float> filtered (std::vector<float> x, const juce::IIRCoefficients& c, int passes = 1)
+    {
+        for (int p = 0; p < passes; ++p) { juce::IIRFilter f; f.setCoefficients (c); f.processSamples (x.data(), (int) x.size()); }
+        return x;
+    }
+};
+
+/** Largest |curve| over the third-octave bands between lo and hi Hz. */
+double worst (const ld::hl::Reference& R, double lo = 0, double hi = 1e9)
+{
+    const auto& B = ld::hl::bands3();
+    double w = 0;
+    for (size_t j = 0; j < B.size() && j < R.curve.size(); ++j) if (B[j] >= lo && B[j] <= hi) w = std::max (w, std::abs (R.curve[j]));
+    return w;
+}
+std::string show (const ld::hl::Reference& R)
+{
+    const auto& B = ld::hl::bands3();
+    std::string s;
+    for (size_t j = 0; j < B.size() && j < R.curve.size(); ++j) s += juce::String (B[j], 0).toStdString() + ":" + juce::String (R.curve[j], 1).toStdString() + " ";
+    return s;
+}
+} // namespace
+
+TEST_CASE ("Reference match: the recording as its own reference asks for no change", "[refmatch][!shouldfail]")
+{
+    RefFixture fx ("identity");
+    const auto R = fx.match ({ fx.src });
+    REQUIRE (R.error.empty());
+    INFO (show (R));
+    CHECK (worst (R) <= 0.5);
+}
+
+TEST_CASE ("Reference match: a reference that is only quieter asks for the same curve as the loud one", "[refmatch]")
+{
+    // level alone must not colour the match (whatever the identity case's own error is, a gain change adds nothing)
+    RefFixture fx ("gain");
+    const auto loud = fx.match ({ fx.src });
+    auto q = fx.src;
+    for (auto& v : q) v *= 0.25f;   // -12 dB
+    const auto quiet = fx.match ({ q });
+    REQUIRE (quiet.error.empty());
+    REQUIRE (quiet.curve.size() == loud.curve.size());
+    double diff = 0;
+    for (size_t j = 0; j < loud.curve.size(); ++j) diff = std::max (diff, std::abs (loud.curve[j] - quiet.curve[j]));
+    INFO ("largest difference " << diff << " dB");
+    CHECK (diff <= 0.1);
+}
+
+TEST_CASE ("Reference match: a known broad EQ on the reference is recovered", "[refmatch]")
+{
+    RefFixture fx ("shelf");
+    const auto c = juce::IIRCoefficients::makeHighShelf (SR, 3000.0, 0.707, juce::Decibels::decibelsToGain (6.0));
+    const auto R = fx.match ({ RefFixture::filtered (fx.src, c) });
+    REQUIRE (R.error.empty());
+    INFO (show (R));
+    // the shelf's own response at each band centre, against the curve (both relative to the 200 Hz band, where the
+    // drum's energy is, since the match removes the overall level)
+    const auto& B = ld::hl::bands3();
+    auto shelfDb = [&] (double f)
+    {
+        const double w = 2 * M_PI * f / SR;
+        const std::complex<double> z1 = std::polar (1.0, -w), z2 = std::polar (1.0, -2 * w);
+        const auto& k = c.coefficients;   // b0 b1 b2 a1 a2 (a0 = 1)
+        return 20 * std::log10 (std::abs ((double) k[0] + (double) k[1] * z1 + (double) k[2] * z2) / std::abs (1.0 + (double) k[3] * z1 + (double) k[4] * z2));
+    };
+    size_t j200 = 0;
+    for (size_t j = 0; j < B.size(); ++j) if (std::abs (B[j] - 200) < std::abs (B[j200] - 200)) j200 = j;
+    double err = 0;
+    for (size_t j = 0; j < B.size() && j < R.curve.size(); ++j)
+        if (B[j] >= 100 && B[j] <= 12000) err = std::max (err, std::abs ((R.curve[j] - R.curve[j200]) - (shelfDb (B[j]) - shelfDb (B[j200]))));
+    INFO ("worst fit error " << err << " dB");
+    CHECK (err <= 2.0);   // third-octave bands, smoothed twice: the knee is blurred, the plateau must be right
+    CHECK (worst (R, 6000, 12000) >= 4.0);
+}
+
+TEST_CASE ("Reference match RM01: a stereo reference with one side inverted matches like its mono self", "[refmatch][!shouldfail]")
+{
+    RefFixture fx ("inverse");
+    const auto eq = RefFixture::filtered (fx.src, juce::IIRCoefficients::makeHighShelf (SR, 3000.0, 0.707, juce::Decibels::decibelsToGain (6.0)));
+    const auto mono = fx.match ({ eq });
+    auto inv = eq;
+    for (auto& v : inv) v = -v;
+    const auto wide = fx.match ({ eq, inv });   // L and R in opposite polarity: silent if averaged, a real recording if listened to
+    REQUIRE (mono.error.empty());
+    INFO ("mono: " << show (mono));
+    INFO ("L/-R: " << show (wide));
+    REQUIRE (wide.curve.size() == mono.curve.size());
+    double diff = 0;
+    for (size_t j = 0; j < mono.curve.size(); ++j) diff = std::max (diff, std::abs (mono.curve[j] - wide.curve[j]));
+    CHECK ((wide.error.empty() && diff <= 0.5));
+}
+
+TEST_CASE ("Reference match RM04: bands the reference has nothing in are left alone", "[refmatch][!shouldfail]")
+{
+    RefFixture fx ("weak");
+    // nothing above about 2 kHz (96 dB/octave), and 6 dB less of the drum's fundamental: the level difference is
+    // real below 2 kHz, and there is no evidence at all above it
+    auto ref = RefFixture::filtered (fx.src, juce::IIRCoefficients::makeLowPass (SR, 1500.0), 8);
+    ref = RefFixture::filtered (ref, juce::IIRCoefficients::makePeakFilter (SR, 185.0, 1.0, juce::Decibels::decibelsToGain (-6.0)));
+    const auto R = fx.match ({ ref });
+    REQUIRE (R.error.empty());
+    INFO (show (R));
+    CHECK (worst (R, 6000, 15000) <= 0.25);   // no boost or cut where the reference is silent
+}
+
+TEST_CASE ("Reference match RM03: the reference you audition is resampled cleanly", "[refmatch][!shouldfail]")
+{
+    RefFixture fx ("src");
+    // a 5 kHz tone decaying slowly, recorded at 44.1 kHz, auditioned in a 48 kHz session
+    const double rsr = 44100, f0 = 5000, decay = 3.0;
+    std::vector<float> tone ((size_t) (2.0 * rsr), 0.0f);
+    for (size_t i = 2000; i < tone.size(); ++i) { const double t = (double) (i - 2000) / rsr; tone[i] = (float) (0.5 * std::exp (-decay * t) * std::sin (2 * M_PI * f0 * t)); }
+    const auto R = fx.match ({ tone }, rsr);
+    REQUIRE (R.error.empty());
+    REQUIRE (! R.audio.empty());
+    const auto& y = R.audio[0];
+    REQUIRE (y.size() > (size_t) (0.7 * SR));
+    // undo the decay, fit a 5 kHz sine, and see what's left: a clean resample leaves almost nothing
+    double ss = 0, sc = 0, s2 = 0, c2 = 0, scx = 0, tot = 0;
+    const size_t a = (size_t) (0.1 * SR), b = (size_t) (0.6 * SR);
+    std::vector<double> z;
+    for (size_t i = a; i < b; ++i) z.push_back ((double) y[i] * std::exp (decay * (double) i / SR));
+    for (size_t i = 0; i < z.size(); ++i)
+    {
+        const double ph = 2 * M_PI * f0 * (double) i / SR, s = std::sin (ph), c = std::cos (ph);
+        ss += z[i] * s; sc += z[i] * c; s2 += s * s; c2 += c * c; scx += s * c; tot += z[i] * z[i];
+    }
+    const double det = s2 * c2 - scx * scx, A = (ss * c2 - sc * scx) / det, Bc = (sc * s2 - ss * scx) / det;
+    double res = 0;
+    for (size_t i = 0; i < z.size(); ++i) { const double ph = 2 * M_PI * f0 * (double) i / SR; const double e = z[i] - A * std::sin (ph) - Bc * std::cos (ph); res += e * e; }
+    const double db = 10 * std::log10 (res / std::max (1e-30, tot));
+    INFO ("what isn't the tone: " << db << " dB below it");
+    CHECK (db <= -50.0);
 }
