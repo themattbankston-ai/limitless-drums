@@ -122,14 +122,14 @@ public:
         {
             const auto f = fc.getResult();
             if (! f.existsAsFile() || ! model.session() || ! model.mixRender()) return;
-            auto R = hl::loadReference (*model.session(), *model.mixRender(), f);
+            auto R = hl::loadReference (*model.session(), *model.mixRender(), f, hl::kReferenceEngine);
             if (! R.error.empty() || R.curve.empty()) { view.setStatus ("Couldn't read that reference: " + R.error); return; }
             model.change ([R] (hl::Session& s)
             {
                 s.tone.hasRef = true; s.tone.refCurve = R.curve; if (s.tone.refAmt == 0) s.tone.refAmt = 0.6;
                 s.tone.hasRefEnv = R.hasEnv; s.tone.refEnv = R.env; if (R.hasEnv && s.tone.refEnvAmt == 0) s.tone.refEnvAmt = 0.5;
             }, SampleModel::Redo::mix);
-            view.setStatus ("Reference loaded: " + R.name + ".");
+            view.setStatus ("Reference loaded: " + R.name + " (" + std::to_string (R.hitsUsed) + (R.hitsUsed == 1 ? " hit" : " hits") + " measured).");
         });
     }
 

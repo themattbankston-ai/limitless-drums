@@ -4,6 +4,7 @@
 #include "Shape.h"
 #include "Wav.h"
 #include "Resolve.h"
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <algorithm>
 #include <future>
 #include <map>
@@ -690,16 +691,31 @@ std::string tuneAdvice (const Session& S)
 }
 
 // ------------------------------------------------------------------------------- the Mix step's reference
-Reference loadReference (const Session& S, const MixRender& M, const juce::File& f)
+Reference loadReference (const Session& S, const MixRender& M, const juce::File& f, int engine)
 {
-    Reference R; R.name = f.getFileName().toStdString();
+    Reference R; R.name = f.getFileName().toStdString(); R.engine = engine;
     const auto w = readWav (f);
     if (! w.error.empty() || w.channels.empty()) { R.error = w.error.empty() ? "no audio" : w.error; return R; }
+    const bool v2 = engine >= 2;
     const double sr = w.sampleRate;
+    const size_t nCh = w.channels.size();
     F32 m (w.channels[0].size(), 0.0f);
-    for (auto& c : w.channels) for (size_t i = 0; i < m.size() && i < c.size(); ++i) m[i] += c[i] / (float) w.channels.size();
+    std::vector<double> chPow (nCh, 0.0);
+    if (v2)
+    {
+        // detection and the envelope come from the strongest channel as recorded: nothing is summed, so nothing cancels
+        size_t strongest = 0;
+        for (size_t c = 0; c < nCh; ++c) { for (float v : w.channels[c]) chPow[c] += (double) v * v; if (chPow[c] > chPow[strongest]) strongest = c; }
+        if (! (chPow[strongest] > 0) || ! std::isfinite (chPow[strongest])) { R.error = "the reference is silent"; return R; }
+        m = w.channels[strongest];
+        m.resize (w.channels[0].size(), 0.0f);
+    }
+    else
+        for (auto& c : w.channels) for (size_t i = 0; i < m.size() && i < c.size(); ++i) m[i] += c[i] / (float) nCh;
     DetectOptions o; o.minGapMs = 200;
-    auto ons = detectHits (m, sr, o).onsets;
+    auto det = detectHits (m, sr, o);
+    if (v2) { o.thrDb = det.maxDb - 30; det = detectHits (m, sr, o); }   // every hit within 30 dB of the loudest
+    auto ons = det.onsets;
     if (ons.empty()) ons.push_back (0);
     const auto& B = bands3();
     auto median = [] (std::vector<double> v) -> double { if (v.empty()) return NAN; std::sort (v.begin(), v.end()); return v[v.size() / 2]; };
@@ -710,9 +726,26 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
     for (size_t k = 0; k < ons.size() && k < 12; ++k)
     {
         const double maxN = (double) ((k + 1 < ons.size() ? ons[k + 1] : (long) m.size()) - ons[k] + 64);
-        const auto b = bandSpec (m, ons[k], sr, maxN);
+        F64 b;
+        if (v2 && nCh > 1)
+        {
+            // each channel's spectrum, combined as power, weighted by how loud the channel is
+            double tw = 0;
+            F64 p (B.size(), 0.0);
+            for (size_t c = 0; c < nCh; ++c)
+            {
+                if (! (chPow[c] > 0)) continue;
+                const auto bc = bandSpec (w.channels[c], ons[k], sr, maxN);
+                for (size_t j = 0; j < B.size(); ++j) p[j] += chPow[c] * std::pow (10.0, bc[j] / 10);
+                tw += chPow[c];
+            }
+            for (size_t j = 0; j < B.size(); ++j) b.push_back (10 * std::log10 (p[j] / tw + 1e-30));
+        }
+        else
+            b = bandSpec (m, ons[k], sr, maxN);
         for (size_t j = 0; j < B.size(); ++j) theirs[j].push_back (b[j]);
         addEnv (envT, envStats (m, ons[k], sr, maxN));
+        ++R.hitsUsed;
     }
     // the sum of your mics on the hardest hits, after clean-up and before tone and shape
     std::vector<size_t> top;
@@ -738,17 +771,47 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
         for (int k = 0; k < 3; ++k) R.env[(size_t) k] = std::round (std::clamp (median (envT[(size_t) k]) - median (envM[(size_t) k]), -6.0, 6.0) * 100) / 100;
     }
     F64 U (B.size()), D (B.size());
+    std::vector<char> ok (B.size(), 0);   // engine 2: the bands there is evidence for
     for (size_t j = 0; j < B.size(); ++j)
     {
         U[j] = median (mine[j]); const double th = median (theirs[j]);
         D[j] = B[j] < 60 || B[j] > 15000 || ! (th > -80) || ! std::isfinite (U[j]) ? 0 : th - U[j];
+        ok[j] = B[j] >= 60 && B[j] <= 15000 && th > -60 && std::isfinite (U[j]) && U[j] > -80;
+        if (v2 && ! ok[j]) D[j] = 0;
     }
     double sw = 0, sd = 0;
-    for (size_t j = 0; j < B.size(); ++j) { const double e = std::pow (10.0, U[j] / 10); if (std::isfinite (e)) { sw += e; sd += e * D[j]; } }
+    for (size_t j = 0; j < B.size(); ++j)
+    {
+        if (v2 && ! ok[j]) continue;   // a band with no evidence doesn't pull the level either
+        const double e = std::pow (10.0, U[j] / 10); if (std::isfinite (e)) { sw += e; sd += e * D[j]; }
+    }
     const double mean = sw > 0 ? sd / sw : 0;
     F64 c (B.size());
-    for (size_t j = 0; j < B.size(); ++j) c[j] = B[j] < 60 || B[j] > 15000 ? 0 : D[j] - mean;
-    for (int it = 0; it < 2; ++it) { const auto o2 = c; for (size_t j = 1; j + 1 < B.size(); ++j) c[j] = 0.25 * o2[j - 1] + 0.5 * o2[j] + 0.25 * o2[j + 1]; }
+    for (size_t j = 0; j < B.size(); ++j) c[j] = (v2 ? ! ok[j] : (B[j] < 60 || B[j] > 15000)) ? 0 : D[j] - mean;
+    for (int it = 0; it < 2; ++it)
+    {
+        const auto o2 = c;
+        for (size_t j = 1; j + 1 < B.size(); ++j)
+        {
+            if (v2)
+            {
+                // smooth among the bands with evidence only, so a neutral neighbour isn't read as "0 dB wanted"
+                if (! ok[j]) continue;
+                double s2 = 0.5 * o2[j], ws = 0.5;
+                if (ok[j - 1]) { s2 += 0.25 * o2[j - 1]; ws += 0.25; }
+                if (ok[j + 1]) { s2 += 0.25 * o2[j + 1]; ws += 0.25; }
+                c[j] = s2 / ws;
+            }
+            else c[j] = 0.25 * o2[j - 1] + 0.5 * o2[j] + 0.25 * o2[j + 1];
+        }
+    }
+    if (v2)   // taper into the bands left alone: the last band with evidence moves half as far (of its capped value)
+    {
+        for (auto& v : c) v = std::clamp (v, -8.0, 8.0);
+        const auto o2 = c;
+        for (size_t j = 0; j < B.size(); ++j)
+            if (ok[j] && ((j > 0 && ! ok[j - 1]) || (j + 1 < B.size() && ! ok[j + 1]))) c[j] = 0.5 * o2[j];
+    }
     for (auto& v : c) v = std::round (std::clamp (v, -8.0, 8.0) * 100) / 100;
     R.curve = c;
     // its first hit, 1.6 s, at the session's rate
@@ -758,7 +821,28 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
     {
         const auto& src = w.channels[(size_t) std::min (ch, (int) w.channels.size() - 1)];
         F32 out ((size_t) std::max (0L, (long) std::floor (n / k)));
-        for (size_t i = 0; i < out.size(); ++i) out[i] = src[(size_t) std::min ((long) src.size() - 1, a + (long) jsRound ((double) i * k))];
+        if (v2 && std::abs (k - 1.0) > 1e-9 && ! out.empty())
+        {
+            // a windowed sinc, with the reference low-passed first when it has more bandwidth than the session
+            const long pad = 64, a0 = std::max (0L, a - pad), lead = a - a0;
+            F32 in (src.begin() + a0, src.begin() + std::min ((long) src.size(), a + n + pad));
+            if (k > 1.0)
+                for (int pass = 0; pass < 4; ++pass)
+                {
+                    juce::IIRFilter lp; lp.setCoefficients (juce::IIRCoefficients::makeLowPass (sr, 0.45 * S.sr));
+                    lp.processSamples (in.data(), (int) in.size());
+                }
+            in.resize (in.size() + 256, 0.0f);
+            const long skip = (long) std::llround ((double) lead / k);
+            juce::Interpolators::WindowedSinc rs;
+            const long lat = (long) std::llround ((double) rs.getBaseLatency() / k);   // the interpolator's own delay
+            F32 y ((size_t) (skip + lat) + out.size(), 0.0f);
+            const int room = (int) std::min ((double) y.size(), std::floor ((double) (in.size() - 128) / k));
+            rs.process (k, in.data(), y.data(), std::max (0, room));
+            for (size_t i = 0; i < out.size(); ++i) { const long q = (long) i + skip + lat; out[i] = q < (long) y.size() ? y[(size_t) q] : 0.0f; }
+        }
+        else
+            for (size_t i = 0; i < out.size(); ++i) out[i] = src[(size_t) std::min ((long) src.size() - 1, a + (long) jsRound ((double) i * k))];
         R.audio.push_back (std::move (out));
     }
     return R;

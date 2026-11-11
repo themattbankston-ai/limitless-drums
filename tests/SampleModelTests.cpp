@@ -625,10 +625,9 @@ TEST_CASE ("Sample model M1: closing a take while it renders waits for the work,
 }
 
 // ------------------------------------------------------------------------------------------------ reference match
-// Fixtures for the reference Tone match (hl::loadReference), ahead of any change to it. A one-mic take with noise
-// clean-up off, so the "source" the match measures is the recording itself, and references built from that same
-// recording with a known difference. Cases the current engine fails are marked [!shouldfail]: they document the
-// defect and start failing the suite (as "unexpectedly passed") once it's fixed, so the tag gets removed then.
+// Fixtures for the reference Tone match (hl::loadReference). A one-mic take with noise clean-up off, so the
+// "source" the match measures is the recording itself, and references built from that same recording with a known
+// difference. They run on engine 2 (the sample build's); the last case pins engine 1, which must never change.
 namespace
 {
 void writeWav (const juce::File& f, const std::vector<std::vector<float>>& chans, double sr = SR)
@@ -657,12 +656,12 @@ struct RefFixture
         const auto b = readWav (dir.getChildFile ("SNARE_CENTER_TOP_V01_RR04.wav"));
         src.assign (b.getReadPointer (0), b.getReadPointer (0) + b.getNumSamples());
     }
-    ld::hl::Reference match (const std::vector<std::vector<float>>& chans, double sr = SR)
+    ld::hl::Reference match (const std::vector<std::vector<float>>& chans, double sr = SR, int engine = ld::hl::kReferenceEngine)
     {
         const auto f = dir.getSiblingFile (dir.getFileName() + "_reference.wav");
         writeWav (f, chans, sr);
         REQUIRE (m.mixRender() != nullptr);
-        return ld::hl::loadReference (*m.session(), *m.mixRender(), f);
+        return ld::hl::loadReference (*m.session(), *m.mixRender(), f, engine);
     }
     static std::vector<float> filtered (std::vector<float> x, const juce::IIRCoefficients& c, int passes = 1)
     {
@@ -688,7 +687,7 @@ std::string show (const ld::hl::Reference& R)
 }
 } // namespace
 
-TEST_CASE ("Reference match: the recording as its own reference asks for no change", "[refmatch][!shouldfail]")
+TEST_CASE ("Reference match: the recording as its own reference asks for no change", "[refmatch]")
 {
     RefFixture fx ("identity");
     const auto R = fx.match ({ fx.src });
@@ -740,7 +739,7 @@ TEST_CASE ("Reference match: a known broad EQ on the reference is recovered", "[
     CHECK (worst (R, 6000, 12000) >= 4.0);
 }
 
-TEST_CASE ("Reference match RM01: a stereo reference with one side inverted matches like its mono self", "[refmatch][!shouldfail]")
+TEST_CASE ("Reference match RM01: a stereo reference with one side inverted matches like its mono self", "[refmatch]")
 {
     RefFixture fx ("inverse");
     const auto eq = RefFixture::filtered (fx.src, juce::IIRCoefficients::makeHighShelf (SR, 3000.0, 0.707, juce::Decibels::decibelsToGain (6.0)));
@@ -757,7 +756,7 @@ TEST_CASE ("Reference match RM01: a stereo reference with one side inverted matc
     CHECK ((wide.error.empty() && diff <= 0.5));
 }
 
-TEST_CASE ("Reference match RM04: bands the reference has nothing in are left alone", "[refmatch][!shouldfail]")
+TEST_CASE ("Reference match RM04: bands the reference has nothing in are left alone", "[refmatch]")
 {
     RefFixture fx ("weak");
     // nothing above about 2 kHz (96 dB/octave), and 6 dB less of the drum's fundamental: the level difference is
@@ -770,7 +769,7 @@ TEST_CASE ("Reference match RM04: bands the reference has nothing in are left al
     CHECK (worst (R, 6000, 15000) <= 0.25);   // no boost or cut where the reference is silent
 }
 
-TEST_CASE ("Reference match RM03: the reference you audition is resampled cleanly", "[refmatch][!shouldfail]")
+TEST_CASE ("Reference match RM03: the reference you audition is resampled cleanly", "[refmatch]")
 {
     RefFixture fx ("src");
     // a 5 kHz tone decaying slowly, recorded at 44.1 kHz, auditioned in a 48 kHz session
@@ -798,4 +797,21 @@ TEST_CASE ("Reference match RM03: the reference you audition is resampled cleanl
     const double db = 10 * std::log10 (res / std::max (1e-30, tot));
     INFO ("what isn't the tone: " << db << " dB below it");
     CHECK (db <= -50.0);
+}
+
+TEST_CASE ("Reference match: engine 1 is unchanged (the main app, parity and stored curves depend on it)", "[refmatch]")
+{
+    // the numbers engine 1 gave on these fixtures before engine 2 existed (10 Nov 2026), defects included
+    RefFixture fx ("v1");
+    const auto same = fx.match ({ fx.src }, SR, 1);
+    REQUIRE (same.error.empty());
+    INFO (show (same));
+    CHECK (worst (same) == Approx (2.16).margin (0.005));
+    auto inv = fx.src;
+    for (auto& v : inv) v = -v;
+    const auto wide = fx.match ({ fx.src, inv }, SR, 1);
+    CHECK (worst (wide, 100, 10000) == Approx (8.0).margin (0.005));
+    CHECK (fx.match ({ fx.src }).engine == 2);
+    CHECK (fx.match ({ fx.src }).hitsUsed == 4);   // engine 2 measures every hit; engine 1 only the loudest
+    CHECK (same.hitsUsed == 1);
 }
