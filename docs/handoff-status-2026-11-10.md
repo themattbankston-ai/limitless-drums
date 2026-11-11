@@ -25,10 +25,17 @@ mic the step looks at (on Tone that is also its visible "Applies to" choice). Th
 split in the remaining width. Evidence: screenshots at 1100 x 700 and a scripted row-click and slider drag.
 Screens: docs/gui/2026-11-10-track-column-1100x700.png.
 
+## Added after that (UI only): knobs, typed values, clear solo
+- Every processing amount (Tone, Envelope, reference match, Clean, Level, Fine tune) is a scalloped knob with its
+  name above and value below; the old horizontal processing sliders are gone. Drag up or right (Shift: fine),
+  Option-click resets, click the value to type one (Return keeps, Esc cancels; while typing, no shortcut fires).
+- "Clear solo" appears at the left of the audition bar whenever any track is soloed.
+Evidence: screenshots at 1100 x 700 and a scripted run (typed 25 into Tone -> +25; dragged Enhance; solo then
+clear). No change to what any control does to the sound. Screens: docs/gui/2026-11-10-knob*.png.
+
 ## UI-only work still to do
 - Hit / Velocity layer / All layers views and a scope summary; expandable Tune/Align details panel.
-- Knobs replacing the Tone/Clean sliders; typed numeric entry everywhere (fader gain and pan included).
-- "Solo active" indicator with clear-solos; renaming tracks; audition modes in a compact menu.
+- Typed entry for the track faders' gain and pan; renaming tracks; audition modes in a compact menu.
 - Keyboard and VoiceOver semantics (SA13) — waiting on Matt's go-ahead.
 
 ## Needs measured DSP work (not started; planned as its own versioned change)

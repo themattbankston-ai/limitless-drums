@@ -119,7 +119,7 @@ inline void arcUp (Canvas& c, float x, float y, float d, float thickness, float 
     c.roundedArc (x, y, d, thickness, centreFromUp - 1.5707963f, span / 2);
 }
 
-inline void knob (Canvas& c, float cx, float cy, float d, float v, const std::string& name, const std::string& value, bool bipolar = false, bool focused = false)
+inline void knob (Canvas& c, float cx, float cy, float d, float v, const std::string& name, const std::string& value, bool bipolar = false, bool focused = false, unsigned bg = tok::panel)
 {
     constexpr float pi = 3.14159265f, sweep = 1.5f * pi, start = 1.25f * pi;
     v = std::clamp (v, 0.0f, 1.0f);
@@ -128,10 +128,20 @@ inline void knob (Canvas& c, float cx, float cy, float d, float v, const std::st
     const float from = bipolar ? 0.5f : 0.0f, a0 = start + sweep * std::min (from, v), a1 = start + sweep * std::max (from, v);
     if (a1 - a0 > 0.01f) { c.setColor (tok::coral); arcUp (c, x, y, d, t, (a0 + a1) / 2, a1 - a0); }
     const float cap = d - 2 * t - 8;
-    c.setColor (visage::Brush::linear (visage::Color (0xff3e3e44), visage::Color (0xff1e1e21), visage::Point (0, cy - cap / 2), visage::Point (0, cy + cap / 2)));
+    const float a = start + sweep * v;
+    // the scalloped black cap: a dark disc with nine finger notches cut out of its edge, turning with the value
+    c.setColor (visage::Brush::linear (visage::Color (0xff34343a), visage::Color (0xff121214), visage::Point (0, cy - cap / 2), visage::Point (0, cy + cap / 2)));
     c.circle (cx - cap / 2, cy - cap / 2, cap);
-    if (focused) { c.setColor (tok::focus); c.ring (cx - cap / 2 - 2, cy - cap / 2 - 2, cap + 4, 2.0f); }
-    const float a = start + sweep * v, r0 = cap * 0.15f, r1 = cap * 0.42f;
+    c.setColor (bg);
+    for (int i = 0; i < 9; ++i)
+    {
+        const float sa = a + (i + 0.5f) * 2 * pi / 9, sr = cap * 0.56f, sd = cap * 0.2f;
+        c.circle (cx + sr * std::sin (sa) - sd / 2, cy - sr * std::cos (sa) - sd / 2, sd);
+    }
+    c.setColor (visage::Brush::linear (visage::Color (0xff2a2a2f), visage::Color (0xff19191c), visage::Point (0, cy - cap * 0.33f), visage::Point (0, cy + cap * 0.33f)));
+    c.circle (cx - cap * 0.33f, cy - cap * 0.33f, cap * 0.66f);   // the raised centre
+    if (focused) { c.setColor (tok::focus); c.ring (cx - d / 2 - 3, cy - d / 2 - 3, d + 6, 2.0f); }
+    const float r0 = cap * 0.12f, r1 = cap * 0.4f;
     c.setColor (tok::ink);
     c.segment (cx + r0 * std::sin (a), cy - r0 * std::cos (a), cx + r1 * std::sin (a), cy - r1 * std::cos (a), 2.5f, true);
     if (! name.empty()) txt (c, name, boldFont (tok::tSmall), tok::ink2, cx - 60, y - 20, 120, 16, visage::Font::kCenter);

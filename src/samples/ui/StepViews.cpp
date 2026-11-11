@@ -160,6 +160,50 @@ void HitsView::slider (Canvas& c, float x, float y, float w, const std::string& 
     add (tx - 8, y - 2, tw + 16, 26, "sl:" + key);
 }
 
+std::string HitsView::valueText (const std::string& key, double v)
+{
+    const auto r = ranges().at (key);
+    if (key == "clean.db" || key.rfind ("lev.", 0) == 0 || key == "exp.ceil") return fmt (key == "lev.offset" || key == "exp.ceil" ? "%+.1f dB" : "%.1f dB", v);
+    if (key == "tune.cents") return fmt ("%+.0f ct", v);
+    return pct (v, r.lo < 0 && r.hi > 0);
+}
+
+/** A processing amount: the scalloped knob, its name above, its value below. Drag up or right (Shift: fine),
+    Option-click to reset, click the value to type one (Return keeps it, Esc doesn't). */
+void HitsView::knobCtl (Canvas& c, float cx, float cy, float d, const std::string& label, const std::string& key)
+{
+    auto it = ranges().find (key);
+    if (it == ranges().end()) return;
+    const auto [lo, hi] = it->second;
+    const double v = sliderValue (key);
+    const bool editing = editKey == key;
+    knob (c, cx, cy, d, (float) ((v - lo) / (hi - lo)), label, editing ? std::string() : valueText (key, v), lo < 0 && hi > 0, drag == Drag::slider && sliderKey == key);
+    const float vy = cy + d / 2 + 3, vw = 76;
+    if (editing)
+    {
+        c.setColor (tok::lane); c.roundedRectangle (cx - vw / 2, vy, vw, 20, 3);
+        focusRing (c, cx - vw / 2, vy, vw, 20);
+        txt (c, editText + "|", monoFont (tok::tLabel), tok::ink, cx - vw / 2, vy, vw, 20, visage::Font::kCenter);
+    }
+    add (cx - d / 2, cy - d / 2, d, d, "sl:" + key);
+    add (cx - vw / 2, vy, vw, 20, "ed:" + key);
+}
+
+void HitsView::commitEdit (bool keep)
+{
+    if (keep && ! editKey.empty() && ! editText.empty())
+    {
+        const auto r = ranges().at (editKey);
+        const bool asPercent = valueText (editKey, 0).find ("dB") == std::string::npos && editKey != "tune.cents";   // shown x100
+        char* end = nullptr;
+        const double typed = std::strtod (editText.c_str(), &end);
+        if (end != editText.c_str() && std::isfinite (typed)) setSliderValue (editKey, std::clamp (asPercent ? typed / 100 : typed, r.lo, r.hi));
+        else setStatus ("That isn't a number.");
+    }
+    editKey.clear(); editText.clear();
+    redraw();
+}
+
 // ------------------------------------------------------------------------------------------------ dispatch
 void HitsView::drawStep (Canvas& c)
 {
@@ -561,10 +605,10 @@ void HitsView::drawTune (Canvas& c)
         row ("Shift", fmt ("%+.0f", 1200 * std::log2 (rmin)) + fmt (" .. %+.0f ct", 1200 * std::log2 (rmax)));
     }
     y += 6;
-    slider (c, sx + 16, y, 308, "Fine (cents)", "tune.cents"); y += 34;
-    txt (c, "Varispeed, as a sampler does: pitch and length", bodyFont (11), ink3, sx + 16, y, 308, 16);
-    txt (c, "move together. Best-quality sinc resampling.", bodyFont (11), ink3, sx + 16, y + 16, 308, 16);
-    y += 40;
+    knobCtl (c, sx + 16 + tok::knobLg / 2 + 6, y + 22 + tok::knobLg / 2, tok::knobLg, "Fine tune", "tune.cents");
+    txt (c, "Varispeed, as a sampler does: pitch and length", bodyFont (11), ink3, sx + 110, y + 34, sideW - 126, 16);
+    txt (c, "move together. Best-quality sinc resampling.", bodyFont (11), ink3, sx + 110, y + 50, sideW - 126, 16);
+    y += 124;
     if (selHit >= 0 && selHit < N && std::isfinite (ti->f[(size_t) selHit]))
     {
         txt (c, "Hit " + std::to_string (selHit + 1), boldFont (12), ink, sx + 16, y, 200, 20); y += 24;
@@ -593,18 +637,17 @@ void HitsView::drawTone (Canvas& c)
     const float pw = tok::goldenMinor (stepW() - 42, 400.0f, 560.0f);   // golden split: controls : waveform
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "");
     float y = y0 + 26;
-    txt (c, "TONE", boldFont (10), 0xff9c9ca1, 30, y, 200, 16); y += 22;
-    slider (c, 30, y, pw - 32, "Enhance tone", "tone.match"); y += 30;
-    slider (c, 30, y, pw - 32, "Tone", "tone.bright"); y += 30;
-    slider (c, 30, y, pw - 32, "Crack", "tone.crack"); y += 30;
-    slider (c, 30, y, pw - 32, "Rings", "tone.smooth"); y += 30;
-    slider (c, 30, y, pw - 32, "Tame", "tone.tame"); y += 40;
-    txt (c, "ENVELOPE", boldFont (10), 0xff9c9ca1, 30, y, 200, 16); y += 22;
-    slider (c, 30, y, pw - 32, "Attack", "shape.atk"); y += 30;
-    slider (c, 30, y, pw - 32, "Decay", "shape.dec"); y += 30;
-    slider (c, 30, y, pw - 32, "Sustain", "shape.sus"); y += 30;
-    slider (c, 30, y, pw - 32, "Release", "shape.rel"); y += 30;
-    slider (c, 30, y, pw - 32, "Enhance envelope", "shape.match"); y += 40;
+    // five knobs to a row, phi apart in size from the small ones
+    const float kd = 55, col = (pw - 32) / 5;
+    auto rowOf = [&] (const char* title, std::initializer_list<std::pair<const char*, const char*>> ks)
+    {
+        txt (c, title, boldFont (10), tok::ink3, 30, y, 200, 16); y += 22;
+        int i = 0;
+        for (auto& [label, key] : ks) knobCtl (c, 30 + col * (i++ + 0.5f), y + 18 + kd / 2, kd, label, key);
+        y += 18 + kd + 34;
+    };
+    rowOf ("TONE", { { "Enhance", "tone.match" }, { "Tone", "tone.bright" }, { "Crack", "tone.crack" }, { "Rings", "tone.smooth" }, { "Tame", "tone.tame" } });
+    rowOf ("ENVELOPE", { { "Attack", "shape.atk" }, { "Decay", "shape.dec" }, { "Sustain", "shape.sus" }, { "Release", "shape.rel" }, { "Enhance", "shape.match" } });
     txt (c, "REFERENCE MATCH", boldFont (10), 0xff9c9ca1, 30, y, 200, 16); y += 22;
     c.setColor (btn); c.roundedRectangle (30, y, 120, 26, 3);
     txt (c, S->tone.hasRef ? "Load another\xe2\x80\xa6" : "Load a reference\xe2\x80\xa6", boldFont (11), ink, 30, y, 120, 26, visage::Font::kCenter);
@@ -618,8 +661,8 @@ void HitsView::drawTone (Canvas& c)
     y += 36;
     if (S->tone.hasRef)
     {
-        slider (c, 30, y, pw - 32, "Match curve", "ref.amt"); y += 30;
-        if (S->tone.hasRefEnv) { slider (c, 30, y, pw - 32, "Match envelope", "ref.env"); y += 30; }
+        knobCtl (c, 30 + col * 0.5f, y + 18 + kd / 2, kd, "Tone match", "ref.amt");
+        if (S->tone.hasRefEnv) knobCtl (c, 30 + col * 1.5f, y + 18 + kd / 2, kd, "Envelope", "ref.env");
     }
     else txt (c, "A finished sample you like: the tone and envelope move toward it.", bodyFont (11), ink3, 30, y, pw - 32, 16);
     // the selected hit, before and after, on the lead (or the mic the moves apply to)
@@ -688,9 +731,9 @@ void HitsView::drawClean (Canvas& c)
     c.setColor (S->dnOn ? accentDark : 0xff3a3a3e); c.roundedRectangle (pw - 60, y0 + 24, 56, 22, 11);
     txt (c, S->dnOn ? "On" : "Off", boldFont (11), S->dnOn ? accentInk : ink2, pw - 60, y0 + 24, 56, 22, visage::Font::kCenter);
     add (pw - 60, y0 + 24, 56, 22, "clean:on");
-    slider (c, 30, y0 + 64, pw - 32, "Reduce by", "clean.db");
-    txt (c, "The hit itself is never touched; the noise floor", bodyFont (11), ink3, 30, y0 + 100, pw - 32, 16);
-    txt (c, "is measured on each mic between the hits.", bodyFont (11), ink3, 30, y0 + 116, pw - 32, 16);
+    knobCtl (c, 30 + tok::knobLg / 2 + 6, y0 + 68 + tok::knobLg / 2, tok::knobLg, "Reduce by", "clean.db");
+    txt (c, "The hit itself is never touched; the noise floor", bodyFont (11), ink3, 124, y0 + 84, pw - 126, 16);
+    txt (c, "is measured on each mic between the hits.", bodyFont (11), ink3, 124, y0 + 100, pw - 126, 16);
     // the tail of the selected hit, in dB: as recorded and cleaned
     const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
     panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
@@ -789,9 +832,12 @@ void HitsView::drawLevel (Canvas& c)
         y += 26;
     }
     y += 12;
-    slider (c, sx + 16, y, 328, "Step (dB)", "lev.step"); y += 30;
-    slider (c, sx + 16, y, 328, "Range (dB)", "lev.range"); y += 30;
-    slider (c, sx + 16, y, 328, "Offset", "lev.offset"); y += 40;
+    {
+        const float kd = 55, col = (sideW - 32) / 3;
+        const std::pair<const char*, const char*> ks[3] = { { "Step", "lev.step" }, { "Range", "lev.range" }, { "Offset", "lev.offset" } };
+        for (int i = 0; i < 3; ++i) knobCtl (c, sx + 16 + col * (i + 0.5f), y + 22 + kd / 2, kd, ks[i].first, ks[i].second);
+        y += 22 + kd + 38;
+    }
     double peakMax = -100;
     for (double p : L->peakAfter) peakMax = std::max (peakMax, p);
     txt (c, std::isfinite (L->peakMax) ? fmt ("Loudest hit after levelling: %.1f dBFS", L->peakMax + L->trimDb) : std::string(), bodyFont (12), ink2, sx + 16, y, 328, 20);
@@ -893,10 +939,11 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
             return true;
         }
         drag = Drag::slider;
-        dragY0 = e.position.x;
+        dragY0 = e.position.x; dragY1 = e.position.y;
         dragV0 = (float) sliderValue (sliderKey);
         return true;
     }
+    if (has ("ed:")) { editKey = id.substr (3); editText.clear(); return true; }
     if (has ("scope:")) { selMic = arg() - 1; return true; }
     if (has ("row:")) { selMic = arg(); return true; }
     if (has ("units:")) { alignUnits = arg(); return true; }

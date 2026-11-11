@@ -200,7 +200,15 @@ void HitsView::drawAudition (Canvas& c)
     const float y = tbH;
     c.setColor (bar2); c.fill (0, y, width(), auH);
     c.setColor (line); c.fill (0, y + auH - 1, width(), 1);
-    txt (c, "AUDITION", boldFont (10), tok::ink3, 14, y, 80, auH);
+    bool anySolo = false;
+    for (int t = 0; t < (int) model.tracks().size(); ++t) anySolo = anySolo || model.solo (t);
+    if (anySolo)   // a solo changes what every route plays: say so where it's always visible, with the way out
+    {
+        c.setColor (0xffe0c23c); c.roundedRectangle (8, y + 14, 70, 22, 11);
+        txt (c, "Clear solo", boldFont (10), 0xff1a1608, 8, y + 14, 70, 22, visage::Font::kCenter);
+        add (8, y + 14, 70, 22, "clearsolo");
+    }
+    else txt (c, "AUDITION", boldFont (10), tok::ink3, 14, y, 80, auH);
     float x = 84;
     c.setColor (tok::lane); c.roundedRectangle (x, y + 9, 6 * 66 + 4, 34, tok::radius);
     for (int i = 0; i < 6; ++i)
@@ -568,6 +576,7 @@ void HitsView::mouseDown (const visage::MouseEvent& e)
 {
     requestKeyboardFocus();
     const auto* h = hitAt (e.position.x, e.position.y);
+    if (! editKey.empty() && ! (h && h->id == "ed:" + editKey)) commitEdit (true);   // clicking away keeps what was typed
     if (h) act (h->id, e);
 }
 
@@ -611,6 +620,7 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
         for (size_t i = 0; i < model.hits().size(); ++i) if (model.hits()[i].vel == arg()) c.push_back ((int) i);
         if (! c.empty()) selectHit (c[(size_t) juce::Random::getSystemRandom().nextInt ((int) c.size())], true);
     }
+    else if (id == "clearsolo") { for (int t = 0; t < (int) model.tracks().size(); ++t) if (model.solo (t)) model.setSolo (t, false); }
     else if (id.rfind ("solo:", 0) == 0) model.setSolo (arg(), ! model.solo (arg()));
     else if (id.rfind ("mute:", 0) == 0) model.setMute (arg(), ! model.mute (arg()));
     else if (id.rfind ("flip:", 0) == 0) model.setFlip (arg(), ! model.flip (arg()));
@@ -643,8 +653,8 @@ void HitsView::mouseDrag (const visage::MouseEvent& e)
 {
     if (drag == Drag::slider)
     {
-        // a slider: 220 px for its whole range; Shift for fine
-        setSliderValue (sliderKey, dragV0 + (e.position.x - dragY0) / (e.isShiftDown() ? 1100.0 : 220.0) * sliderSpan (sliderKey));
+        // a knob: up or right turns it up, 220 px for its whole range; Shift for fine
+        setSliderValue (sliderKey, dragV0 + ((e.position.x - dragY0) - (e.position.y - dragY1)) / (e.isShiftDown() ? 1100.0 : 220.0) * sliderSpan (sliderKey));
     }
     else if (drag == Drag::select)
     {
@@ -693,6 +703,21 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
 {
     using K = visage::KeyCode;
     const auto k = e.keyCode();
+    if (! editKey.empty())
+    {
+        // typing a value: every key goes to the field, so no shortcut fires by accident
+        const int kc = (int) k;
+        if (k == K::Return || k == K::KPEnter) commitEdit (true);
+        else if (k == K::Escape) commitEdit (false);
+        else if (k == K::Backspace) { if (! editText.empty()) editText.pop_back(); }
+        else if ((kc >= '0' && kc <= '9') || kc == '.' || kc == '-') { if (editText.size() < 8) editText.push_back ((char) kc); }
+        else if (k == K::KPPeriod) editText.push_back ('.');
+        else if (k == K::KPMinus) editText.push_back ('-');
+        else if (kc >= (int) K::KP1 && kc <= (int) K::KP9) editText.push_back ((char) ('1' + kc - (int) K::KP1));
+        else if (k == K::KP0) editText.push_back ('0');
+        redraw();
+        return true;
+    }
     if (k == K::Space) { model.isPlaying() ? model.stop() : playSelection(); }
     else if (k == K::Tab) selectHit (selHit + (e.isAltDown() || e.isShiftDown() ? -1 : 1), model.isPlaying());
     else if (k == K::R && ! e.isMainModifier()) zoomBy (0.5);

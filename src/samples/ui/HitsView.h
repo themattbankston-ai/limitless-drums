@@ -73,7 +73,9 @@ private:
     std::string sliderKey;
     int dragTrack = -1;
     double dragFrom = 0;
-    float dragY0 = 0, dragV0 = 0;
+    float dragY0 = 0, dragV0 = 0, dragY1 = 0;
+    std::string editKey, editText;    ///< the control whose value is being typed, and what's typed so far
+    void commitEdit (bool keep);
     float rowScroll = 0;              ///< how far the track rows are scrolled down (when they don't all fit)
     void clipHits (size_t from, float top, float bottom);   ///< keep this frame's later targets inside a scrolled area
     int ctlTrack = -1;                ///< the track whose fader or pan is being dragged
@@ -120,6 +122,8 @@ private:
     double sliderValue (const std::string& key) const;
     static double sliderSpan (const std::string& key);
     void setSliderValue (const std::string& key, double v);
+    void knobCtl (visage::Canvas&, float cx, float cy, float d, const std::string& label, const std::string& key);
+    static std::string valueText (const std::string& key, double v);
 };
 
 } // namespace ld::samples
