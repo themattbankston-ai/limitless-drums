@@ -254,6 +254,18 @@ void HitsView::knobCtl (Canvas& c, float cx, float cy, float d, const std::strin
 
 void HitsView::commitEdit (bool keep)
 {
+    if (editKey.rfind ("name:", 0) == 0)
+    {
+        // a track's name (empty: back to the recording's own)
+        if (keep)
+        {
+            const auto err = model.renameTrack (std::stoi (editKey.substr (5)), editText);
+            if (err.isNotEmpty()) setStatus (err.toStdString());
+        }
+        editKey.clear(); editText.clear();
+        redraw();
+        return;
+    }
     if (keep && ! editText.empty() && (editKey.rfind ("mon:", 0) == 0 || editKey.rfind ("pan:", 0) == 0))
     {
         // a track's monitor gain (dB) or pan (-100 left .. 100 right)
@@ -1121,7 +1133,7 @@ void HitsView::drawExport (Canvas& c)
     y += 28;
     c.setColor (visage::Brush::linear (visage::Color (tok::coralFillTop), visage::Color (tok::coralFill), visage::Point (0, y), visage::Point (0, y + 34)));
     c.roundedRectangle (30, y, 180, 34, 4);
-    txt (c, exportProgress >= 0 && exportProgress < 1 ? fmt ("Writing\xe2\x80\xa6 %.0f %%", exportProgress * 100) : std::string ("Export"), boldFont (13), 0xffffffff, 30, y, 180, 34, visage::Font::kCenter);
+    txt (c, exportProgress >= 0 && exportProgress < 1 ? fmt ("Cancel \xc2\xb7 %.0f %%", exportProgress * 100) : std::string ("Export"), boldFont (13), 0xffffffff, 30, y, 180, 34, visage::Font::kCenter);
     add (30, y, 180, 34, "export");
     // the files
     const float gx = 14 + pw + 14, gw = width() - gx - 14;

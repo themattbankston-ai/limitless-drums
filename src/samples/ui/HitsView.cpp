@@ -146,7 +146,7 @@ void HitsView::drawToolbar (Canvas& c)
     // steps share whatever room is left, so all eight and the transport always fit
     const bool compact = width() < 1400;
     const float counterW = compact ? 132.0f : 250.0f, transportW = 36 * 3 + 46 + 10 + counterW;
-    const float tx0 = width() - 104 - 12 - transportW;
+    const float tx0 = width() - 104 - 12 - 62 - transportW;   // the transport, then Save, then Auto Prep
     txt (c, "Limitless Drums", boldFont (13), ink, 54, compact ? 17 : 9, 120, 18);
     if (! compact)
         txt (c, model.isOpen() ? (model.takeName() + " \xc2\xb7 " + juce::String ((int) model.tracks().size()) + " tracks").toStdString() : std::string ("No take open"), bodyFont (11), ink3, 54, 27, 180, 16);
@@ -158,7 +158,7 @@ void HitsView::drawToolbar (Canvas& c)
     {
         const float bx = x + 2 + i * sw;
         const bool on = i == step;
-        const std::string label = sw >= 80 ? std::to_string (i + 1) + ". " + stepNames[i] : std::string (stepNames[i]);
+        const std::string label = sw >= 70 ? std::to_string (i + 1) + ". " + stepNames[i] : std::string (stepNames[i]);
         if (on)   // the step you're on: the one coral tab
         {
             c.setColor (visage::Brush::linear (visage::Color (tok::coralFillTop), visage::Color (tok::coralFill), visage::Point (0, 14), visage::Point (0, 42)));
@@ -194,6 +194,16 @@ void HitsView::drawToolbar (Canvas& c)
         txt (c, "Start " + fmtTime (selA), monoFont (9), ink3, x + 128, 9, 120, 12);
         txt (c, "End   " + fmtTime (selB), monoFont (9), ink3, x + 128, 20, 120, 12);
         txt (c, "Len   " + fmtTime (std::max (0.0, selB - selA)), monoFont (9), ink3, x + 128, 31, 120, 12);
+    }
+    // Save: the project, beside the recordings (a dot while there's something unsaved)
+    x = width() - 104 - 62;
+    {
+        const bool can = model.isOpen(), mod = model.modified();
+        c.setColor (visage::Brush::linear (visage::Color (tok::controlHi), visage::Color (tok::control), visage::Point (0, 11), visage::Point (0, 41)));
+        c.roundedRectangle (x, 11, 54, 30, tok::radius);
+        txt (c, "Save", boldFont (12), can ? ink : tok::ink4, x, 11, mod ? 44 : 54, 30, visage::Font::kCenter);
+        if (mod) { c.setColor (tok::coral); c.circle (x + 41, 23, 6); }
+        if (can) add (x, 11, 54, 30, "save");
     }
     // Auto Prep
     x = width() - 104;
@@ -527,8 +537,13 @@ void HitsView::drawTrackHeader (Canvas& c, int t, float y, float h, bool withPol
     const float bw = 24, bx0 = W - 6 - nb * bw - (nb - 1) * 4, ya = y + 7;
     const std::string role = tr.channels > 1 ? "STEREO" : "MONO";
     const float roleW = tr.channels > 1 ? 44.0f : 36.0f, nameW = bx0 - 13 - roleW - 12;
-    txt (c, tr.name, boldFont (tok::tLabel), ink, 13, ya, nameW, 20);
-    const float rx = 13 + std::min (nameW, textWidth (boldFont (tok::tLabel), tr.name)) + 6;
+    const std::string nameKey = "name:" + std::to_string (t);
+    const bool naming = editKey == nameKey;
+    const std::string shown = naming ? editText + "|" : tr.name;
+    if (naming) { c.setColor (tok::lane); c.roundedRectangle (9, ya, nameW + 6, 20, 3); focusRing (c, 9, ya, nameW + 6, 20); }
+    txt (c, shown, boldFont (tok::tLabel), ink, 13, ya, nameW, 20);
+    const float rx = 13 + std::min (nameW, textWidth (boldFont (tok::tLabel), shown)) + 6;
+    add (13, ya, std::max (24.0f, rx - 19), 20, nameKey);   // double-click the name to change it
     c.setColor (tok::divider); c.roundedRectangleBorder (rx, ya + 4, roleW, 13, 2, 1);
     txt (c, role, boldFont (8), tok::ink3, rx, ya + 4, roleW, 13, visage::Font::kCenter);
     // solo, mute (and polarity where it's edited)
@@ -591,6 +606,7 @@ void HitsView::mouseDown (const visage::MouseEvent& e)
 {
     requestKeyboardFocus();
     const auto* h = hitAt (e.position.x, e.position.y);
+    if (exporting()) { if (h && h->id == "export" && onCancelExport) onCancelExport(); return; }
     if (! editKey.empty() && ! (h && h->id == "ed:" + editKey)) commitEdit (true);   // clicking away keeps what was typed
     if (h) act (h->id, e);
 }
@@ -599,6 +615,14 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
 {
     auto arg = [&] { return std::stoi (id.substr (id.find (':') + 1)); };
     if (id.rfind ("step:", 0) == 0) { setStep (arg()); return; }
+    if (id == "save") { if (onSave) onSave(); return; }
+    if (id.rfind ("name:", 0) == 0)
+    {
+        const int t = arg();
+        if (e.repeat_click_count >= 2 && t >= 0 && t < (int) model.tracks().size()) { editKey = id; editText = model.tracks()[(size_t) t].name; redraw(); }
+        else if (editKey != id) act ("row:" + std::to_string (t), e);   // one click is still a click on the row
+        return;
+    }
     if (step != 1 && actStep (id, e)) { redraw(); return; }
     if (id == "play") { model.isPlaying() ? model.stop() : playSelection(); }
     else if (id == "stop") { model.stop(); }
@@ -666,6 +690,7 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
 
 void HitsView::mouseDrag (const visage::MouseEvent& e)
 {
+    if (exporting()) return;
     if (drag == Drag::slider)
     {
         // a knob: up or right turns it up, 220 px for its whole range; Shift for fine
@@ -706,6 +731,7 @@ void HitsView::clipHits (size_t from, float top, float bottom)
 
 bool HitsView::mouseWheel (const visage::MouseEvent& e)
 {
+    if (exporting()) return true;
     if (step == 2 || (step != 0 && step != 7 && e.position.x < headW && ! e.isMainModifier()))
         rowScroll -= e.wheel_delta_y * 40;   // clamped when drawn
     else if (e.isMainModifier()) zoomBy (e.wheel_delta_y > 0 ? 1.25 : 0.8);
@@ -718,6 +744,7 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
 {
     using K = visage::KeyCode;
     const auto k = e.keyCode();
+    if (exporting()) { if (k == K::Escape && onCancelExport) onCancelExport(); return true; }
     if (! editKey.empty())
     {
         // typing a value: every key goes to the field, so no shortcut fires by accident
@@ -725,6 +752,19 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
         if (k == K::Return || k == K::KPEnter) commitEdit (true);
         else if (k == K::Escape) commitEdit (false);
         else if (k == K::Backspace) { if (! editText.empty()) editText.pop_back(); }
+        else if (editKey.rfind ("name:", 0) == 0)
+        {
+            // a track's name: letters, digits, spaces and the few marks a file name is safe with
+            char ch = 0;
+            if (kc >= 'a' && kc <= 'z') ch = (char) (e.isShiftDown() ? kc - 32 : kc);
+            else if (kc >= '0' && kc <= '9' && ! e.isShiftDown()) ch = (char) kc;
+            else if (k == K::Space) ch = ' ';
+            else if (kc == '-') ch = e.isShiftDown() ? '_' : '-';
+            else if (kc == '.' || kc == '(' || kc == ')') ch = (char) kc;
+            else if (kc >= (int) K::KP1 && kc <= (int) K::KP9) ch = (char) ('1' + kc - (int) K::KP1);
+            else if (k == K::KP0) ch = '0';
+            if (ch != 0 && editText.size() < 32) editText.push_back (ch);
+        }
         else if ((kc >= '0' && kc <= '9') || kc == '.' || kc == '-') { if (editText.size() < 8) editText.push_back ((char) kc); }
         else if (k == K::KPPeriod) editText.push_back ('.');
         else if (k == K::KPMinus) editText.push_back ('-');
@@ -757,6 +797,7 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
         else setStatus ("Nothing to undo.");
     }
     else if (k == K::O && e.isMainModifier()) { if (onOpen) onOpen(); }
+    else if (k == K::S && e.isMainModifier()) { if (onSave) onSave(); }
     else if (k == K::Left || k == K::Right) selectHit (selHit + (k == K::Right ? 1 : -1), false);
     else return false;
     redraw();

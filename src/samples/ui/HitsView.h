@@ -30,7 +30,8 @@ public:
     void setStatus (const std::string& s) { status = s; redraw(); }
     void tick();   ///< 30 times a second: playhead, meters
 
-    std::function<void()> onOpen, onAutoPrep;
+    std::function<void()> onOpen, onAutoPrep, onSave, onCancelExport;
+    bool exporting() const { return exportProgress >= 0; }   ///< while it writes, only Cancel (or Esc) does anything
     std::function<void()> onExport;         ///< the Export step's button (the shell picks the folder)
     std::function<void()> onLoadReference;  ///< the Tone step's reference (the shell picks the file)
     int currentStep() const { return step; }

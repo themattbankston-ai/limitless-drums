@@ -90,8 +90,32 @@ public:
     const hl::Session* session() const { return state ? &state->session : nullptr; }
     /** Room mics keep their distance but are set in phase with the lead (polarity and phase EQ only). The choice is the
         app's, not one take's: it is applied to every take opened after it, and Auto Prep follows it. */
-    bool roomPhase() const { return roomPhasePref; }
+    bool roomPhase() const { return state ? state->session.roomPhase : roomPhasePref; }
+    bool roomPhaseDefault() const { return roomPhasePref; }   ///< what the next take opened starts with
     void setRoomPhase (bool on);
+
+    // ---- projects: everything you set on a take, saved beside it and recalled
+    /** Writes the project: where the recordings are, every setting, each mic's alignment as applied, the names you
+        gave, and the monitor mix. No audio. Returns the error, or empty. */
+    juce::String saveProject (const juce::File&);
+    /** Opens the project's recordings and puts the settings back. When it was saved after Auto Prep, recallNeedsPrep()
+        is true: run Auto Prep, and the saved alignment is put back exactly when it lands (the hits are restored as
+        saved, so nothing is found again). Returns the error, or empty. */
+    juce::String openProject (const juce::File&);
+    bool recallNeedsPrep() const { return recall.isObject(); }
+    /** What differed from the saved project once it was recalled (empty: nothing). */
+    juce::String recallNote() const { return recallMsg; }
+    juce::File projectFile() const { return projFile; }
+    /** Where Save writes when the take has no project yet: beside the recordings, named after the take. */
+    juce::File defaultProjectFile() const;
+    /** The project in that folder saved for exactly these recordings (the newest, if several), or no file. */
+    static juce::File projectFor (const juce::Array<juce::File>& items);
+    bool modified() const { return isOpen() && edits != savedEdits; }
+    static constexpr int kProjectVersion = 1;
+
+    /** The name shown for a track and written for {MIC}. Empty: back to the recording's own name. Returns the error
+        (two tracks can't share a name: their files would overwrite each other), or empty. */
+    juce::String renameTrack (int t, const std::string& name);
     const hl::MixRender* mixRender() const { return state && state->mix ? &*state->mix : nullptr; }
     const hl::LevelResult* levelResult() const { return state && state->levels ? &*state->levels : nullptr; }
     std::function<void()> onChanged;   ///< after a background render lands (message thread)
@@ -177,6 +201,15 @@ private:
     };
     std::shared_ptr<Workers> workers = std::make_shared<Workers>();
     bool roomPhasePref = false;
+    juce::var recall;        ///< the project being recalled, until Auto Prep lands
+    juce::String recallMsg;
+    juce::File projFile;
+    std::vector<juce::File> takeFiles;   ///< the recordings as opened
+    int edits = 0, savedEdits = 0;
+    juce::var projectVar (const juce::File& beside) const;
+    void finishRecall();
+    void syncNames();
+    void monDbTo (int t, float db);   ///< the fader moved by the app itself (level match), not by you
     std::set<int> scoring;   ///< tracks being measured on another thread
     int toneVersion = 0;
     bool rendering = false;
@@ -224,7 +257,10 @@ public:
 
     /** Writes the export (Level and Tune as set, every hit of every mic, the monitor faders ignored) into `dir`, rendered
         by Tracktion through the same plugins playback uses. Returns the error, or empty; `count` gets the file count. */
-    juce::String exportTo (const juce::File& dir, int& count, std::function<void (float)> progress = {});
+    juce::String exportTo (const juce::File& dir, int& count, std::function<void (float)> progress = {}, std::function<bool()> cancel = {});
+    /** `cancel` is asked between renders; once it says yes the export ends before any file is written, so a cancelled
+        export leaves the folder exactly as it was. This is what exportTo returns then. */
+    static juce::String exportCancelled() { return "Export cancelled. Nothing was written."; }
     double hitGainDb (int t, size_t i) const;   ///< Level gain of this hit on this mic (dB, trim included)
     double hitRatio (size_t i) const;           ///< Tune: varispeed ratio of this hit (1 = untouched)
 };

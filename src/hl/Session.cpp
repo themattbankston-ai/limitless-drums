@@ -1079,7 +1079,7 @@ std::string fillTokens (const Session& S, const std::string& tpl, int t, std::op
 {
     const auto di = DRUM_NAMES.find (S.drum);
     const auto drumTok = upper (cleanTok (di != DRUM_NAMES.end() ? di->second : S.drum));
-    const auto micTok = t < 0 ? std::string ("Room_Return") : cleanTok (S.tracks[(size_t) t].mic.empty() ? "Mic" : S.tracks[(size_t) t].mic);
+    const auto micTok = t < 0 ? std::string ("Room_Return") : cleanTok (! S.tracks[(size_t) t].rename.empty() ? S.tracks[(size_t) t].rename : S.tracks[(size_t) t].mic.empty() ? "Mic" : S.tracks[(size_t) t].mic);
     std::string hitTok;
     if (hit) { hitTok = std::to_string (*hit + 1); while (hitTok.size() < 3) hitTok = "0" + hitTok; }
     auto p = tpl;

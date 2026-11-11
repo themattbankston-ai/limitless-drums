@@ -140,6 +140,11 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     if (cacheDir.isDirectory()) cacheDir.deleteRecursively();
     state = st;
     name = folder;
+    takeFiles = files;
+    projFile = juce::File();
+    recall = juce::var();
+    recallMsg.clear();
+    edits = savedEdits = 0;
     sourceFiles.clear();
     ++takeGen;
     prepping = false;     // an Auto Prep for the previous take is dropped when it lands
@@ -204,10 +209,21 @@ int SampleModel::velocities() const { return state ? std::max (1, state->session
 int SampleModel::roundRobins() const { return state ? std::max (1, state->session.det.RR) : 1; }
 double SampleModel::length() const { return state ? (double) state->session.maxLen() / state->session.sr : 0; }
 
+void SampleModel::syncNames()
+{
+    if (! state) return;
+    for (size_t t = 0; t < std::min (info.size(), state->session.tracks.size()); ++t)
+    {
+        const auto& tr = state->session.tracks[t];
+        info[t].name = ! tr.rename.empty() ? tr.rename : niceName (tr.mic.empty() ? tr.name : tr.mic);
+    }
+}
+
 void SampleModel::buildHits()
 {
     hitList.clear();
     if (! state) return;
+    syncNames();
     const auto& S = state->session;
     const auto& on = S.onsets;
     std::vector<int> seenPerVel ((size_t) velocities(), 0);
@@ -257,6 +273,7 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
             buildHits();
             applyAlignment();
             layoutHits();
+            if (copy->prepared) finishRecall();
             if (done) done (copy->prepared ? juce::String() : juce::String (copy->advice.empty() ? "Not every hit was found." : copy->advice));
         });
     }).detach();
@@ -273,6 +290,7 @@ juce::String SampleModel::autoPrepNow()
     buildHits();
     applyAlignment();
     layoutHits();
+    if (copy->prepared) finishRecall();
     return copy->prepared ? juce::String() : juce::String (copy->advice.empty() ? "Not every hit was found." : copy->advice);
 }
 
@@ -306,8 +324,19 @@ bool SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what
     lastGesture = gesture;
     lastGestureTime = now;
     redoStack.clear();
+    ++edits;
+    // the levels are measured on each mic with its phase EQ in: when a change moves a band, the render they read is
+    // made again, so the same settings always give the same gains however they were reached
+    auto bands = [] (const hl::Session& S)
+    {
+        std::vector<double> v;
+        for (auto& tr : S.tracks) { v.push_back (tr.apOn ? 1 : 0); v.push_back ((double) tr.ap.size()); for (auto& b : tr.ap) { v.push_back (b.fc); v.push_back (b.Q); } }
+        return v;
+    };
+    const auto bandsWere = bands (state->session);
     f (state->session);
-    if (what == Redo::none) return true;
+    if (what == Redo::none) { syncNames(); return true; }
+    if (bands (state->session) != bandsWere) wantMix = true;
     if (what == Redo::reprep)
     {
         state->prepared = false;   // export waits for Auto Prep
@@ -345,6 +374,7 @@ void SampleModel::undo()
     state->prepared = undoStack.back().prepared;
     undoStack.pop_back();
     lastGesture.clear();
+    ++edits;
     reapply (true);
 }
 
@@ -356,6 +386,7 @@ void SampleModel::redo()
     state->prepared = redoStack.back().prepared;
     redoStack.pop_back();
     lastGesture.clear();
+    ++edits;
     reapply (true);
 }
 
@@ -369,6 +400,236 @@ juce::String SampleModel::exportBlocker() const
         return "Expecting " + juce::String (S.det.V * S.det.RR) + " hits but " + juce::String ((int) S.onsets.size()) + " were found: run Auto Prep.";
     if (! state->levels || ! state->levels->valid) return "The levels aren't measured: run Auto Prep.";
     if (isBusy()) return "Still rendering the last change.";
+    return {};
+}
+
+
+// ---------------------------------------------------------------------------- projects
+namespace
+{
+juce::var apVar (const std::vector<hl::AllPass>& ap)
+{
+    juce::Array<juce::var> a;
+    for (auto& b : ap) { auto* o = new juce::DynamicObject(); o->setProperty ("fc", b.fc); o->setProperty ("Q", b.Q); a.add (juce::var (o)); }
+    return a;
+}
+std::vector<hl::AllPass> apOf (const juce::var& v)
+{
+    std::vector<hl::AllPass> out;
+    if (auto* a = v.getArray()) for (auto& b : *a) out.push_back ({ (double) b["fc"], (double) b["Q"] });
+    return out;
+}
+std::vector<juce::File> projectFiles (const juce::var& p, const juce::File& projectFile)
+{
+    std::vector<juce::File> out;
+    const auto* rel = p["relFiles"].getArray(); const auto* abs = p["files"].getArray();
+    const int n = abs ? abs->size() : 0;
+    for (int i = 0; i < n; ++i)
+    {
+        // beside the project first (the folder may have moved), then where it was when saved
+        juce::File f;
+        if (rel && i < rel->size()) f = projectFile.getParentDirectory().getChildFile ((*rel)[i].toString());
+        if (! f.existsAsFile()) f = juce::File ((*abs)[i].toString());
+        out.push_back (f);
+    }
+    return out;
+}
+} // namespace
+
+juce::File SampleModel::defaultProjectFile() const
+{
+    if (takeFiles.empty()) return {};
+    return takeFiles.front().getParentDirectory().getChildFile (juce::File::createLegalFileName (name.isEmpty() ? juce::String ("Take") : name) + ".ldproj");
+}
+
+juce::File SampleModel::projectFor (const juce::Array<juce::File>& items)
+{
+    std::set<juce::String> want; juce::File dir;
+    for (auto& f : items)
+    {
+        if (f.isDirectory())
+        {
+            dir = f;
+            for (auto& c : f.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.WAV;*.AIF;*.AIFF")) want.insert (c.getFullPathName());
+        }
+        else { want.insert (f.getFullPathName()); if (dir == juce::File()) dir = f.getParentDirectory(); }
+    }
+    juce::File best;
+    if (! dir.isDirectory() || want.empty()) return best;
+    for (auto& pf : dir.findChildFiles (juce::File::findFiles, false, "*.ldproj"))
+    {
+        const auto p = juce::JSON::parse (pf);
+        if (! p.isObject() || ! p.hasProperty ("limitlessDrumsProject")) continue;
+        std::set<juce::String> has;
+        for (auto& f : projectFiles (p, pf)) has.insert (f.getFullPathName());
+        if (has == want && (best == juce::File() || pf.getLastModificationTime() > best.getLastModificationTime())) best = pf;
+    }
+    return best;
+}
+
+juce::var SampleModel::projectVar (const juce::File& beside) const
+{
+    const auto& S = state->session;
+    auto* p = new juce::DynamicObject();
+    p->setProperty ("limitlessDrumsProject", kProjectVersion);
+    p->setProperty ("take", name);
+    p->setProperty ("prepared", state->prepared);
+    juce::Array<juce::var> abs, rel;
+    for (auto& f : takeFiles) { abs.add (f.getFullPathName()); rel.add (f.getRelativePathFrom (beside.getParentDirectory())); }
+    p->setProperty ("files", abs); p->setProperty ("relFiles", rel);
+    p->setProperty ("settings", hl::settingsToVar (S));
+    auto* s = new juce::DynamicObject();
+    s->setProperty ("sr", S.sr);
+    s->setProperty ("drum", juce::String (S.drum)); s->setProperty ("artic", juce::String (S.artic));
+    s->setProperty ("V", S.det.V); s->setProperty ("RR", S.det.RR);
+    s->setProperty ("lead", S.refIdx); s->setProperty ("timing", juce::String (S.timing)); s->setProperty ("roomPhase", S.roomPhase);
+    s->setProperty ("tuneOn", S.tune.on); s->setProperty ("tuneMode", juce::String (S.tune.mode)); s->setProperty ("tuneTarget", juce::String (S.tune.target));
+    s->setProperty ("tuneCents", S.tune.cents); s->setProperty ("tuneA4", S.tune.a4);
+    s->setProperty ("tuneAnyway", S.tuneAnyway); s->setProperty ("keepAttack", S.keepAttack); s->setProperty ("tuneMic", juce::String (S.tuneMic));
+    juce::Array<juce::var> on, ratios;
+    for (long o : S.onsets) on.add ((juce::int64) o);
+    for (size_t i = 0; i < S.onsets.size(); ++i) ratios.add (hitRatio (i));
+    s->setProperty ("onsets", on); s->setProperty ("ratios", ratios);
+    p->setProperty ("session", juce::var (s));
+    juce::Array<juce::var> tracks;
+    for (int t = 0; t < (int) S.tracks.size(); ++t)
+    {
+        const auto& tr = S.tracks[(size_t) t];
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("mic", juce::String (tr.mic)); o->setProperty ("rename", juce::String (tr.rename)); o->setProperty ("roleOverride", juce::String (tr.roleOverride));
+        o->setProperty ("alignTo", juce::String (tr.alignTo)); o->setProperty ("lag", tr.lag); o->setProperty ("pol", tr.pol);
+        o->setProperty ("apOn", tr.apOn); o->setProperty ("ap", apVar (tr.ap)); o->setProperty ("userAp", apVar (tr.userAp));
+        o->setProperty ("manualLag", tr.manualLag); o->setProperty ("manualPol", tr.manualPol); o->setProperty ("manualAp", tr.manualAp);
+        o->setProperty ("monDb", monDb (t)); o->setProperty ("pan", pan (t)); o->setProperty ("mute", mute (t)); o->setProperty ("solo", solo (t));
+        tracks.add (juce::var (o));
+    }
+    p->setProperty ("tracks", tracks);
+    p->setProperty ("levelMatch", levelMatchOn);
+    return juce::var (p);
+}
+
+juce::String SampleModel::saveProject (const juce::File& file)
+{
+    if (! state || ! edit) return "Nothing open.";
+    if (prepping) return "Auto Prep is still running: save when it finishes.";
+    if (recall.isObject()) return "The saved project is still being recalled: run Auto Prep first.";
+    // written whole to a temporary file, then swapped in: a failed save never leaves half a project behind
+    juce::TemporaryFile tmp (file);
+    if (! tmp.getFile().replaceWithText (juce::JSON::toString (projectVar (file))) || ! tmp.overwriteTargetFileWithTemporary())
+        return "Couldn't write " + file.getFullPathName() + ".";
+    projFile = file;
+    savedEdits = edits;
+    return {};
+}
+
+juce::String SampleModel::openProject (const juce::File& file)
+{
+    const auto p = juce::JSON::parse (file);
+    if (! p.isObject() || ! p.hasProperty ("limitlessDrumsProject")) return file.getFileName() + " isn't a Limitless Drums project.";
+    if ((int) p["limitlessDrumsProject"] > kProjectVersion) return file.getFileName() + " was saved by a newer version of Limitless Drums.";
+    const auto files = projectFiles (p, file);
+    juce::StringArray missing;
+    for (auto& f : files) if (! f.existsAsFile()) missing.add (f.getFileName());
+    if (files.empty()) return "That project names no recordings.";
+    if (! missing.isEmpty()) return "Can't find " + missing.joinIntoString (", ") + ". Put the project back beside its recordings.";
+    juce::Array<juce::File> items;
+    for (auto& f : files) items.add (f);
+    const bool pref = roomPhasePref;
+    if (auto err = open (items); err.isNotEmpty()) return err;
+    name = p["take"].toString().isEmpty() ? name : p["take"].toString();
+    auto& S = state->session;
+    const auto* tracks = p["tracks"].getArray();
+    const auto s = p["session"];
+    if (! tracks || tracks->size() != (int) S.tracks.size() || std::abs ((double) s["sr"] - S.sr) > 0.5)
+        return "The recordings have changed since " + file.getFileName() + " was saved (different tracks or rate), so it can't be recalled. The take is open as new.";
+    for (int t = 0; t < tracks->size(); ++t)
+        if ((*tracks)[t]["mic"].toString() != juce::String (S.tracks[(size_t) t].mic))
+            return "The recordings have changed since " + file.getFileName() + " was saved (the tracks don't match), so it can't be recalled. The take is open as new.";
+    const std::string drum = s["drum"].toString().toStdString();
+    if (! drum.empty() && drum != S.drum) { S.drum = drum; hl::applyDrumDefaults (S, drum); }
+    S.artic = s["artic"].toString().toStdString();
+    S.det.V = std::clamp ((int) s["V"], 1, 32); S.det.RR = std::clamp ((int) s["RR"], 1, 32);
+    S.refIdx = std::clamp ((int) s["lead"], 0, (int) S.tracks.size() - 1);
+    hl::applySettings (S, p["settings"]);
+    S.timing = s["timing"].toString().isEmpty() ? S.timing : s["timing"].toString().toStdString();
+    S.roomPhase = (bool) s["roomPhase"];
+    roomPhasePref = pref;   // the project's choice is this take's; the next new take still starts from yours
+    S.tune.on = (bool) s["tuneOn"]; S.tune.mode = s["tuneMode"].toString().toStdString(); S.tune.target = s["tuneTarget"].toString().toStdString();
+    if (S.tune.mode.empty()) S.tune.mode = "drum";
+    if (S.tune.target.empty()) S.tune.target = "nearest";
+    S.tune.cents = (double) s["tuneCents"]; if ((double) s["tuneA4"] > 0) S.tune.a4 = (double) s["tuneA4"];
+    S.tuneAnyway = (bool) s["tuneAnyway"]; S.keepAttack = (bool) s["keepAttack"];
+    if (s["tuneMic"].toString().isNotEmpty()) S.tuneMic = s["tuneMic"].toString().toStdString();
+    // the hits exactly as saved: nothing is found again
+    if (auto* on = s["onsets"].getArray())
+    {
+        S.onsets.clear();
+        for (auto& o : *on) S.onsets.push_back ((long) (juce::int64) o);
+        S.detRan = true;
+    }
+    for (int t = 0; t < tracks->size(); ++t)
+    {
+        const auto& o = (*tracks)[t]; auto& tr = S.tracks[(size_t) t];
+        tr.rename = o["rename"].toString().toStdString(); tr.roleOverride = o["roleOverride"].toString().toStdString();
+        tr.alignTo = o["alignTo"].toString().isEmpty() ? tr.alignTo : o["alignTo"].toString().toStdString();
+        tr.manualLag = (bool) o["manualLag"]; tr.manualPol = (bool) o["manualPol"]; tr.manualAp = (bool) o["manualAp"];
+        tr.userAp = apOf (o["userAp"]);
+        if (tr.manualLag) tr.lag = (double) o["lag"];
+        if (tr.manualPol) tr.pol = (int) o["pol"] < 0 ? -1 : 1;
+        setMonDb (t, (float) (double) o["monDb"]); setPan (t, (float) (double) o["pan"]); setMute (t, (bool) o["mute"]); setSolo (t, (bool) o["solo"]);
+    }
+    levelMatchOn = ! p.hasProperty ("levelMatch") || (bool) p["levelMatch"];
+    const bool wasPrepared = (bool) p["prepared"];
+    state->prepared = false;
+    buildHits();
+    projFile = file;
+    edits = savedEdits = 0;
+    if (wasPrepared) recall = p;
+    return {};
+}
+
+void SampleModel::finishRecall()
+{
+    if (! recall.isObject() || ! state) return;
+    const auto p = recall;
+    recall = juce::var();
+    auto& S = state->session;
+    recallMsg.clear();
+    // each mic's alignment exactly as it was applied when saved, whatever today's measurement says
+    if (auto* tracks = p["tracks"].getArray())
+        for (int t = 0; t < std::min (tracks->size(), (int) S.tracks.size()); ++t)
+        {
+            const auto& o = (*tracks)[t]; auto& tr = S.tracks[(size_t) t];
+            tr.alignTo = o["alignTo"].toString().isEmpty() ? tr.alignTo : o["alignTo"].toString().toStdString();
+            tr.lag = (double) o["lag"]; tr.pol = (int) o["pol"] < 0 ? -1 : 1;
+            tr.apOn = (bool) o["apOn"]; tr.ap = apOf (o["ap"]); tr.userAp = apOf (o["userAp"]);
+            tr.manualLag = (bool) o["manualLag"]; tr.manualPol = (bool) o["manualPol"]; tr.manualAp = (bool) o["manualAp"];
+        }
+    undoStack.clear(); redoStack.clear(); scoreCache.clear();
+    reapply (true);
+    if (auto* r = p["session"]["ratios"].getArray())
+    {
+        double worst = 0;
+        for (int i = 0; i < std::min (r->size(), (int) S.onsets.size()); ++i)
+            worst = std::max (worst, std::abs (1200.0 * std::log2 (std::max (1e-9, hitRatio ((size_t) i)) / std::max (1e-9, (double) (*r)[i]))));
+        if (r->size() != (int) S.onsets.size() || worst > 0.5)
+            recallMsg = "The tuning was measured again and differs from when this was saved (by up to " + juce::String (worst, 1) + " cents). Everything else is as saved.";
+    }
+    setLevelMatch (levelMatchOn);
+    edits = savedEdits = 0;
+}
+
+juce::String SampleModel::renameTrack (int t, const std::string& to)
+{
+    if (! state || t < 0 || t >= (int) state->session.tracks.size()) return "No such track.";
+    const auto trimmed = juce::String (to).trim().toStdString();
+    auto trial = state->session;
+    trial.tracks[(size_t) t].rename = trimmed;
+    const auto mine = hl::fillTokens (trial, "{MIC}", t, std::nullopt);
+    for (int o = 0; o < (int) trial.tracks.size(); ++o)
+        if (o != t && juce::String (hl::fillTokens (trial, "{MIC}", o, std::nullopt)).equalsIgnoreCase (juce::String (mine)))
+            return "Another track is already called that: their files would overwrite each other.";
+    if (! change ([t, trimmed] (hl::Session& S) { S.tracks[(size_t) t].rename = trimmed; }, Redo::none)) return "Auto Prep is running: try again when it finishes.";
     return {};
 }
 
@@ -742,7 +1003,7 @@ hl::Chs SampleModel::renderB (int t, double srOut, bool stereo, juce::String& er
     return out;
 }
 
-juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::function<void (float)> progress)
+juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::function<void (float)> progress, std::function<bool()> cancel)
 {
     count = 0;
     if (auto why = exportBlocker(); why.isNotEmpty()) return why;
@@ -820,6 +1081,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
         layoutHitsFor (&set, srOut);
         for (int t = 0; t < T && err.isEmpty(); ++t)
         {
+            if (cancel && cancel()) return exportCancelled();
             const auto whole = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1, err);
             if (err.isNotEmpty()) break;
             for (int ii : set)
@@ -849,6 +1111,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
     if (wantFull)
         for (int t = 0; t < T; ++t)
         {
+            if (cancel && cancel()) return exportCancelled();
             auto x = renderB (t, srOut, S.tracks[(size_t) t].ch.size() > 1, err);
             if (err.isNotEmpty()) return err;
             const auto pad = (long) std::llround (kPad * srOut);
@@ -857,6 +1120,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
             fullAudio.push_back (std::move (x));
         }
 
+    if (cancel && cancel()) return exportCancelled();   // the last chance: from here the files are written, all of them
     // the tails and fades, as the reference export does them
     const long fin = (long) std::llround (S.exp.fadeInMs * srOut / 1000);
     const bool fade = S.exp.tailMode == "fade" && S.exp.mode != "full";
@@ -911,7 +1175,8 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
 }
 
 float SampleModel::monDb (int t) const { auto* at = track (t); return at && at->getVolumePlugin() ? at->getVolumePlugin()->getVolumeDb() : 0.0f; }
-void SampleModel::setMonDb (int t, float db)
+void SampleModel::setMonDb (int t, float db) { ++edits; monDbTo (t, db); }
+void SampleModel::monDbTo (int t, float db)
 {
     if (auto* at = track (t)) if (auto* v = at->getVolumePlugin()) v->setVolumeDb (db);
     if (auto* at = trackA (t)) if (auto* v = at->getVolumePlugin()) v->setVolumeDb (db + (float) (levelMatchOn ? matchDb : 0.0));
@@ -919,17 +1184,18 @@ void SampleModel::setMonDb (int t, float db)
 float SampleModel::pan (int t) const { auto* at = track (t); return at && at->getVolumePlugin() ? at->getVolumePlugin()->getPan() : 0.0f; }
 void SampleModel::setPan (int t, float p)
 {
+    ++edits;
     for (auto* at : { track (t), trackA (t) }) if (at) if (auto* v = at->getVolumePlugin()) v->setPan (p);
 }
 bool SampleModel::solo (int t) const { auto* at = track (t); return at && at->isSolo (false); }
-void SampleModel::setSolo (int t, bool b) { for (auto* at : { track (t), trackA (t) }) if (at) at->setSolo (b); }
+void SampleModel::setSolo (int t, bool b) { ++edits; for (auto* at : { track (t), trackA (t) }) if (at) at->setSolo (b); }
 bool SampleModel::mute (int t) const { return t >= 0 && t < (int) userMute.size() && userMute[(size_t) t]; }
-void SampleModel::setMute (int t, bool b) { if (t >= 0 && t < (int) userMute.size()) { userMute[(size_t) t] = b; applyMutes(); } }
+void SampleModel::setMute (int t, bool b) { if (t >= 0 && t < (int) userMute.size()) { userMute[(size_t) t] = b; ++edits; applyMutes(); } }
 
 void SampleModel::setLevelMatch (bool on)
 {
     levelMatchOn = on;
-    if (state) for (int t = 0; t < (int) state->session.tracks.size(); ++t) setMonDb (t, monDb (t));
+    if (state) for (int t = 0; t < (int) state->session.tracks.size(); ++t) monDbTo (t, monDb (t));
 }
 
 std::pair<float, float> SampleModel::meter (int t)

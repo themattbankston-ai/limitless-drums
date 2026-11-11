@@ -1008,3 +1008,183 @@ TEST_CASE ("Rooms in phase on a real take (measurement; set LD_ROOM_TAKE to a ta
         CHECK (a >= b - 1e-9);
     }
 }
+
+// ---------------------------------------------------------------------------- projects
+TEST_CASE ("Project: everything set on a take is saved, recalled, and exports the same bytes", "[project]")
+{
+    const auto take = makeTake ("proj1");
+    const auto pf = take.getChildFile ("proj1.ldproj");
+    auto a = freshDir ("proj1_a"), b = freshDir ("proj1_b");
+    double lag1 = 0; int pol2 = 0; int na = 0;
+    {
+        SampleModel m (ldtest::engine());
+        REQUIRE (m.open ({ take }).isEmpty());
+        CHECK_FALSE (m.modified());
+        prep (m);
+        REQUIRE (m.isPrepared());
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.5; S.dnDb = 12; }, SampleModel::Redo::mix));
+        REQUIRE (m.change ([] (ld::hl::Session& S) { ld::hl::nudgeLag (S, 1, 6); ld::hl::flipMic (S, 2); ld::hl::setAllPass (S, 1, 0, 240, 1.1); }, SampleModel::Redo::align));
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.tuneAnyway = true; ld::hl::runPitch (S); S.tune.on = true; S.tune.cents = -35; }, SampleModel::Redo::tune));
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.lev.curve = "even"; S.exp.bits = 24; }, SampleModel::Redo::levels));
+        REQUIRE (m.renameTrack (2, "Overs").isEmpty());
+        m.setMonDb (1, -6.5f); m.setPan (2, 0.4f); m.setMute (1, true); m.setLevelMatch (false);
+        CHECK (m.modified());
+        pumpUntilIdle (m);
+        REQUIRE (m.exportTo (a, na).isEmpty());
+        REQUIRE (m.saveProject (pf).isEmpty());
+        CHECK_FALSE (m.modified());
+        CHECK (m.projectFile() == pf);
+        lag1 = m.session()->tracks[1].lag; pol2 = m.session()->tracks[2].pol;
+    }
+    CHECK (SampleModel::projectFor ({ take }) == pf);
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.openProject (pf).isEmpty());
+    REQUIRE (m.recallNeedsPrep());
+    CHECK (m.exportBlocker().isNotEmpty());   // not until the recall has finished
+    CHECK (m.tracks()[2].name == "Overs");
+    prep (m);
+    REQUIRE (m.isPrepared());
+    CHECK_FALSE (m.recallNeedsPrep());
+    CHECK (m.recallNote().isEmpty());
+    CHECK_FALSE (m.modified());
+    const auto& S = *m.session();
+    CHECK (S.tone.bright == Approx (0.5)); CHECK (S.dnDb == Approx (12));
+    CHECK (S.tracks[1].lag == lag1); CHECK (S.tracks[2].pol == pol2);   // to the last bit
+    REQUIRE (S.tracks[1].ap.size() == 1); CHECK (S.tracks[1].ap[0].fc == Approx (240)); CHECK (S.tracks[1].manualAp);
+    CHECK (S.tune.on); CHECK (S.tune.cents == Approx (-35));
+    CHECK (S.lev.curve == "even"); CHECK (S.exp.bits == 24);
+    CHECK (m.monDb (1) == Approx (-6.5f).margin (0.05)); CHECK (m.pan (2) == Approx (0.4f).margin (0.01)); CHECK (m.mute (1)); CHECK_FALSE (m.levelMatch());
+    int nb = 0;
+    REQUIRE (m.exportTo (b, nb).isEmpty());
+    const auto A = exportedBytes (a), B = exportedBytes (b);
+    REQUIRE (na == nb);
+    REQUIRE (A.size() == B.size());
+    int differ = 0; bool renamed = false;
+    for (auto& [k, v] : A)
+    {
+        if (! B.count (k) || B.at (k) != v) { ++differ; WARN (k << " differs" << (B.count (k) ? " by " + std::to_string (diffDb (readWav (a.getChildFile (k)), readWav (b.getChildFile (k)))) + " dB" : std::string (": missing"))); }
+        if (k.containsIgnoreCase ("Overs")) renamed = true;
+    }
+    CHECK (differ == 0);
+    CHECK (renamed);   // the name you gave is the name on the files
+}
+
+TEST_CASE ("Project: the saved alignment is what comes back, whatever the measurement would say today", "[project]")
+{
+    const auto take = makeTake ("proj2");
+    const auto pf = take.getChildFile ("proj2.ldproj");
+    {
+        SampleModel m (ldtest::engine());
+        REQUIRE (m.open ({ take }).isEmpty());
+        prep (m);
+        REQUIRE (m.saveProject (pf).isEmpty());
+    }
+    // as if an older version had measured this mic a little differently
+    auto p = juce::JSON::parse (pf);
+    auto* tr = p["tracks"].getArray();
+    REQUIRE (tr != nullptr);
+    const double saved = (double) (*tr)[1]["lag"] + 3.25;
+    (*tr)[1].getDynamicObject()->setProperty ("lag", saved);
+    REQUIRE (pf.replaceWithText (juce::JSON::toString (p)));
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.openProject (pf).isEmpty());
+    prep (m);
+    CHECK (m.session()->tracks[1].lag == Approx (saved));
+    CHECK_FALSE (m.session()->tracks[1].manualLag);   // and it isn't turned into a hand setting
+    CHECK (m.shiftMs (1) == Approx ((float) (saved / m.sampleRate() * 1000.0)).margin (1e-3));
+}
+
+TEST_CASE ("Project: a project that can't be recalled says why and changes nothing", "[project]")
+{
+    const auto take = makeTake ("proj3");
+    const auto pf = take.getChildFile ("proj3.ldproj");
+    {
+        SampleModel m (ldtest::engine());
+        REQUIRE (m.open ({ take }).isEmpty());
+        prep (m);
+        REQUIRE (m.saveProject (pf).isEmpty());
+        // nowhere to write: the old project is still whole
+        const auto before = pf.loadFileAsString();
+        CHECK (m.saveProject (juce::File ("/proc/nope/x.ldproj")).isNotEmpty());
+        CHECK (pf.loadFileAsString() == before);
+        CHECK (m.projectFile() == pf);
+    }
+    SampleModel m (ldtest::engine());
+    auto p = juce::JSON::parse (pf);
+    p.getDynamicObject()->setProperty ("limitlessDrumsProject", 99);
+    const auto newer = take.getChildFile ("newer.ldproj");
+    REQUIRE (newer.replaceWithText (juce::JSON::toString (p)));
+    CHECK (m.openProject (newer).containsIgnoreCase ("newer version"));
+    CHECK_FALSE (m.isOpen());
+    const auto junk = take.getChildFile ("junk.ldproj");
+    REQUIRE (junk.replaceWithText ("not a project"));
+    CHECK (m.openProject (junk).isNotEmpty());
+    CHECK_FALSE (m.isOpen());
+    // the project moved with its folder: found beside it; a recording gone: named
+    const auto moved = take.getParentDirectory().getChildFile ("ld_model_proj3_moved");
+    moved.deleteRecursively();
+    REQUIRE (take.copyDirectoryTo (moved));
+    take.deleteRecursively();
+    REQUIRE (m.openProject (moved.getChildFile ("proj3.ldproj")).isEmpty());
+    CHECK (m.isOpen());
+    const auto gone = moved.findChildFiles (juce::File::findFiles, false, "*BOTTOM*.wav");
+    REQUIRE (gone.size() == 1);
+    gone[0].deleteFile();
+    SampleModel m2 (ldtest::engine());
+    CHECK (m2.openProject (moved.getChildFile ("proj3.ldproj")).contains ("BOTTOM"));
+    CHECK_FALSE (m2.isOpen());
+}
+
+TEST_CASE ("Track names: a new name shows, writes the files, undoes, and can't collide", "[project]")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("rename") }).isEmpty());
+    prep (m);
+    const auto was = m.tracks()[1].name;
+    CHECK (m.renameTrack (1, "  Snare Under ").isEmpty());
+    CHECK (m.tracks()[1].name == "Snare Under");
+    CHECK (m.renameTrack (2, "snare under").isNotEmpty());   // their files would overwrite each other
+    CHECK (m.renameTrack (2, m.tracks()[0].name).isNotEmpty());
+    CHECK (juce::String (m.session()->tracks[1].mic).equalsIgnoreCase ("bottom"));           // how it's handled still goes by the recording
+    int n = 0; auto d = freshDir ("rename");
+    REQUIRE (m.exportTo (d, n).isEmpty());
+    CHECK (d.findChildFiles (juce::File::findFiles, true, "Snare_Under.wav").size() > 0);
+    CHECK (d.findChildFiles (juce::File::findFiles, true, "*BOTTOM*").isEmpty());
+    m.undo();
+    CHECK (m.tracks()[1].name == was);
+    CHECK (m.renameTrack (1, "").isEmpty());
+    CHECK (m.tracks()[1].name == was);
+}
+
+TEST_CASE ("Export cancel: stopping part-way writes nothing, puts the monitor mix back, and the next export is whole", "[project]")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeTake ("cancel") }).isEmpty());
+    prep (m);
+    m.setMonDb (1, -9.0f); m.setMute (2, true); m.setSolo (0, true);
+    auto whole = freshDir ("cancel_whole"), dest = freshDir ("cancel_dest");
+    int n0 = 0;
+    REQUIRE (m.exportTo (whole, n0).isEmpty());
+    // something already in the folder stays exactly as it was
+    const auto mine = dest.getChildFile ("keep-me.txt");
+    REQUIRE (mine.replaceWithText ("mine"));
+    for (int stopAt : { 0, 1, 2, 1000 })   // before anything, after one render, after two, and at the very last moment
+    {
+        int asked = 0, n = -1;
+        const auto err = m.exportTo (dest, n, {}, [&] { return ++asked > stopAt || stopAt == 1000 ? (stopAt != 1000 || asked > 3) : false; });
+        INFO ("stop after " << stopAt << " renders");
+        CHECK (err == SampleModel::exportCancelled());
+        CHECK (n == 0);
+        CHECK (dest.findChildFiles (juce::File::findFilesAndDirectories, true).size() == 1);
+        CHECK (mine.loadFileAsString() == "mine");
+        CHECK (m.monDb (1) == Approx (-9.0f).margin (0.05)); CHECK (m.mute (2)); CHECK (m.solo (0)); CHECK (m.processed());
+        CHECK (m.exportBlocker().isEmpty());
+    }
+    int n1 = 0; auto again = freshDir ("cancel_again");
+    REQUIRE (m.exportTo (again, n1, {}, [] { return false; }).isEmpty());
+    const auto A = exportedBytes (whole), B = exportedBytes (again);
+    REQUIRE (n1 == n0);
+    int differ = 0;
+    for (auto& [k, v] : A) if (! B.count (k) || B.at (k) != v) ++differ;
+    CHECK (differ == 0);
+}

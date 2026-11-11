@@ -98,6 +98,7 @@ struct SessionTrack
     std::optional<AlignResult> inPlace;   ///< rooms: polarity and phase EQ measured where the mic sits (never moved in time)
     std::optional<int> proPol;
     std::string label;                ///< "24-bit" etc.
+    std::string rename;               ///< sample build: the name you gave it (what's shown and what {MIC} writes); how the mic is handled still goes by `mic`
 };
 
 struct ExportSettings
