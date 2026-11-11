@@ -404,6 +404,9 @@ void HitsView::drawSetup (Canvas& c)
     }
     txt (c, "Order", bodyFont (12), ink3, sx + 16, y, 100, 26);
     segmented (c, sx + 150, y - 2, { "Softest first", "Hardest first" }, S->det.order == "loud" ? 1 : 0, "order:", 24);
+    y += 36;
+    txt (c, "Room mics", bodyFont (12), ink3, sx + 16, y, 100, 26);
+    segmented (c, sx + 150, y - 2, { "As recorded", "Keep distance, fix phase" }, model.roomPhase() ? 1 : 0, "rooms:", 24);
     y += 40;
     txt (c, fmt ("%.0f Hz", S->sr) + " \xc2\xb7 " + std::to_string (S->tracks.size()) + " tracks \xc2\xb7 " + fmtTime (model.length()), bodyFont (12), ink3, sx + 16, y, sideW - 40, 22);
     y += 34;
@@ -564,11 +567,12 @@ void HitsView::drawAlign (Canvas& c)
         const float cx = lx + lw;
         if (alignDetails) continue;
         c.setColor (bar2); c.fill (cx, y, colW, rowH - 1);
-        std::string stTxt = isLead ? "LEAD" : tr.alignTo == "none" ? "AS RECORDED" : tr.manualLag ? "BY HAND" : "ALIGNED";
+        const bool inPhase = tr.alignTo == "phase";   // a room kept in time, set in phase
+        std::string stTxt = isLead ? "LEAD" : tr.alignTo == "none" ? "AS RECORDED" : tr.manualLag ? "BY HAND" : inPhase ? "IN PHASE" : "ALIGNED";
         const unsigned stCol = isLead ? accent : tr.alignTo == "none" ? 0xff8a8a90 : 0xff4fc28a;
         c.setColor (draw::withAlpha (stCol, 0.2f)); c.roundedRectangle (cx + 12, y + 10, 96, 18, 3);
         txt (c, stTxt, boldFont (10), stCol, cx + 12, y + 10, 96, 18, visage::Font::kCenter);
-        txt (c, isLead ? std::string ("the others follow it") : tr.alignTo == "none" ? std::string ("its own arrival") : "to " + model.tracks()[(size_t) S->refIdx].name,
+        txt (c, isLead ? std::string ("the others follow it") : tr.alignTo == "none" ? std::string ("its own arrival") : inPhase ? std::string ("distance kept") : "to " + model.tracks()[(size_t) S->refIdx].name,
              bodyFont (10), ink3, cx + 12, y + 30, 104, 16);
         const double ms = lag / sr * 1000.0;
         std::string d = alignUnits == 0 ? fmt ("%.2f ms", ms) : alignUnits == 1 ? fmt ("%.2f smp", lag) : fmt ("%.2f ft", ms * 1.125);
@@ -1195,6 +1199,14 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
         const int d = arg();
         model.change ([rr, d] (hl::Session& S) { int& n = rr ? S.det.RR : S.det.V; n = std::clamp (n + d, 1, 32); }, R::reprep);
         setStatus ("Counts changed. Run Auto Prep to find that many hits: export waits until it has.");
+        return true;
+    }
+    if (has ("rooms:"))
+    {
+        const bool on = arg() == 1;
+        model.setRoomPhase (on);
+        setStatus (on ? "Rooms keep their distance; polarity and phase EQ are set against the lead. Auto Prep does this from now on."
+                      : "Rooms are left exactly as recorded.");
         return true;
     }
     if (has ("order:")) { const bool loud = arg() == 1; model.change ([loud] (hl::Session& S) { S.det.order = loud ? "loud" : "soft"; }, R::reprep); setStatus ("Order changed. Run Auto Prep: export waits until it has."); return true; }

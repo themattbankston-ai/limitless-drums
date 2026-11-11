@@ -322,6 +322,8 @@ void runDetect (Session& S)
     if (S.tuneAnalyzed) runPitch (S);
 }
 
+namespace { void applyRoomPolicy (Session&); }
+
 void runAnalyze (Session& S)
 {
     if (S.onsets.empty()) return;
@@ -355,6 +357,24 @@ void runAnalyze (Session& S)
         for (auto& j : jobs) j.get();
     }
     for (size_t j = 0; j < todo.size(); ++j) S.tracks[(size_t) todo[j]].autoResult = res[j];
+    // rooms, measured where they sit: the polarity and phase EQ that sum best with the lead without moving them in time
+    {
+        std::vector<int> rooms;
+        for (int i : todo) if (effectiveRole (S, i) == "far") rooms.push_back (i);
+        std::vector<AlignResult> rr (rooms.size());
+        std::vector<std::future<void>> jobs;
+        for (size_t j = 0; j < rooms.size(); ++j)
+            jobs.push_back (std::async (std::launch::async, [&, j]
+            {
+                AlignOptions o = alignOptionsFor ("far");
+                o.inPlace = true; o.allpass = 1;
+                rr[j] = alignMic (ref, baseChOf (S.tracks[(size_t) rooms[j]]), alignOns, S.sr, o);
+            }));
+        for (auto& j : jobs) j.get();
+        for (auto& tr : S.tracks) tr.inPlace.reset();
+        for (size_t j = 0; j < rooms.size(); ++j) S.tracks[(size_t) rooms[j]].inPlace = rr[j];
+    }
+    applyRoomPolicy (S);
     for (auto* g : GROUPS)
     {
         std::vector<int> mem;
@@ -383,6 +403,29 @@ void runAnalyze (Session& S)
     S.phaseAnalyzed = true; S.phaseStale = false;
 }
 
+namespace
+{
+/** Which of "as recorded" and "kept in time, phase fixed" each room is on, from the session's choice. A room moved or
+    grouped by hand is left alone. */
+void applyRoomPolicy (Session& S)
+{
+    for (int i = 0; i < (int) S.tracks.size(); ++i)
+    {
+        auto& tr = S.tracks[(size_t) i];
+        if (i == S.refIdx || tr.manualLag || effectiveRole (S, i) != "far") continue;
+        if (S.roomPhase && tr.alignTo == "none") tr.alignTo = "phase";
+        else if (! S.roomPhase && tr.alignTo == "phase") tr.alignTo = "none";
+    }
+}
+}
+
+void setRoomPhase (Session& S, bool on)
+{
+    S.roomPhase = on;
+    applyRoomPolicy (S);
+    resolvePhase (S);
+}
+
 void resolvePhase (Session& S)
 {
     const int nT = (int) S.tracks.size();
@@ -392,7 +435,7 @@ void resolvePhase (Session& S)
         MicAlign m;
         m.mic = tr.mic; m.name = tr.name; m.alignTo = tr.alignTo; m.amount = tr.amount; m.apOn = tr.apOn;
         m.manualLag = tr.manualLag; m.manualPol = tr.manualPol; m.autoResult = tr.autoResult; m.grp = tr.grp; m.proPol = tr.proPol;
-        m.lag = tr.lag; m.pol = tr.pol; m.ap = tr.ap;
+        m.lag = tr.lag; m.pol = tr.pol; m.ap = tr.ap; m.inPlace = tr.inPlace;
         mics.push_back (std::move (m));
     }
     if (std::any_of (S.tracks.begin(), S.tracks.end(), [] (auto& t) { return t.alignTo == "pro"; }))
@@ -488,7 +531,7 @@ int alignRef (const Session& S, int t)
 {
     const auto& tr = S.tracks[(size_t) t];
     if (t == S.refIdx || tr.alignTo == "none") return -1;
-    if (tr.alignTo == "lead" || tr.alignTo == "pro") return S.refIdx;
+    if (tr.alignTo == "lead" || tr.alignTo == "pro" || tr.alignTo == "phase") return S.refIdx;
     const int a = groupAnchor (S, tr.alignTo);
     return a == t ? -1 : a;
 }
@@ -525,6 +568,7 @@ void setTiming (Session& S, const std::string& mode)
             tr.alignTo = mode == "natural" ? "none" : "lead"; tr.manualLag = false; tr.manualPol = false;
         }
     S.timing = mode;
+    applyRoomPolicy (S);
     resolvePhase (S);
 }
 

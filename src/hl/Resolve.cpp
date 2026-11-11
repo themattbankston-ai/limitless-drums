@@ -51,6 +51,7 @@ bool resolveAlignment (std::vector<MicAlign>& mics, int refIdx, bool leadFlipAut
         double lag = 0; int pol = 1; std::vector<AllPass> ap;
         const double amt = amountOf (m);
         if (m.alignTo == "lead" && m.autoResult) { lag = m.autoResult->lag * amt; pol = m.autoResult->pol; ap = m.autoResult->ap; }
+        else if (m.alignTo == "phase" && m.inPlace && m.inPlace->valid) { lag = 0; pol = m.inPlace->pol; ap = m.inPlace->ap; }   // its distance kept
         else if (m.alignTo == "pro") { lag = std::isfinite (m.proLag) ? m.proLag : 0; pol = m.proPol ? *m.proPol : natPol (m); }
         else pol = natPol (m);
         if (! m.manualLag) m.lag = lag;
@@ -74,7 +75,7 @@ bool resolveAlignment (std::vector<MicAlign>& mics, int refIdx, bool leadFlipAut
             for (int t = 0; t < (int) mics.size(); ++t)
             {
                 auto& m = mics[(size_t) t];
-                if (t != refIdx && ! m.manualPol && (m.alignTo == "lead" || m.alignTo == "none" || m.alignTo == "pro" || isAnchor (t))) m.pol = -m.pol;
+                if (t != refIdx && ! m.manualPol && (m.alignTo == "lead" || m.alignTo == "none" || m.alignTo == "pro" || m.alignTo == "phase" || isAnchor (t))) m.pol = -m.pol;
             }
         }
     }

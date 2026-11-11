@@ -95,6 +95,7 @@ struct SessionTrack
     bool apOn = true, manualLag = false, manualPol = false;
     bool manualAp = false; std::vector<AllPass> userAp;   ///< the phase EQ set by hand (sample build): kept through every re-resolve until Reset
     std::optional<AlignResult> autoResult, grp;
+    std::optional<AlignResult> inPlace;   ///< rooms: polarity and phase EQ measured where the mic sits (never moved in time)
     std::optional<int> proPol;
     std::string label;                ///< "24-bit" etc.
 };
@@ -148,6 +149,7 @@ struct Session
     bool thrAuto = true, detRan = false;
     bool phaseAnalyzed = false, phaseStale = false, flipped = false, leadFlipAuto = true;
     std::array<std::string, 4> groupAnchors { "auto", "auto", "auto", "auto" };
+    bool roomPhase = false;           ///< sample build: room mics keep their distance but get polarity and phase EQ against the lead
     std::string timing = "tight";     ///< the Align step's timing: tight, pro (like the pros), natural (as recorded)
     TuneSettings tune;
     PitchOptions pitchOpt;            ///< fmin, fmax, skip and window, per drum

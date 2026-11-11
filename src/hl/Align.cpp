@@ -231,6 +231,7 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
         arrival = median0 (d);
         if (std::isfinite (arrival)) { minL = std::max (minL, jsRoundI (arrival - 0.002 * sr)); maxL = std::min (maxL, jsRoundI (arrival + 0.004 * sr)); }
     }
+    if (o.inPlace) { minL = 0; maxL = 0; }   // the mic stays where it was recorded
     const int negS = std::max (4, -minL + 4), mxS = maxL + 4;
     const int emS = std::isfinite (arrival) && arrival > 0 ? jsRoundI (arrival) : 0;
     std::vector<XSpec> Xl, Xs;
@@ -245,6 +246,7 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
     put (0, 0);
     for (auto& X : Xs)
     {
+        if (o.inPlace) break;   // the only candidate is "where it is"
         auto pk = phatLags (X, 300, 12000, minL, maxL);
         if (role == "far" && ! std::isfinite (arrival) && ! pk.empty())
         {
@@ -255,7 +257,7 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
         }
         for (auto& c : pk) put (c.lag, std::max (cand.count (c.lag) ? cand[c.lag] : 0.0, c.sharp));
     }
-    if (std::isfinite (arrival) && role == "far") { const int a = jsRoundI (arrival); put (a, cand.count (a) && cand[a] != 0 ? cand[a] : 1); }
+    if (! o.inPlace && std::isfinite (arrival) && role == "far") { const int a = jsRoundI (arrival); put (a, cand.count (a) && cand[a] != 0 ? cand[a] : 1); }
     for (double l : o.extra)
         if (std::isfinite (l) && l >= minL && l <= maxL) { const int a = jsRoundI (l); put (a, cand.count (a) && cand[a] != 0 ? cand[a] : 1); }
 
@@ -272,7 +274,7 @@ AlignResult alignMic (const F32& ref, const std::vector<F32>& chans, const std::
     const double asis = scoreOf (Xl, 0, 1, nullptr);
     bool kept = false;
     const double keepThr = std::isnan (o.keepThr) ? rr.keepThr : o.keepThr;
-    const bool followArrival = role == "far" && std::isfinite (arrival) && arrival > 0.001 * sr;
+    const bool followArrival = ! o.inPlace && role == "far" && std::isfinite (arrival) && arrival > 0.001 * sr;
     if (! best || (! followArrival && (best->v - asis < keepThr || (best->v < 0.2 && best->v - asis < 0.08)))) { best = Best { asis, 0, 1 }; kept = true; }
 
     std::vector<AllPass> aps;

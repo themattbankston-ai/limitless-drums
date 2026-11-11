@@ -132,6 +132,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     auto st = openTake (files, folder);
     if (st->session.tracks.empty())
         return st->errors.empty() ? juce::String ("Those files couldn't be read.") : juce::String (st->errors.front());
+    st->session.roomPhase = roomPhasePref;
 
     dropMeters();
     if (edit) edit->getTransport().stop (false, false);
@@ -369,6 +370,12 @@ juce::String SampleModel::exportBlocker() const
     if (! state->levels || ! state->levels->valid) return "The levels aren't measured: run Auto Prep.";
     if (isBusy()) return "Still rendering the last change.";
     return {};
+}
+
+void SampleModel::setRoomPhase (bool on)
+{
+    roomPhasePref = on;
+    if (state) change ([on] (hl::Session& S) { hl::setRoomPhase (S, on); }, Redo::align);
 }
 
 SampleModel::ScoreKey SampleModel::scoreKey (int t) const

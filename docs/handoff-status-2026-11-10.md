@@ -84,3 +84,19 @@ plugin hosting.
 ## Old mockups this supersedes
 The three concept images in the earlier comprehensive handoff: their mic/drum artwork, the detached
 selected-mic monitor strip and the illustrative phase plot are not being built.
+
+## Room mics: keep the distance, fix the phase
+
+Setup has a "Room mics" choice: **As recorded** (the default, unchanged) or **Keep distance, fix phase**.
+With the second, every room-role mic stays exactly where it was recorded (shift 0 samples) and only its
+polarity and phase EQ are set against the lead. Auto Prep follows the choice, and it carries to each take
+opened during the app run. Align shows these mics as "IN PHASE · distance kept".
+
+Evidence (verified):
+- Synthetic room (lead delayed 23.35 ms, low-passed): shift stays 0, sum with the lead improves; regression test in `tests/SampleModelTests.cpp`.
+- Four corpus takes, 14 room mics, measured by the hidden `[.rooms]` test (`LD_ROOM_TAKE=<take folder>`): every mic kept a 0-sample shift; 12 improved their sum with the lead and 2 were left alone because no polarity or phase EQ setting beat the recording.
+- Full suite: 98 cases passing on Linux.
+
+Not verified: listening on real drums. The sum score is a measurement, not a judgement of tone. The phase EQ is one or two all-pass bands, so it mostly moves low end and sustain; it cannot make a far room coherent with a close mic across the whole spectrum, and it isn't meant to.
+
+Gaps: the choice isn't saved between app launches. Captures: `docs/gui/2026-11-10-setup-room-mics.jpg`, `docs/gui/2026-11-10-align-rooms-in-phase.jpg`.

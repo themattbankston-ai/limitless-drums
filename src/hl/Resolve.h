@@ -8,11 +8,12 @@ namespace ld::hl
 struct MicAlign
 {
     std::string mic, name;
-    std::string alignTo = "lead";     ///< "lead", "none" (natural), "pro" (Standard), or a group "A".."D"
+    std::string alignTo = "lead";     ///< "lead", "none" (natural), "pro" (Standard), "phase" (kept in time, polarity and phase EQ only), or a group "A".."D"
     double amount = 1;                ///< how far rooms move (0..1)
     bool apOn = true, manualLag = false, manualPol = false;
     std::optional<AlignResult> autoResult;   ///< measured against the lead
     std::optional<AlignResult> grp;          ///< measured against its group anchor
+    std::optional<AlignResult> inPlace;      ///< measured against the lead without moving it in time (alignTo "phase")
     double proLag = NAN;              ///< Standard timing target, from the library
     std::optional<int> proPol;
     // results

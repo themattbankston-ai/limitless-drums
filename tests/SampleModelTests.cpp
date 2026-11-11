@@ -677,6 +677,88 @@ TEST_CASE ("Sample model: a phase EQ band set by hand is what plays, survives nu
     pumpUntilIdle (m);
 }
 
+namespace
+{
+/** The 3-mic take plus a ROOM: the lead about 23 ms later (8 m), darker. The distance leaves the drum's 185 Hz
+    fundamental roughly a third of a cycle out against the lead, which neither polarity fixes. */
+juce::File makeRoomTake (const juce::String& name)
+{
+    auto dir = makeTake (name);
+    const auto b = readWav (dir.getChildFile ("SNARE_CENTER_TOP_V01_RR04.wav"));
+    const int n = b.getNumSamples(), d = (int) (0.02335 * SR);
+    std::vector<float> x ((size_t) n, 0.0f);
+    for (int i = d; i < n; ++i) x[(size_t) i] = 0.5f * b.getSample (0, i - d);
+    juce::IIRFilter lp; lp.setCoefficients (juce::IIRCoefficients::makeLowPass (SR, 3000.0));
+    lp.processSamples (x.data(), n);
+    writeMono (dir.getChildFile ("SNARE_CENTER_ROOM_V01_RR04.wav"), x);
+    return dir;
+}
+int roomTrack (SampleModel& m)
+{
+    for (int i = 0; i < (int) m.tracks().size(); ++i) if (juce::String (m.tracks()[(size_t) i].name).containsIgnoreCase ("room")) return i;
+    return -1;
+}
+} // namespace
+
+TEST_CASE ("Sample model: rooms can keep their distance and still be set in phase, and Auto Prep follows the choice")
+{
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ makeRoomTake ("roomphase") }).isEmpty());
+    prep (m);
+    const int r = roomTrack (m);
+    REQUIRE (r >= 0);
+    // the default: left as recorded (no shift, no phase EQ)
+    {
+        const auto& tr = m.session()->tracks[(size_t) r];
+        CHECK (tr.alignTo == "none");
+        CHECK (tr.lag == 0.0);
+        CHECK (tr.ap.empty());
+        REQUIRE (tr.inPlace);   // measured anyway, so switching is instant
+        CHECK (tr.inPlace->valid);
+        CHECK (tr.inPlace->lag == 0.0);
+    }
+    const auto before = settledScore (m, r);
+    // switched on: still not moved in time; polarity and phase EQ as measured in place
+    m.setRoomPhase (true);
+    pumpUntilIdle (m);
+    {
+        const auto& tr = m.session()->tracks[(size_t) r];
+        CHECK (tr.alignTo == "phase");
+        CHECK (tr.lag == 0.0);   // its distance is untouched
+        CHECK (tr.pol == tr.inPlace->pol);
+        CHECK (tr.ap.size() == tr.inPlace->ap.size());
+        auto* plug = ld::live::alignOn (*m.trackB (r));
+        REQUIRE (plug != nullptr);
+        CHECK (plug->shiftValue.get() == Approx (0.0f));
+        CHECK (plug->flipValue.get() == (tr.pol < 0));
+    }
+    const auto after = settledScore (m, r);
+    {
+        const auto& ip = *m.session()->tracks[(size_t) r].inPlace;
+        INFO ("sum with the lead: as recorded " << before.first << ", in phase " << after.first << "; polarity " << ip.pol << ", bands " << ip.ap.size()
+              << (ip.ap.empty() ? std::string() : " first at " + std::to_string (ip.ap[0].fc) + " Hz"));
+        CHECK (after.first >= before.first);            // never worse than leaving it
+        CHECK_FALSE (ip.ap.empty());                    // here the phase EQ has something to fix
+        CHECK (after.first > before.first + 0.02);      // and the sum is clearly better for it
+    }
+    // the close mics are exactly as they were
+    for (int t = 0; t < (int) m.tracks().size(); ++t)
+        if (t != r && t != m.leadTrack()) CHECK (m.session()->tracks[(size_t) t].alignTo == "lead");
+    // Auto Prep again, and a newly opened take, keep following the choice
+    prep (m);
+    CHECK (m.session()->tracks[(size_t) roomTrack (m)].alignTo == "phase");
+    CHECK (m.session()->tracks[(size_t) roomTrack (m)].lag == 0.0);
+    REQUIRE (m.open ({ makeRoomTake ("roomphase2") }).isEmpty());
+    prep (m);
+    CHECK (m.roomPhase());
+    CHECK (m.session()->tracks[(size_t) roomTrack (m)].alignTo == "phase");
+    // off again: back to exactly as recorded; and undo restores it
+    m.setRoomPhase (false);
+    CHECK (m.session()->tracks[(size_t) roomTrack (m)].alignTo == "none");
+    CHECK (m.session()->tracks[(size_t) roomTrack (m)].ap.empty());
+    pumpUntilIdle (m);
+}
+
 TEST_CASE ("Views: Hit, Velocity layer and All layers show the right hits and never lose the selected one")
 {
     // 3 velocities x 4 round robins, layer by layer
@@ -900,4 +982,29 @@ TEST_CASE ("Reference match: engine 1 is unchanged (the main app, parity and sto
     CHECK (fx.match ({ fx.src }).engine == 2);
     CHECK (fx.match ({ fx.src }).hitsUsed == 4);   // engine 2 measures every hit; engine 1 only the loudest
     CHECK (same.hitsUsed == 1);
+}
+
+TEST_CASE ("Rooms in phase on a real take (measurement; set LD_ROOM_TAKE to a take folder)", "[.rooms]")
+{
+    const auto dir = juce::File (juce::String (std::getenv ("LD_ROOM_TAKE") ? std::getenv ("LD_ROOM_TAKE") : ""));
+    if (! dir.isDirectory()) { WARN ("LD_ROOM_TAKE isn't a folder: nothing measured."); return; }
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ dir }).isEmpty());
+    prep (m);
+    std::vector<std::pair<int, double>> before;
+    for (int t = 0; t < (int) m.tracks().size(); ++t)
+        if (m.session()->tracks[(size_t) t].inPlace) before.push_back ({ t, settledScore (m, t).first });
+    m.setRoomPhase (true);
+    pumpUntilIdle (m);
+    for (auto& [t, b] : before)
+    {
+        const auto& tr = m.session()->tracks[(size_t) t];
+        const double a = settledScore (m, t).first;
+        std::string bands;
+        for (auto& ap : tr.ap) bands += " " + std::to_string ((int) ap.fc) + " Hz Q" + juce::String (ap.Q, 2).toStdString();
+        WARN (m.tracks()[(size_t) t].name << ": sum with the lead " << juce::String (b * 100, 0) << " -> " << juce::String (a * 100, 0)
+              << ", shift " << tr.lag << " samples, polarity " << (tr.pol < 0 ? "inverted" : "normal") << ", phase EQ:" << (bands.empty() ? " none" : bands));
+        CHECK (tr.lag == 0.0);
+        CHECK (a >= b - 1e-9);
+    }
 }

@@ -18,6 +18,7 @@ struct AlignOptions
     int allpass = -1;                 ///< -1 = the role's default
     double keepThr = NAN;
     std::vector<double> extra;        ///< extra candidate lags (samples)
+    bool inPlace = false;             ///< sample build: never move the mic in time; only polarity and the phase EQ are chosen
 };
 
 constexpr int numBands = 8;

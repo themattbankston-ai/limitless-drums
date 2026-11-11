@@ -88,6 +88,10 @@ public:
     /** How well mic t sums with what it lines up to, as it is set now (-1..1), and as recorded. NaN when unknown. */
     std::pair<double, double> sumScore (int t, bool* stale = nullptr);   ///< *stale: showing the last score while the new one is measured
     const hl::Session* session() const { return state ? &state->session : nullptr; }
+    /** Room mics keep their distance but are set in phase with the lead (polarity and phase EQ only). The choice is the
+        app's, not one take's: it is applied to every take opened after it, and Auto Prep follows it. */
+    bool roomPhase() const { return roomPhasePref; }
+    void setRoomPhase (bool on);
     const hl::MixRender* mixRender() const { return state && state->mix ? &*state->mix : nullptr; }
     const hl::LevelResult* levelResult() const { return state && state->levels ? &*state->levels : nullptr; }
     std::function<void()> onChanged;   ///< after a background render lands (message thread)
@@ -172,6 +176,7 @@ private:
         static std::shared_ptr<Running> start (const std::shared_ptr<Workers>& ws) { { const std::lock_guard<std::mutex> l (ws->m); ++ws->n; } return std::make_shared<Running> (ws); }
     };
     std::shared_ptr<Workers> workers = std::make_shared<Workers>();
+    bool roomPhasePref = false;
     std::set<int> scoring;   ///< tracks being measured on another thread
     int toneVersion = 0;
     bool rendering = false;

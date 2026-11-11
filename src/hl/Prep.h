@@ -50,6 +50,9 @@ void flipMic (Session&, int t);
 void setPhaseEq (Session&, int t, bool on);
 /** The phase EQ by hand: sets band `band` (0 or 1; one past the end adds it) to fc Hz and Q. From then on the mic keeps
     these bands through every nudge, flip and re-measure, until resetMic. fc is kept in 20 Hz..0.45 x the rate, Q in 0.3..8. */
+/** Room mics: on, each room keeps its recorded arrival (its distance) and only its polarity and phase EQ are set so it
+    sums with the lead; off, rooms are left entirely as recorded (Hitline's default). Auto Prep follows it. */
+void setRoomPhase (Session&, bool on);
 void setAllPass (Session&, int t, int band, double fc, double Q);
 void removeAllPass (Session&, int t, int band);
 void setLrLock (Session&, int t, bool on);
