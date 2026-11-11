@@ -36,4 +36,35 @@ std::pair<double, double> auditionRange (const std::vector<H>& hits, int sel, in
         if (mode == 2 || (mode == 1 && h.vel == s.vel)) { a = std::min (a, h.time); b = std::max (b, h.end); }
     return { std::max (0.0, a - 0.005), b };
 }
+/** The three views. Whether hit i is on show: 0 Hit: only the selected one; 1 Velocity layer: every round robin of the
+    selected hit's layer; 2 All layers: every hit. A view decides what is shown and auditioned, never what an edit
+    applies to. */
+template <typename H>
+bool inView (const std::vector<H>& hits, int sel, int mode, int i)
+{
+    if (i < 0 || i >= (int) hits.size()) return false;
+    if (mode == 2) return true;
+    sel = std::clamp (sel, 0, (int) hits.size() - 1);
+    return mode == 1 ? hits[(size_t) i].vel == hits[(size_t) sel].vel : i == sel;
+}
+
+/** The hits on show, in order; thinned evenly to at most `cap`, always keeping the selected one. */
+template <typename H>
+std::vector<int> viewHits (const std::vector<H>& hits, int sel, int mode, int cap = 1 << 30)
+{
+    std::vector<int> all;
+    for (int i = 0; i < (int) hits.size(); ++i) if (inView (hits, sel, mode, i)) all.push_back (i);
+    if ((int) all.size() <= cap || cap < 1) return all;
+    std::vector<int> out;
+    for (int k = 0; k < cap; ++k) out.push_back (all[(size_t) ((long) k * (long) all.size() / cap)]);
+    sel = std::clamp (sel, 0, (int) hits.size() - 1);
+    if (std::find (out.begin(), out.end(), sel) == out.end() && std::find (all.begin(), all.end(), sel) != all.end())
+    {
+        auto it = std::lower_bound (out.begin(), out.end(), sel);   // swap the nearest kept hit for the selected one
+        if (it == out.end()) --it;
+        *it = sel;
+        std::sort (out.begin(), out.end());
+    }
+    return out;
+}
 } // namespace ld::samples

@@ -33,8 +33,22 @@ Screens: docs/gui/2026-11-10-track-column-1100x700.png.
 Evidence: screenshots at 1100 x 700 and a scripted run (typed 25 into Tone -> +25; dragged Enhance; solo then
 clear). No change to what any control does to the sound. Screens: docs/gui/2026-11-10-knob*.png.
 
+## Added after that (UI only): the three views
+- The audition row is now VIEW: Hit / Velocity layer / All layers. The view decides what's on show and what Play
+  auditions; it never decides what an edit applies to, and the selected hit survives every switch.
+- Hits zooms the lanes to the view; Align adds the view's other hits faintly (at most 8, each to its own peak,
+  said in the legend); Tune and Level dim the hits outside the view; Tone and Clean get a strip of the view's hits
+  to pick from ("8 of 40" when thinned).
+- A scope note beside the Tone and Clean controls says what they apply to. On Tune, Tone, Clean and Level a track
+  row now only changes the mic shown; Tone's "Applies to" is the only thing that changes its edit scope.
+- The Groove, MIDI and Mono buttons are gone: they did nothing in this build.
+- Found on the way: a run that was killed left about 1 GB a take in the temp folder (14 GB here after two days of
+  scripted captures). Opening a take now clears cache folders over a day old.
+Evidence: unit test of view membership and thinning (604 assertions with the Hits logic), screenshots of an
+8 x 5 snare at 1100 x 700. Screens: docs/gui/2026-11-10-three-views-1100x700.png.
+
 ## UI-only work still to do
-- Hit / Velocity layer / All layers views and a scope summary; expandable Tune/Align details panel.
+- Expandable Tune/Align details panel; scope notes on Tune, Level and Align; "Assign layer / round robin" naming on Hits.
 - Typed entry for the track faders' gain and pan; renaming tracks; audition modes in a compact menu.
 - Keyboard and VoiceOver semantics (SA13) — waiting on Matt's go-ahead.
 

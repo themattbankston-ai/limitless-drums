@@ -66,6 +66,14 @@ void HitsView::fitAll()
     scroll = 0;
 }
 
+/** The lanes show what the view covers: the hit, its layer, or everything. */
+void HitsView::zoomToView()
+{
+    if (playMode == 2 || selB <= selA) { fitAll(); return; }
+    pps = std::clamp (laneW() * 0.8 / (selB - selA), laneW() / std::max (1.0, model.length()), 20000.0);
+    scroll = std::max (0.0, selA - 0.1 * laneW() / pps);
+}
+
 void HitsView::zoomBy (double f)
 {
     const double centre = selB > selA ? (selA + selB) / 2 : timeAt (laneX() + laneW() / 2);
@@ -208,17 +216,19 @@ void HitsView::drawAudition (Canvas& c)
         txt (c, "Clear solo", boldFont (10), 0xff1a1608, 8, y + 14, 70, 22, visage::Font::kCenter);
         add (8, y + 14, 70, 22, "clearsolo");
     }
-    else txt (c, "AUDITION", boldFont (10), tok::ink3, 14, y, 80, auH);
+    else txt (c, "VIEW", boldFont (10), tok::ink3, 14, y, 80, auH);
     float x = 84;
-    c.setColor (tok::lane); c.roundedRectangle (x, y + 9, 6 * 66 + 4, 34, tok::radius);
-    for (int i = 0; i < 6; ++i)
+    // the three views: what's on show and what Play auditions. They never change what an edit applies to.
+    const float vw[3] = { 54, 112, 88 };
+    c.setColor (tok::lane); c.roundedRectangle (x, y + 9, vw[0] + vw[1] + vw[2] + 8, 34, tok::radius);
+    float bx = x + 2;
+    for (int i = 0; i < 3; ++i)
     {
-        const float bx = x + 2 + i * 66;
-        button (c, bx, y + 11, 64, 30, modeNames[i], playMode == i, tok::coralFill);
-        if (i >= 3) { c.setColor (0xa0161618); c.fill (bx, y + 11, 64, 30); }   // not in this build yet
-        add (bx, y + 11, 64, 30, "mode:" + std::to_string (i));
+        button (c, bx, y + 11, vw[i], 30, modeNames[i], playMode == i, tok::coralFill);
+        add (bx, y + 11, vw[i], 30, "mode:" + std::to_string (i));
+        bx += vw[i] + 2;
     }
-    x += 6 * 66 + 16;
+    x += vw[0] + vw[1] + vw[2] + 8 + 12;
     c.setColor (tok::lane); c.roundedRectangle (x, y + 9, 128, 34, tok::radius);
     const char* abn[3] = { "A", "B", "A\xe2\x86\x92" "B" };
     for (int i = 0; i < 3; ++i)
@@ -509,7 +519,7 @@ void HitsView::drawTrackHeader (Canvas& c, int t, float y, float h, bool withPol
     const float lx = headW, W = lx - 14;
     const auto& tr = model.tracks()[(size_t) t];
     const bool held = ctlTrack == t && (drag == Drag::fader || drag == Drag::pan);
-    c.setColor (held || (step != 1 && t == selMic) ? headSel : head); c.fill (0, y, lx, h);
+    c.setColor (held || (step == 2 && t == selMic) || (step > 2 && t == (viewMic >= 0 ? viewMic : -2)) ? headSel : head); c.fill (0, y, lx, h);
     c.setColor (tr.colour); c.fill (0, y, 3, h);
     c.setColor (line); c.fill (0, y + h - 1, lx, 1);
     // identity: the name, then what it is in words
@@ -593,10 +603,9 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
     else if (id == "open") { if (onOpen) onOpen(); }
     else if (id.rfind ("mode:", 0) == 0)
     {
-        const int m = arg();
-        if (m >= 3) { setStatus (std::string (modeNames[m]) + " audition isn't in this build yet: Hit, Layer and Sweep are."); return; }
-        playMode = m;
-        selectHit (selHit < 0 ? 0 : selHit, model.isPlaying(), false);
+        playMode = std::clamp (arg(), 0, 2);
+        selectHit (selHit < 0 ? 0 : selHit, model.isPlaying(), false);   // the same hit stays selected
+        zoomToView();
     }
     else if (id.rfind ("ab:", 0) == 0) { ab = arg(); model.setProcessed (ab != 0); }
     else if (id.rfind ("toggle:", 0) == 0)

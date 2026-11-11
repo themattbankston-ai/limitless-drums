@@ -624,6 +624,39 @@ TEST_CASE ("Sample model M1: closing a take while it renders waits for the work,
     CHECK_FALSE (landed);
 }
 
+TEST_CASE ("Views: Hit, Velocity layer and All layers show the right hits and never lose the selected one")
+{
+    // 3 velocities x 4 round robins, layer by layer
+    std::vector<HitInfo> H;
+    for (int v = 0; v < 3; ++v) for (int r = 0; r < 4; ++r) { HitInfo h; h.vel = v; h.rr = r; h.time = (double) H.size(); h.end = h.time + 0.5; H.push_back (h); }
+    using ld::samples::inView; using ld::samples::viewHits;
+    const int sel = 6;   // velocity 1, round robin 2
+    CHECK (viewHits (H, sel, 0) == std::vector<int> { 6 });
+    CHECK (viewHits (H, sel, 1) == std::vector<int> { 4, 5, 6, 7 });
+    CHECK (viewHits (H, sel, 2).size() == 12);
+    CHECK (inView (H, sel, 1, 7));
+    CHECK_FALSE (inView (H, sel, 1, 8));
+    CHECK_FALSE (inView (H, sel, 0, 5));
+    CHECK_FALSE (inView (H, sel, 2, 12));   // out of range is never in view
+    // thinned to fit: still in order, no more than asked, and the selected hit is always among them
+    for (int cap = 1; cap <= 12; ++cap)
+        for (int s2 = 0; s2 < 12; ++s2)
+        {
+            const auto v = viewHits (H, s2, 2, cap);
+            CHECK ((int) v.size() <= cap);
+            CHECK (std::is_sorted (v.begin(), v.end()));
+            CHECK (std::find (v.begin(), v.end(), s2) != v.end());
+            CHECK (std::adjacent_find (v.begin(), v.end()) == v.end());
+        }
+    // unequal round-robin counts and an empty set
+    H.pop_back(); H.pop_back();
+    CHECK (viewHits (H, 9, 1) == std::vector<int> { 8, 9 });
+    CHECK (viewHits (std::vector<HitInfo> {}, 0, 2).empty());
+    // the audition range follows the same membership
+    const auto r = ld::samples::auditionRange (H, 9, 1);
+    CHECK (r.first == Approx (8.0 - 0.005)); CHECK (r.second == Approx (9.5));
+}
+
 // ------------------------------------------------------------------------------------------------ reference match
 // Fixtures for the reference Tone match (hl::loadReference). A one-mic take with noise clean-up off, so the
 // "source" the match measures is the recording itself, and references built from that same recording with a known

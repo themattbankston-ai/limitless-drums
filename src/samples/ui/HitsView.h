@@ -53,7 +53,11 @@ private:
     int selHit = -1;
     bool needsFit = true;            ///< fit the take once the frame has its size
     double selA = 0, selB = 0;        ///< the selection, seconds
-    int playMode = 0;
+    int playMode = 0;                 ///< the view: 0 Hit, 1 Velocity layer, 2 All layers (also what Play auditions)
+    int viewMic = -1;                 ///< the mic Tune, Tone, Clean and Level show (-1: the lead); never an edit scope
+    void hitStrip (visage::Canvas&, float x, float y, float w);
+    void scopeNote (visage::Canvas&, float x, float y, float w, const std::string& text);
+    void zoomToView();
     bool loopOn = true, followOn = true, lmOn = true, padsOn = false;
     int ab = 1;                       ///< 0 A, 1 B, 2 A then B
     std::string status;

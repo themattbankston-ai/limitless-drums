@@ -151,6 +151,9 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     cacheDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("LimitlessDrums")
                    .getChildFile (juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
     cacheDir.createDirectory();
+    // a run that was killed or crashed never cleaned up after itself (about 1 GB a take): clear anything over a day old
+    for (auto& d : cacheDir.getParentDirectory().findChildFiles (juce::File::findDirectories, false))
+        if (d != cacheDir && (juce::Time::getCurrentTime() - d.getLastModificationTime()).inHours() >= 24.0) d.deleteRecursively();
     edit = te::Edit::createSingleTrackEdit (engine, te::Edit::EditRole::forEditing);
     // tracks 0..T-1 play B (the hits, processed); T..2T-1 play A (as recorded). A/B mutes one set, which is instant.
     const int T = (int) S.tracks.size();

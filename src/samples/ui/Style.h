@@ -50,7 +50,7 @@ constexpr unsigned ground = tok::ground, bar1 = tok::raised, bar2 = tok::panel, 
 constexpr unsigned velColour[] = { 0xff3d5a80, 0xff3f6f8f, 0xff3f8a8a, 0xff5b8f5a, 0xff9a7a35, 0xffa4513d, 0xff8a4f7a, 0xff6a5aa8, 0xff4f7ab0, 0xff4f9a9a, 0xff7a9a4f, 0xffb08a3f };
 constexpr int nVelColours = 12;
 inline const char* stepNames[8] = { "Setup", "Hits", "Align", "Tune", "Tone", "Clean", "Level", "Export" };
-inline const char* modeNames[6] = { "Hit", "Layer", "Sweep", "Groove", "MIDI", "Mono" };
+inline const char* modeNames[3] = { "Hit", "Velocity layer", "All layers" };   ///< the three views (and what Play auditions)
 inline const char* heightNames[4] = { "Small", "Medium", "Large", "Jumbo" };
 
 /** Text in a box; text too wide for the box is cut short with an ellipsis rather than spilling into its neighbours. */

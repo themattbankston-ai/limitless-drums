@@ -2,6 +2,7 @@
 // audition bar, in the approved layout, and changes the session through SampleModel::change (what you hear follows:
 // alignment and tuning at once, levels and the clean-up/tone render in the background while playback carries on).
 #include "HitsView.h"
+#include "HitsLogic.h"
 #include "Style.h"
 #include "hl/Prep.h"
 #include "hl/Tune.h"
@@ -158,6 +159,36 @@ void HitsView::slider (Canvas& c, float x, float y, float w, const std::string& 
     else vs = pct (v, bi);
     txt (c, vs, monoFont (11), ink, x + w - 64, y, 64, 22, visage::Font::kRight);
     add (tx - 8, y - 2, tw + 16, 26, "sl:" + key);
+}
+
+/** The hits the view covers, as chips to pick from (so a step that shows one hit at a time still reaches the rest). */
+void HitsView::hitStrip (Canvas& c, float x, float y, float w)
+{
+    const auto& H = model.hits();
+    if (H.empty()) return;
+    const int sel = std::clamp (selHit < 0 ? 0 : selHit, 0, (int) H.size() - 1);
+    const std::string what = playMode == 0 ? "Hit" : playMode == 1 ? "Velocity layer " + std::to_string (H[(size_t) sel].vel + 1) : "All layers";
+    txt (c, what, boldFont (tok::tSmall), tok::ink2, x, y, 120, 20);
+    const float cx0 = x + 124, cw = 26, room = w - 124 - 64;   // room kept for "8 of 40"
+    const auto ids = viewHits (H, sel, playMode, std::max (1, (int) (room / (cw + 3))));
+    const auto all = viewHits (H, sel, playMode);
+    float bx = cx0;
+    for (int i : ids)
+    {
+        const unsigned col = velColour[H[(size_t) i].vel % nVelColours] | 0xff000000;
+        c.setColor (i == sel ? tok::coralFill : draw::withAlpha (col, 0.35f)); c.roundedRectangle (bx, y, cw, 20, 3);
+        txt (c, std::to_string (i + 1), boldFont (tok::tCaption), i == sel ? 0xffffffff : tok::ink, bx, y, cw, 20, visage::Font::kCenter);
+        add (bx, y, cw, 20, "hit:" + std::to_string (i));
+        bx += cw + 3;
+    }
+    if (ids.size() < all.size()) txt (c, std::to_string (ids.size()) + " of " + std::to_string (all.size()), bodyFont (tok::tCaption), tok::ink3, bx + 4, y, 60, 20);
+}
+
+/** What the controls beside it change, in words: the view never decides that. */
+void HitsView::scopeNote (Canvas& c, float x, float y, float w, const std::string& text)
+{
+    c.setColor (tok::coral); c.circle (x, y + 6, 6);
+    txt (c, text, bodyFont (tok::tSmall), tok::ink2, x + 12, y, w - 12, 18);
 }
 
 std::string HitsView::valueText (const std::string& key, double v)
@@ -441,6 +472,26 @@ void HitsView::drawAlign (Canvas& c)
         }
         const double lag = isLead ? 0.0 : tr.lag;
         const int pol = tr.pol < 0 ? -1 : 1;
+        if (playMode != 0)
+        {
+            // the other hits the view covers, where they sit now, faint (each scaled to its own peak; at most 8)
+            c.setColor (draw::withAlpha (0xff000000 | (trackColour (model, t) & 0xffffff), 0.28f));
+            for (int oh : viewHits (H, hi, playMode, 8))
+            {
+                if (oh == hi) continue;
+                const long on2 = (long) std::llround (H[(size_t) oh].time * sr);
+                float pk2 = 1e-6f;
+                for (long n = on2 + (long) (T0 * sr); n < on2 + (long) (T1 * sr); ++n) if (n >= 0 && n < (long) ch.size()) pk2 = std::max (pk2, std::abs (ch[(size_t) n]));
+                float py = mid;
+                for (int i = 0; i < N; i += 2)
+                {
+                    const double tt = T0 + (T1 - T0) * i / N;
+                    const float yy = mid - std::clamp (at (ch, on2 + tt * sr + lag) / pk2 * (float) pol, -1.05f, 1.05f) * amp;
+                    if (i > 0) c.fill (lx + i, std::min (py, yy), 2.0f, std::abs (yy - py) + 1.0f);
+                    py = yy;
+                }
+            }
+        }
         for (int pass = 0; pass < 2; ++pass)
         {
             if (pass == 0 && isLead) continue;
@@ -511,7 +562,7 @@ void HitsView::drawAlign (Canvas& c)
     txt (c, "As recorded", bodyFont (11), ink2, 220, ly, 100, 34);
     c.setColor (0xff4f9be8); c.fill (320, ly + 16, 22, 2);
     txt (c, "Where it sits now: shift and polarity (the phase EQ is heard, not drawn)", bodyFont (11), ink2, 348, ly, 420, 34);
-    txt (c, "Sums: \xe2\x88\x92" "100 fights, +100 adds fully. Tab: next hit.", bodyFont (11), ink3, width() - 330, ly, 316, 34, visage::Font::kRight);
+    txt (c, playMode == 0 ? "Sums: \xe2\x88\x92" "100 fights, +100 adds fully. Tab: next hit." : "Faint: other hits in view (own peak). Applies to every hit.", bodyFont (11), ink3, width() - 350, ly, 336, 34, visage::Font::kRight);
 }
 
 // ------------------------------------------------------------------------------------------------ 4 Tune
@@ -584,12 +635,13 @@ void HitsView::drawTune (Canvas& c)
         if (! std::isfinite (ti->f[(size_t) i])) continue;
         const float px = gx + gw * (i + 0.5f) / N;
         const bool sel = i == selHit;
-        const unsigned col = i < (int) model.hits().size() ? velColour[model.hits()[(size_t) i].vel % nVelColours] : ink2;
-        c.setColor (0xff8a8a90); c.ring (px - 4, yOf (ti->f[(size_t) i]) - 4, 8, 1.2f);
+        const bool shown = inView (model.hits(), selHit < 0 ? 0 : selHit, playMode, i);   // outside the view: still there, dimmed
+        const visage::Color col = draw::withAlpha (i < (int) model.hits().size() ? velColour[model.hits()[(size_t) i].vel % nVelColours] | 0xff000000 : ink2, shown ? 1.0f : 0.25f);
+        c.setColor (draw::withAlpha (0xff8a8a90, shown ? 1.0f : 0.3f)); c.ring (px - 4, yOf (ti->f[(size_t) i]) - 4, 8, 1.2f);
         if (i < (int) ti->ratios.size())
         {
             const float ya = yOf (ti->f[(size_t) i] * ti->ratios[(size_t) i]);
-            c.setColor (sel ? 0xffffffff : col | 0xff000000); c.circle (px - (sel ? 6 : 4), ya - (sel ? 6 : 4), sel ? 12.f : 8.f);
+            c.setColor (sel ? 0xffffffff : col); c.circle (px - (sel ? 6 : 4), ya - (sel ? 6 : 4), sel ? 12.f : 8.f);
         }
         add (px - 6, gy, 12, gh, "hit:" + std::to_string (i));
     }
@@ -668,9 +720,12 @@ void HitsView::drawTone (Canvas& c)
     // the selected hit, before and after, on the lead (or the mic the moves apply to)
     const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
     panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
-    const int t = selMic >= 0 ? selMic : S->refIdx;
+    if (viewMic >= (int) S->tracks.size()) viewMic = -1;
+    const int t = viewMic >= 0 ? viewMic : selMic >= 0 ? selMic : S->refIdx;
     const auto& H = model.hits();
     const int hi = std::clamp (selHit < 0 ? 0 : selHit, 0, std::max (0, (int) H.size() - 1));
+    hitStrip (c, gx + 14, y0 + 48, gw - 28);
+    scopeNote (c, 30, height() - 14 - 30, pw - 32, selMic >= 0 ? "Applies to every hit of " + model.tracks()[(size_t) selMic].name + ", whatever is on show." : std::string ("Applies to every hit of every mic, whatever is on show."));
     txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + ": as recorded (grey) and with the tone moves (" + std::string (model.isRendering() ? "rendering\xe2\x80\xa6" : "as it plays now") + ")",
          bodyFont (12), ink2, gx + 14, y0 + 22, gw - 28, 20);
     const auto* M = model.mixRender();
@@ -680,7 +735,7 @@ void HitsView::drawTone (Canvas& c)
     const auto& orig = S->tracks[(size_t) t].ch.get()[0];
     const hl::F32* proc = nullptr;
     if (M && t < (int) M->proc.size()) { const auto& pr = M->bus[(size_t) t].empty() ? M->proc[(size_t) t] : M->bus[(size_t) t]; if (! pr.empty()) proc = &pr[0]; }
-    const float wx = gx + 14, ww = gw - 28, wy = y0 + 56, wh = (height() - y0 - 28 - 70) * 0.62f, mid = wy + wh / 2;
+    const float wx = gx + 14, ww = gw - 28, wy = y0 + 80, wh = (height() - y0 - 28 - 94) * 0.62f, mid = wy + wh / 2;
     c.setColor (lane); c.fill (wx, wy, ww, wh);
     float pk = 1e-6f;
     for (long n = on - pre; n < on + len; ++n) if (n >= 0 && n < (long) orig.size()) { pk = std::max (pk, std::abs (orig[(size_t) n])); if (proc && n < (long) proc->size()) pk = std::max (pk, std::abs ((*proc)[(size_t) n])); }
@@ -737,11 +792,14 @@ void HitsView::drawClean (Canvas& c)
     // the tail of the selected hit, in dB: as recorded and cleaned
     const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
     panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
-    const int t = selMic >= 0 && selMic < (int) S->tracks.size() ? selMic : S->refIdx;
+    if (viewMic >= (int) S->tracks.size()) viewMic = -1;
+    const int t = viewMic >= 0 ? viewMic : S->refIdx;
     const auto& H = model.hits();
     if (H.empty()) return;
+    hitStrip (c, gx + 14, y0 + 48, gw - 28);
+    scopeNote (c, 30, y0 + 150, pw - 32, "Applies to every hit on every mic, whatever is on show.");
     const int hi = std::clamp (selHit < 0 ? 0 : selHit, 0, (int) H.size() - 1);
-    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + " \xc2\xb7 the whole tail in dB: as recorded (grey) and cleaned (colour). Click a mic in Align or Tone to look at another.",
+    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + " \xc2\xb7 the whole tail in dB: as recorded (grey) and cleaned (colour). Click a track to look at another.",
          bodyFont (12), ink2, gx + 14, y0 + 22, gw - 28, 20);
     const double sr = S->sr;
     const long on = (long) std::llround (H[(size_t) hi].time * sr), end = (long) std::llround ((H[(size_t) hi].end - 0.01) * sr);
@@ -749,7 +807,7 @@ void HitsView::drawClean (Canvas& c)
     const auto* M = model.mixRender();
     const hl::F32* proc = nullptr;
     if (M && t < (int) M->proc.size()) { const auto& pr = M->bus[(size_t) t].empty() ? M->proc[(size_t) t] : M->bus[(size_t) t]; if (! pr.empty()) proc = &pr[0]; }
-    const float wx = gx + 14, ww = gw - 28, wy = y0 + 56, wh = height() - y0 - 28 - 70;
+    const float wx = gx + 14, ww = gw - 28, wy = y0 + 80, wh = height() - y0 - 28 - 94;
     c.setColor (lane); c.fill (wx, wy, ww, wh);
     for (int db = 0; db >= -90; db -= 20) { const float yy = wy + wh * (-db / 96.0f); c.setColor (0xff2e2e31); c.fill (wx, yy, ww, 1); txt (c, std::to_string (db) + " dB", monoFont (10), ink3, wx + 4, yy, 60, 14); }
     float pk = 1e-6f;
@@ -793,7 +851,8 @@ void HitsView::drawLevel (Canvas& c)
     const float sx = stepW() - sideW - 14;
     panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "Layers");
     if (! L || ! L->valid) { txt (c, "Run Auto Prep: the levels are measured once every hit is found.", bodyFont (13), ink2, 34, y0 + 60, pw - 40, 22); return; }
-    const int t = selMic >= 0 && selMic < (int) S->tracks.size() ? selMic : S->refIdx;
+    if (viewMic >= (int) S->tracks.size()) viewMic = -1;
+    const int t = viewMic >= 0 ? viewMic : S->refIdx;
     txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 grey: as played, colour: as exported. Click a bar to hear the hit.", bodyFont (11), ink3, 300, y0 + 24, pw - 300, 16, visage::Font::kRight);
     const float gx = 70, gy = y0 + 56, gw = pw - 80, gh = height() - y0 - 28 - 80;
     const double LO = -48;
@@ -807,8 +866,9 @@ void HitsView::drawLevel (Canvas& c)
         const double before = raw[(size_t) i], after = before + model.hitGainDb (t, (size_t) i);
         const float slot = gw / N, bw = slot * 0.62f, bx = gx + i * slot + (slot - bw) / 2;
         const unsigned col = velColour[H[(size_t) i].vel % nVelColours];
-        c.setColor (0x33ffffff); c.fill (bx, yOf (before), bw, gy + gh - yOf (before));
-        c.setColor (i == selHit ? accent : (col | 0xff000000)); c.fill (bx + bw * 0.2f, yOf (after), bw * 0.6f, gy + gh - yOf (after));
+        const bool shown = inView (H, selHit < 0 ? 0 : selHit, playMode, i);   // outside the view: still there, dimmed
+        c.setColor (shown ? 0x33ffffff : 0x14ffffff); c.fill (bx, yOf (before), bw, gy + gh - yOf (before));
+        c.setColor (i == selHit ? accent : draw::withAlpha (col | 0xff000000, shown ? 1.0f : 0.25f)); c.fill (bx + bw * 0.2f, yOf (after), bw * 0.6f, gy + gh - yOf (after));
         add (bx, gy, bw, gh, "hit:" + std::to_string (i));
     }
     // the layers
@@ -944,8 +1004,8 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
         return true;
     }
     if (has ("ed:")) { editKey = id.substr (3); editText.clear(); return true; }
-    if (has ("scope:")) { selMic = arg() - 1; return true; }
-    if (has ("row:")) { selMic = arg(); return true; }
+    if (has ("scope:")) { selMic = arg() - 1; if (selMic >= 0) viewMic = selMic; return true; }
+    if (has ("row:")) { if (step == 2) selMic = arg(); else viewMic = arg(); return true; }   // off Align, a row only changes what's shown
     if (has ("units:")) { alignUnits = arg(); return true; }
     if (has ("lead:"))
     {
