@@ -19,8 +19,13 @@ Pins unchanged: Tracktion a5e4499, Visage 238d1b5, FreeType 2.14.1, Catch2 3.7.1
 Evidence: screenshots and a scripted drag/click/scroll run at 1100 x 700 (docs/gui/2026-11-10-track-headers-*).
 Monitor isolation is covered by the existing export regression. No unit test of the header's drag maths yet.
 
+## Added next (UI only): the track column on Tune, Tone, Clean and Level
+The same headers run down the left of those four steps with their live monitor controls; clicking a row picks the
+mic the step looks at (on Tone that is also its visible "Applies to" choice). The step's panels keep their golden
+split in the remaining width. Evidence: screenshots at 1100 x 700 and a scripted row-click and slider drag.
+Screens: docs/gui/2026-11-10-track-column-1100x700.png.
+
 ## UI-only work still to do
-- Track headers on Tune, Tone, Clean and Level (those screens show one mic at a time today).
 - Hit / Velocity layer / All layers views and a scope summary; expandable Tune/Align details panel.
 - Knobs replacing the Tone/Clean sliders; typed numeric entry everywhere (fader gain and pan included).
 - "Solo active" indicator with clear-solos; renaming tracks; audition modes in a compact menu.

@@ -681,7 +681,7 @@ void HitsView::clipHits (size_t from, float top, float bottom)
 
 bool HitsView::mouseWheel (const visage::MouseEvent& e)
 {
-    if (step == 2 || (step == 1 && e.position.x < headW && ! e.isMainModifier()))
+    if (step == 2 || (step != 0 && step != 7 && e.position.x < headW && ! e.isMainModifier()))
         rowScroll -= e.wheel_delta_y * 40;   // clamped when drawn
     else if (e.isMainModifier()) zoomBy (e.wheel_delta_y > 0 ? 1.25 : 0.8);
     else scroll = std::max (0.0, scroll - (e.wheel_delta_x != 0 ? e.wheel_delta_x : e.wheel_delta_y) * 60 / pps);

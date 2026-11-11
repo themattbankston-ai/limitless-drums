@@ -101,6 +101,9 @@ private:
     void drawInspector (visage::Canvas&);
     void drawCloseUp (visage::Canvas&);
     void drawTrackHeader (visage::Canvas&, int t, float y, float h, bool withPolarity);
+    void drawTrackColumn (visage::Canvas&);
+    float stepX = 0;                  ///< where the step's own area starts (right of the track column, when there is one)
+    float stepW() const { return width() - stepX; }
 
     // the other steps (StepViews.cpp)
     void drawStep (visage::Canvas&);

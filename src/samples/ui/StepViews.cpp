@@ -176,10 +176,21 @@ void HitsView::drawStep (Canvas& c)
     {
         case 0: drawSetup (c); break;
         case 2: drawAlign (c); break;
-        case 3: drawTune (c); break;
-        case 4: drawTone (c); break;
-        case 5: drawClean (c); break;
-        case 6: drawLevel (c); break;
+        case 3: case 4: case 5: case 6:
+        {
+            // the tracks stay down the left with their live monitor controls; the step works in what's right of them
+            drawTrackColumn (c);
+            stepX = headW;
+            const size_t first = hits.size();
+            c.saveState();
+            c.setPosition (stepX, 0);
+            if (step == 3) drawTune (c); else if (step == 4) drawTone (c); else if (step == 5) drawClean (c); else drawLevel (c);
+            c.restoreState();
+            for (size_t i = first; i < hits.size(); ++i) hits[i].x += stepX;
+            barEnd += stepX;
+            stepX = 0;
+            break;
+        }
         case 7: drawExport (c); break;
         default: break;
     }
@@ -188,6 +199,30 @@ void HitsView::drawStep (Canvas& c)
     if (model.isRendering()) st = "Rendering the change\xe2\x80\xa6 (playback carries on)";
     const float room = width() - 14 - (barEnd + 16);
     if (room > 160) txt (c, st, bodyFont (12), 0xffffc78a, barEnd + 16, y, room, sbH, visage::Font::kRight);
+}
+
+/** The track list on the steps whose centre isn't waveform lanes (Tune, Tone, Clean, Level): the same headers,
+    the same live monitor controls. Clicking a row picks the mic the step looks at. */
+void HitsView::drawTrackColumn (Canvas& c)
+{
+    const float top = tbH + auH, y0 = top + sbH, rowH = 58, bottom = height();
+    const int T = (int) model.tracks().size();
+    txt (c, "TRACKS \xc2\xb7 monitoring only", boldFont (10), tok::ink3, 13, top, headW - 20, sbH);
+    c.setColor (tok::hairline); c.fill (headW - 1, top, 1, sbH - 1);
+    c.setColor (head); c.fill (0, y0, headW, bottom - y0);
+    rowScroll = std::clamp (rowScroll, 0.0f, std::max (0.0f, T * rowH - (bottom - y0)));
+    const size_t first = hits.size();
+    c.setClampBounds (0, y0, headW, bottom - y0);
+    for (int t = 0; t < T; ++t)
+    {
+        const float y = y0 + t * rowH - rowScroll;
+        if (y + rowH <= y0 || y >= bottom) continue;
+        add (0, y, headW - 14, rowH, "row:" + std::to_string (t));
+        drawTrackHeader (c, t, y, rowH, false);
+    }
+    c.setClampBounds (0, 0, width(), height());
+    clipHits (first, y0, bottom);
+    c.setColor (tok::hairline); c.fill (headW - 1, y0, 1, bottom - y0);
 }
 
 // ------------------------------------------------------------------------------------------------ 1 Setup
@@ -460,10 +495,10 @@ void HitsView::drawTune (Canvas& c)
         x += 100;
     }
     barEnd = x;
-    const float sideW = tok::goldenMinor (width() - 42, 340.0f, 560.0f);   // golden split: pitches : the drum
-    const float pw = width() - 28 - sideW;
+    const float sideW = tok::goldenMinor (stepW() - 42, 340.0f, 560.0f);   // golden split: pitches : the drum
+    const float pw = stepW() - 28 - sideW;
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "Every hit's pitch");
-    const float sx = width() - sideW - 14;
+    const float sx = stepW() - sideW - 14;
     panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "The drum");
     if (! S->tuneAnalyzed || ! ti || ! ti->valid)
     {
@@ -555,7 +590,7 @@ void HitsView::drawTone (Canvas& c)
     c.setColor (btn); c.roundedRectangle (x, top + 6, 56, 26, 3); txt (c, "Flat", boldFont (12), ink, x, top + 6, 56, 26, visage::Font::kCenter); add (x, top + 6, 56, 26, "tone:flat");
     barEnd = x + 56;
     // the controls
-    const float pw = tok::goldenMinor (width() - 42, 400.0f, 560.0f);   // golden split: controls : waveform
+    const float pw = tok::goldenMinor (stepW() - 42, 400.0f, 560.0f);   // golden split: controls : waveform
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "");
     float y = y0 + 26;
     txt (c, "TONE", boldFont (10), 0xff9c9ca1, 30, y, 200, 16); y += 22;
@@ -588,7 +623,7 @@ void HitsView::drawTone (Canvas& c)
     }
     else txt (c, "A finished sample you like: the tone and envelope move toward it.", bodyFont (11), ink3, 30, y, pw - 32, 16);
     // the selected hit, before and after, on the lead (or the mic the moves apply to)
-    const float gx = 14 + pw + 14, gw = width() - gx - 14;
+    const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
     panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
     const int t = selMic >= 0 ? selMic : S->refIdx;
     const auto& H = model.hits();
@@ -648,7 +683,7 @@ void HitsView::drawClean (Canvas& c)
     const float top = tbH + auH, y0 = top + sbH;
     txt (c, "Noise under the tails, taken down only where the tail has faded into it. Heard on B.", bodyFont (12), ink2, 14, top, 700, sbH);
     barEnd = 14 + textWidth (bodyFont (12), "Noise under the tails, taken down only where the tail has faded into it. Heard on B.");
-    const float pw = tok::goldenMinor (width() - 42, 400.0f, 560.0f);   // golden split: controls : what it does
+    const float pw = tok::goldenMinor (stepW() - 42, 400.0f, 560.0f);   // golden split: controls : what it does
     panel (c, 14, y0 + 14, pw, 170, "Noise");
     c.setColor (S->dnOn ? accentDark : 0xff3a3a3e); c.roundedRectangle (pw - 60, y0 + 24, 56, 22, 11);
     txt (c, S->dnOn ? "On" : "Off", boldFont (11), S->dnOn ? accentInk : ink2, pw - 60, y0 + 24, 56, 22, visage::Font::kCenter);
@@ -657,7 +692,7 @@ void HitsView::drawClean (Canvas& c)
     txt (c, "The hit itself is never touched; the noise floor", bodyFont (11), ink3, 30, y0 + 100, pw - 32, 16);
     txt (c, "is measured on each mic between the hits.", bodyFont (11), ink3, 30, y0 + 116, pw - 32, 16);
     // the tail of the selected hit, in dB: as recorded and cleaned
-    const float gx = 14 + pw + 14, gw = width() - gx - 14;
+    const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
     panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
     const int t = selMic >= 0 && selMic < (int) S->tracks.size() ? selMic : S->refIdx;
     const auto& H = model.hits();
@@ -709,10 +744,10 @@ void HitsView::drawLevel (Canvas& c)
     segmented (c, x, top + 4, { "Velocity curve", "Even steps", "Fixed step", "Range" }, ci, "levcurve:", 26);
     barEnd = x + segmentedW ({ "Velocity curve", "Even steps", "Fixed step", "Range" });
     const auto* L = model.levelResult();
-    const float sideW = tok::goldenMinor (width() - 42, 360.0f, 560.0f);   // golden split: levels : layers
-    const float pw = width() - 28 - sideW;
+    const float sideW = tok::goldenMinor (stepW() - 42, 360.0f, 560.0f);   // golden split: levels : layers
+    const float pw = stepW() - 28 - sideW;
     panel (c, 14, y0 + 14, pw, height() - y0 - 28, "What the exported hits will be");
-    const float sx = width() - sideW - 14;
+    const float sx = stepW() - sideW - 14;
     panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "Layers");
     if (! L || ! L->valid) { txt (c, "Run Auto Prep: the levels are measured once every hit is found.", bodyFont (13), ink2, 34, y0 + 60, pw - 40, 22); return; }
     const int t = selMic >= 0 && selMic < (int) S->tracks.size() ? selMic : S->refIdx;
