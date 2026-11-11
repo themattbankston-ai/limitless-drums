@@ -758,6 +758,8 @@ void HitsView::drawTune (Canvas& c)
         add (x, top, 100, sbH, "target:0");
         x += 100;
     }
+    button (c, x, top + 6, 70, 26, "Details", tuneDetails, tok::coralFill);
+    add (x, top + 6, 70, 26, "tunedetails"); x += 78;
     barEnd = x;
     const float sideW = tok::goldenMinor (stepW() - 42, 340.0f, 560.0f);   // golden split: pitches : the drum
     const float pw = stepW() - 28 - sideW;
@@ -832,12 +834,83 @@ void HitsView::drawTune (Canvas& c)
     y += 110;
     scopeNote (c, sx + 16, y, sideW - 32, S->tune.mode == "rr" ? "Each hit gets its own ratio, the same on every mic." : "One ratio for the whole drum, on every mic.");
     y += 28;
+    if (tuneDetails) { drawTuneDetails (c, sx + 16, y, sideW - 32, height() - 28 - y); return; }
     if (selHit >= 0 && selHit < N && std::isfinite (ti->f[(size_t) selHit]))
     {
         txt (c, "Hit " + std::to_string (selHit + 1), boldFont (12), ink, sx + 16, y, 200, 20); y += 24;
         row ("Measured", fmt ("%.2f Hz", ti->f[(size_t) selHit]));
         if (selHit < (int) ti->ratios.size()) row ("Moves by", fmt ("%+.1f ct", 1200 * std::log2 (ti->ratios[(size_t) selHit])));
     }
+}
+
+/** Tune's details: the selected hit on the mic the pitch is read from, with the stretch that was listened to marked,
+    then every hit of the view: what was read, how sure, how far it moves and where it lands. Read-only: nothing here
+    changes what is tuned. */
+void HitsView::drawTuneDetails (Canvas& c, float x, float y, float w, float h)
+{
+    const auto* S = model.session();
+    const auto& H = model.hits();
+    if (! S || ! S->tuneInfo || H.empty() || h < 120) return;
+    const auto& ti = *S->tuneInfo;
+    const float bottom = y + h;
+    const int sel = std::clamp (selHit < 0 ? 0 : selHit, 0, (int) H.size() - 1);
+    const int mic = std::clamp (S->refIdx, 0, (int) model.tracks().size() - 1);
+    c.setColor (tok::divider); c.fill (x, y, w, 1); y += 10;
+    txt (c, "Hit " + std::to_string (sel + 1) + " on " + model.tracks()[(size_t) mic].name, boldFont (tok::tSmall), ink, x, y, w, 18);
+    y += 22;
+    // the waveform: the first 400 ms of the hit, as recorded, with the window the pitch was read in
+    const float wh = 64;
+    const double span = 0.4, t0 = H[(size_t) sel].time - 0.01;
+    c.setColor (tok::lane); c.roundedRectangle (x, y, w, wh, 3);
+    const double a = (S->pitchOpt.skipMs / 1000.0 + 0.01) / span, b = ((S->pitchOpt.skipMs + S->pitchOpt.winMs) / 1000.0 + 0.01) / span;
+    c.setColor (draw::withAlpha (tok::mint, 0.14f)); c.fill (x + (float) a * w, y, (float) (std::min (1.0, b) - a) * w, wh);
+    if (const auto& wave = model.tracks()[(size_t) mic].wave)
+    {
+        const double sr = wave->sampleRate;
+        const float pk = std::max (1e-4f, std::pow (10.0f, H[(size_t) sel].peakDb / 20.0f));
+        c.setColor (model.tracks()[(size_t) mic].colour);
+        const int cols = (int) w;
+        for (int i = 0; i < cols; ++i)
+        {
+            const long s0 = (long) ((t0 + span * i / cols) * sr), s1 = (long) ((t0 + span * (i + 1) / cols) * sr) + 1;
+            if (s1 <= 0 || s0 >= wave->length()) continue;
+            const auto r = wave->range (0, std::max (0L, s0), std::min (wave->length(), s1), 0.0f);
+            const float lo = std::clamp (r.first / pk, -1.0f, 1.0f), hi = std::clamp (r.second / pk, -1.0f, 1.0f);
+            c.fill (x + i, y + wh / 2 - hi * (wh / 2 - 2), 1, std::max (1.0f, (hi - lo) * (wh / 2 - 2)));
+        }
+    }
+    y += wh + 4;
+    txt (c, fmt ("Pitch read from %.0f", S->pitchOpt.skipMs) + fmt (" to %.0f ms after the hit (shaded)", S->pitchOpt.skipMs + S->pitchOpt.winMs), bodyFont (tok::tCaption), ink3, x, y, w, 14);
+    y += 22;
+    // the table
+    const float cx[5] = { x, x + w * 0.16f, x + w * 0.42f, x + w * 0.62f, x + w * 0.80f };
+    const char* head[5] = { "Hit", "Read", "Clarity", "Moves", "Lands" };   // clarity: how far the pitch's peak stands over the rest, 0-100
+    for (int k = 0; k < 5; ++k) txt (c, head[k], boldFont (tok::tCaption), ink3, cx[k], y, 80, 14);
+    y += 18;
+    const int room = std::max (1, (int) ((bottom - y - 18) / 18));
+    const auto all = viewHits (H, sel, playMode);
+    const auto ids = viewHits (H, sel, playMode, room);
+    for (int i : ids)
+    {
+        const bool on = i == sel;
+        if (on) { c.setColor (headSel); c.roundedRectangle (x - 4, y - 1, w + 8, 18, 3); }
+        const double f = i < (int) ti.f.size() ? ti.f[(size_t) i] : NAN;
+        const double r = i < (int) ti.ratios.size() ? ti.ratios[(size_t) i] : 1.0;
+        const auto* p = i < (int) S->pitch.hits.size() && S->pitch.hits[(size_t) i] ? &*S->pitch.hits[(size_t) i] : nullptr;
+        txt (c, std::to_string (i + 1), monoFont (tok::tCaption), velColour[H[(size_t) i].vel % nVelColours] | 0xff000000, cx[0], y, 40, 16);
+        if (! std::isfinite (f))
+            txt (c, "no clear pitch: moves with the drum", bodyFont (tok::tCaption), ink3, cx[1], y, w - (cx[1] - x), 16);
+        else
+        {
+            txt (c, fmt ("%.1f Hz", f), monoFont (tok::tCaption), ink, cx[1], y, 80, 16);
+            txt (c, p ? fmt ("%.0f", std::clamp (p->conf, 0.0, 1.0) * 100) : std::string ("\xe2\x80\x94"), monoFont (tok::tCaption), p && p->conf < 0.12 ? 0xffffc78a : ink2, cx[2], y, 60, 16);
+            txt (c, S->tune.on ? fmt ("%+.1f ct", 1200 * std::log2 (r)) : std::string ("off"), monoFont (tok::tCaption), ink2, cx[3], y, 70, 16);
+            txt (c, fmt ("%.1f Hz", S->tune.on ? f * r : f), monoFont (tok::tCaption), ink, cx[4], y, 70, 16);
+        }
+        add (x - 4, y - 1, w + 8, 18, "hit:" + std::to_string (i));
+        y += 18;
+    }
+    if (ids.size() < all.size()) txt (c, std::to_string (ids.size()) + " of " + std::to_string (all.size()) + " shown: narrow the view to see the rest", bodyFont (tok::tCaption), ink3, x, y, w, 14);
 }
 
 // ------------------------------------------------------------------------------------------------ 5 Tone
@@ -880,10 +953,22 @@ void HitsView::drawTone (Canvas& c)
         c.setColor (0xff3a3a3e); c.roundedRectangleBorder (158, y, 70, 26, 3, 1);
         txt (c, "Remove", bodyFont (11), ink2, 158, y, 70, 26, visage::Font::kCenter);
         add (158, y, 70, 26, "ref:remove");
+        // listen to it in place of the take (A and B are untouched and come back)
+        const bool hearing = model.referenceAudition();
+        button (c, 236, y, 96, 26, hearing ? "Playing it" : "Hear it", hearing, tok::coralFill);
+        add (236, y, 96, 26, "ref:hear");
     }
-    y += 36;
+    y += 32;
     if (S->tone.hasRef)
     {
+        const std::string who = model.referenceName().isEmpty() ? std::string ("A saved match") : model.referenceName().toStdString();
+        if (model.referenceStale())
+        {
+            txt (c, who + ": measured before the take last changed.", bodyFont (11), 0xffffc78a, 30, y, pw - 32, 16);
+            txt (c, "Load it again to match the sound you have now.", bodyFont (11), ink3, 30, y + 15, pw - 32, 16);
+        }
+        else txt (c, who + (model.referenceHits() > 0 ? " \xc2\xb7 " + std::to_string (model.referenceHits()) + (model.referenceHits() == 1 ? " hit measured" : " hits measured") : std::string()), bodyFont (11), ink3, 30, y, pw - 32, 16);
+        y += 36;
         knobCtl (c, 30 + col * 0.5f, y + 18 + kd / 2, kd, "Tone match", "ref.amt");
         if (S->tone.hasRefEnv) knobCtl (c, 30 + col * 1.5f, y + 18 + kd / 2, kd, "Envelope", "ref.env");
     }
@@ -1182,6 +1267,7 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
     if (has ("units:")) { alignUnits = arg(); return true; }
     if (has ("apsw:")) { const int t = arg(); model.change ([t] (hl::Session& S) { hl::setPhaseEq (S, t, ! S.tracks[(size_t) t].apOn); }, R::align); return true; }
     if (id == "aldetails") { alignDetails = ! alignDetails; return true; }
+    if (id == "tunedetails") { tuneDetails = ! tuneDetails; return true; }
     if (has ("apadd:")) { const int t = selMic; model.change ([t] (hl::Session& S) { if (t >= 0 && t < (int) S.tracks.size()) hl::setAllPass (S, t, (int) S.tracks[(size_t) t].ap.size(), 200, 0.7); }, R::align); return true; }
     if (has ("aprem:")) { const int t = selMic, b = arg(); model.change ([t, b] (hl::Session& S) { hl::removeAllPass (S, t, b); }, R::align); return true; }
     if (has ("lead:"))
@@ -1270,6 +1356,14 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
         return true;
     }
     if (id == "ref:load") { if (onLoadReference) onLoadReference(); return true; }
+    if (id == "ref:hear")
+    {
+        const bool on = ! model.referenceAudition();
+        const auto err = model.setReferenceAudition (on, selA);
+        setStatus (err.isNotEmpty() ? err.toStdString() : on ? std::string ("Playing the reference in place of the take. Press it again, or A or B, to go back.") : std::string ("Back to the take."));
+        if (on && err.isEmpty()) playSelection();
+        return true;
+    }
     if (id == "ref:remove") { model.change ([] (hl::Session& S) { S.tone.hasRef = false; S.tone.refCurve.clear(); S.tone.hasRefEnv = false; }, R::mix); return true; }
     if (id == "clean:on") { model.change ([] (hl::Session& S) { S.dnOn = ! S.dnOn; }, R::mix); return true; }
     if (has ("levmode:")) { const bool linked = arg() == 1; model.change ([linked] (hl::Session& S) { S.lev.mode = linked ? "linked" : "permic"; }, R::levels); return true; }

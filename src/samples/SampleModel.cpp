@@ -103,9 +103,10 @@ void SampleModel::applyMutes()
     for (int t = 0; t < (int) state->session.tracks.size(); ++t)
     {
         const bool m = t < (int) userMute.size() && userMute[(size_t) t];
-        if (auto* b = track (t)) b->setMute (m || ! processedOn);
-        if (auto* a = trackA (t)) a->setMute (m || processedOn);
+        if (auto* b = track (t)) b->setMute (m || ! processedOn || refAud);
+        if (auto* a = trackA (t)) a->setMute (m || processedOn || refAud);
     }
+    if (auto* r = refTrack()) { r->setMute (! refAud); r->setSolo (refAud); }   // soloed while it plays: a soloed mic doesn't silence it
 }
 
 juce::String SampleModel::open (const juce::Array<juce::File>& items)
@@ -140,6 +141,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     if (cacheDir.isDirectory()) cacheDir.deleteRecursively();
     state = st;
     name = folder;
+    refAudio.clear(); refSource = refPlayFile = juce::File(); refName.clear(); refHits = refEngine = 0; refPrint.clear(); refAud = false; refCancelled.clear();
     takeFiles = files;
     projFile = juce::File();
     recall = juce::var();
@@ -163,7 +165,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     edit = te::Edit::createSingleTrackEdit (engine, te::Edit::EditRole::forEditing);
     // tracks 0..T-1 play B (the hits, processed); T..2T-1 play A (as recorded). A/B mutes one set, which is instant.
     const int T = (int) S.tracks.size();
-    edit->ensureNumberOfAudioTracks (2 * T);
+    edit->ensureNumberOfAudioTracks (2 * T + 1);   // and one for the reference, silent unless you're listening to it
     auto ts = te::getAudioTracks (*edit);
     info.clear();
     for (size_t t = 0; t < S.tracks.size(); ++t)
@@ -337,6 +339,7 @@ bool SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what
     f (state->session);
     if (what == Redo::none) { syncNames(); return true; }
     if (bands (state->session) != bandsWere) wantMix = true;
+    if (refAud && ! state->session.tone.hasRef) setReferenceAudition (false);
     if (what == Redo::reprep)
     {
         state->prepared = false;   // export waits for Auto Prep
@@ -505,6 +508,13 @@ juce::var SampleModel::projectVar (const juce::File& beside) const
     }
     p->setProperty ("tracks", tracks);
     p->setProperty ("levelMatch", levelMatchOn);
+    if (S.tone.hasRef)
+    {
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("file", refSource.getFullPathName()); r->setProperty ("name", refName); r->setProperty ("hits", refHits);
+        r->setProperty ("engine", refEngine); r->setProperty ("measuredFor", juce::String (refPrint));
+        p->setProperty ("reference", juce::var (r));
+    }
     return juce::var (p);
 }
 
@@ -579,6 +589,12 @@ juce::String SampleModel::openProject (const juce::File& file)
         setMonDb (t, (float) (double) o["monDb"]); setPan (t, (float) (double) o["pan"]); setMute (t, (bool) o["mute"]); setSolo (t, (bool) o["solo"]);
     }
     levelMatchOn = ! p.hasProperty ("levelMatch") || (bool) p["levelMatch"];
+    if (const auto r = p["reference"]; r.isObject())
+    {
+        // the match itself came back with the settings, exactly as saved; this is who it was and what it was measured for
+        refSource = r["file"].toString().isEmpty() ? juce::File() : juce::File (r["file"].toString());
+        refName = r["name"].toString(); refHits = (int) r["hits"]; refEngine = (int) r["engine"]; refPrint = r["measuredFor"].toString().toStdString();
+    }
     const bool wasPrepared = (bool) p["prepared"];
     state->prepared = false;
     buildHits();
@@ -630,6 +646,106 @@ juce::String SampleModel::renameTrack (int t, const std::string& to)
         if (o != t && juce::String (hl::fillTokens (trial, "{MIC}", o, std::nullopt)).equalsIgnoreCase (juce::String (mine)))
             return "Another track is already called that: their files would overwrite each other.";
     if (! change ([t, trimmed] (hl::Session& S) { S.tracks[(size_t) t].rename = trimmed; }, Redo::none)) return "Auto Prep is running: try again when it finishes.";
+    return {};
+}
+
+// ---------------------------------------------------------------------------- the reference
+te::AudioTrack* SampleModel::refTrack() const
+{
+    if (! edit || ! state) return nullptr;
+    auto ts = te::getAudioTracks (*edit);
+    const int i = 2 * (int) state->session.tracks.size();
+    return i < ts.size() ? ts[i] : nullptr;
+}
+
+std::string SampleModel::referencePrint() const
+{
+    // everything the take's side of the measurement is made from (hl::loadReference): the hits, each mic's delay and
+    // polarity, the clean-up, and the tuning the match is made to land through
+    if (! state) return {};
+    const auto& S = state->session;
+    std::string p = std::to_string (S.det.V) + "x" + std::to_string (S.det.RR) + S.det.order + "|";
+    for (long o : S.onsets) p += std::to_string (o) + ",";
+    p += "|";
+    for (auto& tr : S.tracks) p += juce::String (tr.lag, 4).toStdString() + (tr.pol < 0 ? "-" : "+") + ",";
+    p += "|" + std::string (S.dnOn ? "dn" : "raw") + juce::String (S.dnDb, 2).toStdString() + "|";
+    if (S.tune.on && S.tinfo) for (double r : S.tinfo->ratios) p += juce::String (r, 6).toStdString() + ",";
+    return p;
+}
+
+bool SampleModel::referenceStale() const
+{
+    return hasReference() && ! refPrint.empty() && refPrint != referencePrint();
+}
+
+juce::String SampleModel::loadReference (const juce::File& f)
+{
+    if (! state || ! state->mix) return "Run Auto Prep first.";
+    if (prepping) return "Auto Prep is running: try again when it finishes.";
+    auto R = hl::loadReference (state->session, *state->mix, f, hl::kReferenceEngine);
+    if (! R.error.empty() || R.curve.empty()) return "Couldn't read that reference: " + juce::String (R.error.empty() ? "nothing to measure" : R.error) + ".";
+    if (! change ([R] (hl::Session& s)
+        {
+            s.tone.hasRef = true; s.tone.refCurve = R.curve; if (s.tone.refAmt == 0) s.tone.refAmt = 0.6;
+            s.tone.hasRefEnv = R.hasEnv; s.tone.refEnv = R.env; if (R.hasEnv && s.tone.refEnvAmt == 0) s.tone.refEnvAmt = 0.5;
+        }, Redo::mix)) return "Auto Prep is running: try again when it finishes.";
+    if (refAud) setReferenceAudition (false);
+    refAudio = R.audio; refSource = f; refName = R.name; refHits = R.hitsUsed; refEngine = R.engine;
+    refPrint = referencePrint();
+    refCancelled = R.cancelled;
+    refPlayFile = juce::File();
+    return {};
+}
+
+juce::String SampleModel::setReferenceAudition (bool on, double at)
+{
+    auto* rt = refTrack();
+    if (! rt) return "Nothing open.";
+    if (! on)
+    {
+        if (! refAud) return {};
+        refAud = false;
+        for (auto* c : rt->getClips()) c->removeFromParent();
+        applyMutes();
+        return {};
+    }
+    if (! hasReference()) return "Load a reference first.";
+    if (refAudio.empty() && refSource.existsAsFile() && state->mix)   // a recalled project: only its audio is read, the saved match stays as it is
+        refAudio = hl::loadReference (state->session, *state->mix, refSource, refEngine > 0 ? refEngine : hl::kReferenceEngine).audio;
+    if (refAudio.empty() || refAudio[0].empty()) return refSource == juce::File() ? juce::String ("The reference's audio isn't here: load it again to listen to it.")
+                                                                                  : "Can't find " + refSource.getFileName() + " to play it.";
+    const auto& S = state->session;
+    if (refPlayFile == juce::File())
+    {
+        refPlayFile = cacheDir.getChildFile ("reference_" + juce::String (++refSerial) + ".wav");
+        if (! writeFloatWav (refPlayFile, refAudio, S.sr)) { refPlayFile = juce::File(); return "Couldn't prepare the reference for playback (is the disk full?)."; }
+        // its loudness against the take's hardest hit as recorded (every mic, 300 ms)
+        auto rms = [] (const float* x, long n) { double e = 0; for (long i = 0; i < n; ++i) e += (double) x[i] * x[i]; return n > 0 ? std::sqrt (e / (double) n) : 0.0; };
+        const long n = (long) (0.3 * S.sr);
+        const double theirs = rms (refAudio[0].data(), std::min (n, (long) refAudio[0].size()));
+        double ours = 0;
+        if (! hitList.empty())
+        {
+            size_t hard = 0;
+            for (size_t i = 0; i < hitList.size(); ++i) if (hitList[i].peakDb > hitList[hard].peakDb) hard = i;
+            const long a = (long) S.onsets[hard];
+            std::vector<float> sum ((size_t) n, 0.0f);
+            for (auto& tr : S.tracks)
+                for (auto& ch : tr.ch.get())
+                    for (long i = 0; i < n && a + i < (long) ch.size(); ++i) sum[(size_t) i] += ch[(size_t) (a + i)] / (float) tr.ch.size();
+            ours = rms (sum.data(), n);
+        }
+        refGainDb = theirs > 1e-9 && ours > 1e-9 ? std::clamp (20 * std::log10 (ours / theirs), -40.0, 40.0) : 0.0;
+    }
+    for (auto* c : rt->getClips()) c->removeFromParent();
+    te::AudioFile af (engine, refPlayFile);
+    te::ClipPosition pos { te::TimeRange (te::TimePosition::fromSeconds (kPad + std::max (0.0, at)), te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() };
+    auto clip = rt->insertWaveClip ("Reference", refPlayFile, pos, false);
+    if (clip == nullptr) return "Couldn't place the reference for playback.";
+    clip->setAutoCrossfade (false);
+    clip->setGainDB ((float) (levelMatchOn ? refGainDb : 0.0));
+    refAud = true;
+    applyMutes();
     return {};
 }
 
@@ -1016,6 +1132,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
                  + ". Pick a folder you can write to.";
         probe.deleteFile();
     }
+    if (refAud) setReferenceAudition (false);
     auto& S = state->session;
     const auto& L = *state->levels;
     const auto& R = L.regions;
@@ -1032,8 +1149,10 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
         SampleModel& m;
         std::vector<bool> solo, volOn, userMute;
         bool processed;
+        int edits;   // an export changes nothing you'd save
         ~Restore()
         {
+            struct Count { SampleModel& m; int n; ~Count() { m.edits = n; } } count { m, edits };
             for (int t = 0; t < (int) solo.size(); ++t)
             {
                 if (auto* at = m.track (t)) if (auto* v = at->getVolumePlugin()) v->setEnabled (volOn[(size_t) t]);
@@ -1044,7 +1163,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
             m.applyMutes();
             m.layoutHitsFor (nullptr);
         }
-    } restore { *this, {}, {}, userMute, processedOn };
+    } restore { *this, {}, {}, userMute, processedOn, edits };
     for (int t = 0; t < T; ++t)
     {
         restore.solo.push_back (solo (t));
@@ -1196,6 +1315,7 @@ void SampleModel::setLevelMatch (bool on)
 {
     levelMatchOn = on;
     if (state) for (int t = 0; t < (int) state->session.tracks.size(); ++t) monDbTo (t, monDb (t));
+    if (auto* rt = refTrack()) for (auto* c : rt->getClips()) if (auto* w = dynamic_cast<te::WaveAudioClip*> (c)) w->setGainDB ((float) (on ? refGainDb : 0.0));
 }
 
 std::pair<float, float> SampleModel::meter (int t)
@@ -1226,6 +1346,7 @@ float SampleModel::shiftMs (int t) const { auto* at = track (t); auto* a = at ? 
 
 void SampleModel::setProcessed (bool b)
 {
+    if (refAud) setReferenceAudition (false);
     processedOn = b;
     applyMutes();
 }

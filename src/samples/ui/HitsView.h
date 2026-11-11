@@ -65,8 +65,10 @@ private:
 
     int step = 1;                      ///< 0 Setup .. 7 Export
     int alignUnits = 0;               ///< ms, samples, feet
+    bool tuneDetails = false;         ///< the details under The drum on Tune (the selected hit's waveform and analysis window, every shown hit's reading)
     bool alignDetails = false;        ///< the details panel beside the Align lanes (the selected mic's arrival, polarity, phase EQ)
     void drawAlignDetails (visage::Canvas&, float x, float y, float w, float h);
+    void drawTuneDetails (visage::Canvas&, float x, float y, float w, float h);
     int selMic = -1;                  ///< the mic the Align, Tone and Level steps act on (-1: all / the lead)
     float exportProgress = -1;
     float barEnd = 0;

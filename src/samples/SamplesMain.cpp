@@ -201,22 +201,25 @@ public:
                               [go] (const juce::FileChooser& fc) { if (fc.getResult() != juce::File()) go (fc.getResult()); });
     }
 
+    void useReference (const juce::File& f)
+    {
+        const auto err = model.loadReference (f);
+        std::string msg = "Reference loaded: " + model.referenceName().toStdString() + " (" + std::to_string (model.referenceHits()) + (model.referenceHits() == 1 ? " hit" : " hits") + " measured).";
+        if (const auto n = model.referenceCancelled().size(); n > 0)
+            msg += " " + std::to_string (n) + (n == 1 ? " band" : " bands") + " left alone where your mics cancel each other: that's for Align to fix.";
+        view.setStatus (err.isNotEmpty() ? err.toStdString() : msg);
+    }
+
     void loadReference()
     {
         if (! model.mixRender()) { view.setStatus ("Run Auto Prep first."); return; }
+        if (const char* ref = std::getenv ("LD_REFERENCE")) { useReference (juce::File (ref)); return; }
         chooser = std::make_unique<juce::FileChooser> ("A finished sample to move toward", juce::File(), "*.wav;*.aif;*.aiff");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
         {
             const auto f = fc.getResult();
-            if (! f.existsAsFile() || ! model.session() || ! model.mixRender()) return;
-            auto R = hl::loadReference (*model.session(), *model.mixRender(), f, hl::kReferenceEngine);
-            if (! R.error.empty() || R.curve.empty()) { view.setStatus ("Couldn't read that reference: " + R.error); return; }
-            model.change ([R] (hl::Session& s)
-            {
-                s.tone.hasRef = true; s.tone.refCurve = R.curve; if (s.tone.refAmt == 0) s.tone.refAmt = 0.6;
-                s.tone.hasRefEnv = R.hasEnv; s.tone.refEnv = R.env; if (R.hasEnv && s.tone.refEnvAmt == 0) s.tone.refEnvAmt = 0.5;
-            }, SampleModel::Redo::mix);
-            view.setStatus ("Reference loaded: " + R.name + " (" + std::to_string (R.hitsUsed) + (R.hitsUsed == 1 ? " hit" : " hits") + " measured).");
+            if (! f.existsAsFile()) return;
+            useReference (f);
         });
     }
 

@@ -1188,3 +1188,264 @@ TEST_CASE ("Export cancel: stopping part-way writes nothing, puts the monitor mi
     for (auto& [k, v] : A) if (! B.count (k) || B.at (k) != v) ++differ;
     CHECK (differ == 0);
 }
+
+// ---------------------------------------------------------------------------- reference match: your side, and the app around it
+namespace
+{
+/** One mic, `hits` snare-ish hits a second apart at one velocity; `shape (h, x)` may change hit h's samples. */
+juce::File makeHitsTake (const juce::String& name, int hits, const std::function<void (int, std::vector<float>&)>& shape = {}, int mics = 1, int secondDelay = 0, float secondGain = 1.0f)
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ld_model_" + name);
+    dir.deleteRecursively(); dir.createDirectory();
+    const int n = (int) ((hits + 1.0) * SR);
+    std::vector<float> lead ((size_t) n, 0.0f);
+    juce::Random rnd (11);
+    for (int h = 0; h < hits; ++h)
+    {
+        std::vector<float> one ((size_t) (0.4 * SR));
+        for (size_t k = 0; k < one.size(); ++k)
+        {
+            const double t = (double) k / SR;
+            one[k] = (float) (0.5 * std::exp (-t * 16.0) * (std::sin (2 * M_PI * 190 * t) + 0.6 * (rnd.nextFloat() * 2 - 1)));
+        }
+        if (shape) shape (h, one);
+        const int at = (int) ((0.5 + h) * SR);
+        for (size_t k = 0; k < one.size(); ++k) lead[(size_t) at + k] = one[k];
+    }
+    for (auto& v : lead) v += (float) (1e-5 * (rnd.nextFloat() * 2 - 1));
+    const juce::String tail = "_V01_RR" + juce::String (hits).paddedLeft ('0', 2) + ".wav";
+    writeMono (dir.getChildFile ("SNARE_CENTER_TOP" + tail), lead);
+    if (mics > 1)
+    {
+        std::vector<float> x ((size_t) n, 0.0f);
+        for (int i = secondDelay; i < n; ++i) x[(size_t) i] = secondGain * lead[(size_t) (i - secondDelay)];
+        writeMono (dir.getChildFile ("SNARE_CENTER_BOTTOM" + tail), x);
+    }
+    return dir;
+}
+
+ld::hl::Reference matchAgainst (SampleModel& m, const juce::File& dir, const std::vector<float>& ref)
+{
+    const auto f = dir.getSiblingFile (dir.getFileName() + "_reference.wav");
+    writeWav (f, { ref }, SR);
+    return ld::hl::loadReference (*m.session(), *m.mixRender(), f, ld::hl::kReferenceEngine);
+}
+/** The lead's whole recording (every hit: the fixture's hits each carry their own noise, so one hit alone is not the take). */
+std::vector<float> leadOf (const juce::File& dir)
+{
+    const auto b = readWav (dir.findChildFiles (juce::File::findFiles, false, "*TOP*.wav")[0]);
+    return std::vector<float> (b.getReadPointer (0), b.getReadPointer (0) + b.getNumSamples());
+}
+double curveGap (const ld::hl::Reference& a, const ld::hl::Reference& b)
+{
+    double d = 0;
+    for (size_t j = 0; j < std::min (a.curve.size(), b.curve.size()); ++j) d = std::max (d, std::abs (a.curve[j] - b.curve[j]));
+    return d;
+}
+} // namespace
+
+TEST_CASE ("Reference match RM02: one odd round robin on your side doesn't move the match", "[refmatch]")
+{
+    const auto dull = juce::IIRCoefficients::makeLowPass (SR, 700.0);
+    auto clean = makeHitsTake ("rm02_clean", 5);
+    auto odd = makeHitsTake ("rm02_odd", 5, [&] (int h, std::vector<float>& x) { if (h == 2) x = RefFixture::filtered (x, dull, 2); });
+    const auto ref = RefFixture::filtered (leadOf (clean), juce::IIRCoefficients::makeHighShelf (SR, 3000.0, 0.707, juce::Decibels::decibelsToGain (5.0)));
+    ld::hl::Reference a, b;
+    for (auto* pair : { &a, &b })
+    {
+        SampleModel m (ldtest::engine());
+        const auto dir = pair == &a ? clean : odd;
+        REQUIRE (m.open ({ dir }).isEmpty());
+        prep (m);
+        REQUIRE (m.isPrepared());
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.dnOn = false; }, SampleModel::Redo::mix));
+        pumpUntilIdle (m);
+        *pair = matchAgainst (m, dir, ref);
+        REQUIRE (pair->error.empty());
+    }
+    INFO ("clean: " << show (a)); INFO ("one dull hit: " << show (b));
+    WARN ("one dull round robin of five moves the match by at most " << curveGap (a, b) << " dB");
+    CHECK (curveGap (a, b) <= 1.0);
+    CHECK (worst (a, 6000, 12000) >= 3.0);   // and the match itself is still there
+}
+
+TEST_CASE ("Reference match RM02: one odd hit in the reference doesn't move the match", "[refmatch]")
+{
+    RefFixture fx ("rm02_ref");
+    // five hits of the reference, 0.5 s apart; in the second set the middle one is badly dulled
+    const auto hit = std::vector<float> (fx.src.begin() + (int) (0.5 * SR) - 64, fx.src.begin() + (int) (0.9 * SR));
+    auto build = [&] (bool withOdd)
+    {
+        std::vector<float> x ((size_t) (3.0 * SR), 0.0f);
+        for (int h = 0; h < 5; ++h)
+        {
+            auto one = withOdd && h == 2 ? RefFixture::filtered (hit, juce::IIRCoefficients::makeLowPass (SR, 600.0), 2) : hit;
+            for (size_t k = 0; k < one.size(); ++k) x[(size_t) ((0.1 + 0.5 * h) * SR) + k] = one[k];
+        }
+        return x;
+    };
+    const auto a = fx.match ({ build (false) }), b = fx.match ({ build (true) });
+    REQUIRE (a.error.empty()); REQUIRE (b.error.empty());
+    CHECK (a.hitsUsed == 5); CHECK (b.hitsUsed == 5);
+    INFO ("clean: " << show (a)); INFO ("one dull hit: " << show (b));
+    CHECK (curveGap (a, b) <= 0.5);
+}
+
+TEST_CASE ("Reference match RM05: where your mics cancel in the sum, the hole is left alone, not boosted", "[refmatch]")
+{
+    // the second mic is the first, 24 samples late and inverted, and deliberately left that way: the sum is a comb
+    // (nulls at 0, 2 kHz, 4 kHz ...). The reference is the lead alone, so it has everything the comb took out.
+    auto dir = makeHitsTake ("rm05_comb", 4, {}, 2, 24, -1.0f);
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ dir }).isEmpty());
+    prep (m);
+    REQUIRE (m.isPrepared());
+    REQUIRE (m.change ([] (ld::hl::Session& S)
+    {
+        S.dnOn = false;
+        for (auto& tr : S.tracks) { tr.lag = 0; tr.pol = 1; tr.manualLag = tr.manualPol = true; tr.ap.clear(); }
+    }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    const auto R = matchAgainst (m, dir, leadOf (dir));
+    REQUIRE (R.error.empty());
+    INFO (show (R));
+    std::string holes; for (double f : R.cancelled) holes += juce::String (f, 0).toStdString() + " ";
+    INFO ("left alone: " << holes);
+    REQUIRE_FALSE (R.cancelled.empty());
+    // 24 samples late and inverted takes out the bottom of the drum (20 dB at 60 Hz, easing to 6 dB by 230 Hz) and puts a
+    // null every 2 kHz. Third-octave bands are wider than the comb's teeth higher up, so it's the low end and the first
+    // null that read as cancelled.
+    const auto& B = ld::hl::bands3();
+    int low = 0;
+    for (size_t j = 0; j < B.size(); ++j)
+        for (double f : R.cancelled) if (f == B[j]) { CHECK (R.curve[j] == 0.0); if (B[j] >= 90 && B[j] <= 210) ++low; }
+    CHECK (low >= 3);                   // 100 to 200 Hz, where the lead-only reference would otherwise ask for up to +7 dB
+    CHECK (worst (R, 60, 210) == 0.0);
+    // lined up and the right way round, nothing cancels and nothing is held back
+    REQUIRE (m.change ([] (ld::hl::Session& S) { S.tracks[1].lag = 24; S.tracks[1].pol = -1; }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    const auto fixed = matchAgainst (m, dir, leadOf (dir));
+    INFO ("aligned: " << show (fixed));
+    CHECK (fixed.cancelled.empty());
+    CHECK (worst (fixed) <= 0.75);
+}
+
+TEST_CASE ("Reference match RM05: a tuned take is matched for where its bands land", "[refmatch]")
+{
+    // the take is tuned up four semitones (one third-octave band). Its own sound, played back that much faster, is
+    // what the export will be: as the reference, it should ask for no change.
+    auto dir = makeHitsTake ("rm05_tuned", 4);
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ dir }).isEmpty());
+    prep (m);
+    REQUIRE (m.change ([] (ld::hl::Session& S) { S.dnOn = false; }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    const double ratio = std::pow (2.0, 4.0 / 12.0);
+    const auto hit = leadOf (dir);
+    std::vector<float> fast ((size_t) ((double) hit.size() / ratio) - 2);
+    for (size_t i = 0; i < fast.size(); ++i) { const double p = (double) i * ratio; const size_t k = (size_t) p; fast[i] = (float) (hit[k] + (p - (double) k) * (hit[k + 1] - hit[k])); }
+    const auto untuned = matchAgainst (m, dir, fast);
+    REQUIRE (m.change ([ratio] (ld::hl::Session& S) { S.tune.on = true; S.tinfo = ld::hl::TuneState {}; S.tinfo->ratios.assign (S.onsets.size(), ratio); }, SampleModel::Redo::none));
+    const auto tuned = matchAgainst (m, dir, fast);
+    REQUIRE (tuned.error.empty());
+    INFO ("as if untuned: " << show (untuned)); INFO ("knowing the tuning: " << show (tuned));
+    CHECK (worst (tuned, 100, 8000) <= 1.5);                         // linear interpolation dulls the very top of the test signal
+    CHECK (worst (untuned, 100, 8000) > worst (tuned, 100, 8000) + 1.0);   // without it the same reference asks for a real EQ
+}
+
+TEST_CASE ("Reference in the app (RM06): load, undo, stale, audition, project and export all agree", "[refmatch][project]")
+{
+    const auto dir = makeTake ("rm06");
+    const auto pf = dir.getChildFile ("rm06.ldproj");
+    const auto refFile = dir.getSiblingFile ("ld_model_rm06_reference.wav");
+    {
+        const auto b = readWav (dir.getChildFile ("SNARE_CENTER_TOP_V01_RR04.wav"));
+        std::vector<float> x (b.getReadPointer (0), b.getReadPointer (0) + b.getNumSamples());
+        writeWav (refFile, { RefFixture::filtered (x, juce::IIRCoefficients::makeHighShelf (SR, 3000.0, 0.707, juce::Decibels::decibelsToGain (6.0))) }, SR);
+    }
+    auto plain = freshDir ("rm06_plain"), zero = freshDir ("rm06_zero"), matched = freshDir ("rm06_matched"), undone = freshDir ("rm06_undone"), recalled = freshDir ("rm06_recalled");
+    std::vector<double> curve; int n = 0;
+    {
+        SampleModel m (ldtest::engine());
+        REQUIRE (m.open ({ dir }).isEmpty());
+        CHECK (m.loadReference (refFile).isNotEmpty());   // not before Auto Prep
+        prep (m);
+        REQUIRE (m.exportTo (plain, n).isEmpty());
+        CHECK (m.setReferenceAudition (true).isNotEmpty());   // nothing loaded: nothing to hear
+        REQUIRE (m.loadReference (refFile).isEmpty());
+        pumpUntilIdle (m);
+        CHECK (m.hasReference()); CHECK (m.referenceName() == refFile.getFileName()); CHECK (m.referenceHits() >= 1);
+        CHECK_FALSE (m.referenceStale());
+        curve = m.session()->tone.refCurve;
+        REQUIRE (m.exportTo (matched, n).isEmpty());
+        // the amount at zero is the take without the reference, to the byte
+        const double amt = m.session()->tone.refAmt, env = m.session()->tone.refEnvAmt;
+        REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.refAmt = 0; S.tone.refEnvAmt = 0; }, SampleModel::Redo::mix));
+        pumpUntilIdle (m);
+        REQUIRE (m.exportTo (zero, n).isEmpty());
+        REQUIRE (m.change ([amt, env] (ld::hl::Session& S) { S.tone.refAmt = amt; S.tone.refEnvAmt = env; }, SampleModel::Redo::mix));
+        pumpUntilIdle (m);
+        // listening to it: neither A nor B plays, nothing about the take changes, and it all comes back
+        m.setSolo (1, true); m.setMute (2, true);
+        const int editsSaved = m.modified() ? 1 : 0; (void) editsSaved;
+        REQUIRE (m.setReferenceAudition (true, 0.5).isEmpty());
+        CHECK (m.referenceAudition());
+        for (int t = 0; t < (int) m.tracks().size(); ++t) { CHECK (m.trackB (t)->isMuted (false)); CHECK (m.trackA (t)->isMuted (false)); }
+        CHECK (m.solo (1)); CHECK (m.mute (2)); CHECK (m.processed());
+        m.setProcessed (false);   // A or B takes over
+        CHECK_FALSE (m.referenceAudition());
+        CHECK (m.trackA (0)->isMuted (false) == false);
+        m.setProcessed (true);
+        REQUIRE (m.setReferenceAudition (true, 0.5).isEmpty());
+        int n2 = 0; auto again = freshDir ("rm06_again");
+        REQUIRE (m.exportTo (again, n2).isEmpty());        // export turns it off and writes the take, not the reference
+        CHECK_FALSE (m.referenceAudition());
+        m.setSolo (1, false); m.setMute (2, false);
+        // the take moves after the measurement: the match says so
+        REQUIRE (m.change ([] (ld::hl::Session& S) { ld::hl::nudgeLag (S, 1, 8); }, SampleModel::Redo::align));
+        CHECK (m.referenceStale());
+        m.undo();
+        CHECK_FALSE (m.referenceStale());
+        pumpUntilIdle (m);
+        REQUIRE (m.saveProject (pf).isEmpty());
+        const auto A = exportedBytes (matched), B2 = exportedBytes (again);
+        int differ = 0; for (auto& [k, v] : A) if (! B2.count (k) || B2.at (k) != v) ++differ;
+        CHECK (differ == 0);
+        // undo the load itself: back to the take as it was, and nothing to listen to
+        while (m.canUndo()) m.undo();
+        pumpUntilIdle (m);
+        CHECK_FALSE (m.hasReference());
+        CHECK (m.setReferenceAudition (true).isNotEmpty());
+        REQUIRE (m.exportTo (undone, n).isEmpty());
+    }
+    {
+        const auto P = exportedBytes (plain), Z = exportedBytes (zero), M = exportedBytes (matched), U = exportedBytes (undone);
+        int zDiff = 0, mDiff = 0, uDiff = 0;
+        for (auto& [k, v] : P) { if (! Z.count (k) || Z.at (k) != v) ++zDiff; if (! M.count (k) || M.at (k) != v) ++mDiff; if (! U.count (k) || U.at (k) != v) ++uDiff; }
+        CHECK (zDiff == 0);   // amount 0 = no reference
+        CHECK (mDiff > 0);    // the match is in the export
+        CHECK (uDiff == 0);   // undone = never loaded
+    }
+    // recalled: the same curve to the last digit (never measured again), the same bytes, and it can still be heard
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.openProject (pf).isEmpty());
+    prep (m);
+    REQUIRE (m.hasReference());
+    CHECK (m.session()->tone.refCurve == curve);
+    CHECK (m.referenceName() == refFile.getFileName());
+    CHECK_FALSE (m.referenceStale());
+    REQUIRE (m.exportTo (recalled, n).isEmpty());
+    const auto M = exportedBytes (matched), R = exportedBytes (recalled);
+    int differ = 0; for (auto& [k, v] : M) if (! R.count (k) || R.at (k) != v) ++differ;
+    CHECK (differ == 0);
+    CHECK (m.setReferenceAudition (true, 0.5).isEmpty());
+    CHECK (m.referenceAudition());
+    m.setReferenceAudition (false);
+    refFile.deleteFile();   // the file gone: the match still stands, only listening needs it
+    SampleModel m3 (ldtest::engine());
+    REQUIRE (m3.openProject (pf).isEmpty());
+    prep (m3);
+    CHECK (m3.hasReference());
+    CHECK (m3.setReferenceAudition (true, 0.5).contains ("reference"));
+    CHECK_FALSE (m3.referenceAudition());
+}

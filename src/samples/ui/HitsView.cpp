@@ -88,6 +88,7 @@ void HitsView::selectHit (int i, bool play, bool andRedraw)
     selHit = std::clamp (i, 0, (int) H.size() - 1);
     std::tie (selA, selB) = auditionRange (H, selHit, playMode);   // Layer: every round robin of this velocity; Sweep: every hit
     model.setLoop (selA, selB, loopOn);
+    if (model.referenceAudition()) model.setReferenceAudition (true, selA);   // the reference follows the hit you're on
     if (selA < scroll || selB > timeAt (laneX() + laneW())) scroll = std::max (0.0, selA - 0.25 * laneW() / pps);
     if (play) playSelection();
     if (andRedraw) redraw();
@@ -249,6 +250,15 @@ void HitsView::drawAudition (Canvas& c)
         add (bx, y + 11, bw, 30, "ab:" + std::to_string (i));
     }
     x += 128 + 16;
+    if (model.referenceAudition())   // neither A nor B is what's playing: say so where it's always visible
+    {
+        c.setColor (draw::withAlpha (0xff111113, 0.72f)); c.roundedRectangle (x - 144, y + 9, 128, 34, tok::radius);
+        const float w = textWidth (boldFont (11), "REFERENCE PLAYING") + 24;
+        c.setColor (tok::coralFill); c.roundedRectangle (x, y + 12, w, 26, tok::pill);
+        txt (c, "REFERENCE PLAYING", boldFont (11), 0xffffffff, x, y + 12, w, 26, visage::Font::kCenter);
+        add (x, y + 12, w, 26, "refoff");
+        x += w + 8;
+    }
     const char* tn[4] = { "Loop", "Follow", "Level match", "Pads" };
     const bool tv[4] = { loopOn, followOn, lmOn, padsOn };
     for (int i = 0; i < 4; ++i)
@@ -637,6 +647,7 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
         zoomToView();
     }
     else if (id.rfind ("ab:", 0) == 0) { ab = arg(); model.setProcessed (ab != 0); }
+    else if (id == "refoff") { model.setReferenceAudition (false); setStatus ("Back to the take."); }
     else if (id.rfind ("toggle:", 0) == 0)
     {
         const auto n = id.substr (7);

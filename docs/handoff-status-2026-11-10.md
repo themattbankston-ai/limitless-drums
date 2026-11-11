@@ -99,4 +99,4 @@ Evidence (verified):
 
 Not verified: listening on real drums. The sum score is a measurement, not a judgement of tone. The phase EQ is one or two all-pass bands, so it mostly moves low end and sustain; it cannot make a far room coherent with a close mic across the whole spectrum, and it isn't meant to.
 
-Gaps: the choice isn't saved between app launches. Captures: `docs/gui/2026-11-10-setup-room-mics.jpg`, `docs/gui/2026-11-10-align-rooms-in-phase.jpg`.
+Gaps: none left here (the choice is now kept between launches; see the 11 November wrap-up). Captures: `docs/gui/2026-11-10-setup-room-mics.jpg`, `docs/gui/2026-11-10-align-rooms-in-phase.jpg`.

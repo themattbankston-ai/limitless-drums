@@ -113,6 +113,24 @@ public:
     bool modified() const { return isOpen() && edits != savedEdits; }
     static constexpr int kProjectVersion = 1;
 
+    // ---- the reference (Tone match): a finished sample the take is moved toward
+    /** Measures the reference against the take (hl::kReferenceEngine) and sets the Tone match from it; one undo step.
+        Its first hit is kept to listen to. Returns the error, or empty. */
+    juce::String loadReference (const juce::File&);
+    bool hasReference() const { return state && state->session.tone.hasRef; }
+    juce::String referenceName() const { return refName; }
+    int referenceHits() const { return refHits; }
+    /** Bands left alone at the last load because your own mics cancel there (Hz). */
+    const std::vector<double>& referenceCancelled() const { return refCancelled; }
+    /** The take has changed since the reference was measured against it (hits, alignment, clean-up or tuning), so the
+        match was made for a sound that is no longer the one you have. Load it again to measure it again. */
+    bool referenceStale() const;
+    /** Plays the reference in place of the take, at `at` seconds on the take's timeline (the hit you're on), at the
+        take's loudness when Level match is on. A and B are untouched and come back when it's turned off; export,
+        A/B and removing the reference turn it off. Returns the error, or empty. */
+    juce::String setReferenceAudition (bool on, double at = 0);
+    bool referenceAudition() const { return refAud; }
+
     /** The name shown for a track and written for {MIC}. Empty: back to the recording's own name. Returns the error
         (two tracks can't share a name: their files would overwrite each other), or empty. */
     juce::String renameTrack (int t, const std::string& name);
@@ -201,6 +219,12 @@ private:
     };
     std::shared_ptr<Workers> workers = std::make_shared<Workers>();
     bool roomPhasePref = false;
+    hl::Chs refAudio; juce::File refSource, refPlayFile; juce::String refName; int refHits = 0, refEngine = 0, refSerial = 0;
+    std::string refPrint;    ///< what the take was when the reference was measured against it
+    bool refAud = false; double refGainDb = 0;
+    std::vector<double> refCancelled;
+    std::string referencePrint() const;
+    te::AudioTrack* refTrack() const;
     juce::var recall;        ///< the project being recalled, until Auto Prep lands
     juce::String recallMsg;
     juce::File projFile;

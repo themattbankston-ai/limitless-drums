@@ -70,7 +70,7 @@ bool soundsLikeCymbal (const Session&);
 /** A reference sound for the Mix step (Hitline's loadReference): its third-octave curve against the sum of your
     mics on the hardest hits (before tone and shape, so the target doesn't chase itself), smoothed and limited to
     \u00b18 dB; and its first hit as audio, at the session's rate, for Reference vs mix. Empty curve on failure. */
-struct Reference { std::string name; F64 curve; Chs audio; std::string error; bool hasEnv = false; std::array<double, 3> env { 0, 0, 0 }; int engine = 1; int hitsUsed = 0; };   ///< env: body, sustain, tail (dB, theirs - ours)
+struct Reference { std::string name; F64 curve; Chs audio; std::string error; bool hasEnv = false; std::array<double, 3> env { 0, 0, 0 }; int engine = 1; int hitsUsed = 0; std::vector<double> cancelled; };   ///< env: body, sustain, tail (dB, theirs - ours)
 /** Measures a finished sample against the take and returns the tone curve that moves the take toward it.
     engine 1 is Hitline's, kept exactly (the main app and its parity tests use it; curves already stored in a
     session never change). engine 2 (the sample build, 10 Nov 2026) differs where engine 1 was measurably wrong:
@@ -79,7 +79,16 @@ struct Reference { std::string name; F64 curve; Chs audio; std::string error; bo
       - hits: every hit within 30 dB of the loudest is used (engine 1 kept only the loudest, or the file's start);
       - bands the reference has nothing in (60 dB under its total) or outside 60 Hz-15 kHz stay at exactly 0 dB,
         through the level removal and the smoothing, with the neighbouring band tapered (RM04);
-      - the audition copy is resampled with a windowed sinc, low-passed first when the reference's rate is higher (RM03). */
+      - the audition copy is resampled with a windowed sinc, low-passed first when the reference's rate is higher (RM03);
+      - your side is every round robin of the hardest layer, up to twelve (engine 1: the first six), compared by the
+        median over them, so one odd hit on either side moves nothing (RM02). A reference played softer than your
+        hardest layer is still compared with the hardest layer: the match can't know how hard it was hit;
+      - where your mics cancel each other in the sum (6 dB or more under their powers added up), the band is left at
+        0 dB and listed in `cancelled`: that hole is a phase problem to fix in Align, not a tone to boost (RM05);
+      - a tuned take: the curve is applied before the tuning and moves with it, so each band is asked for what the
+        reference has where that band lands after tuning (RM05).
+    What is measured on your side (both engines): the sum of every mic after clean-up and before tone, shape, inserts,
+    phase EQ, tuning and Level, each mic with its delay and polarity, all at equal gain, 600 ms from each hit. */
 constexpr int kReferenceEngine = 2;
 Reference loadReference (const Session&, const MixRender&, const juce::File&, int engine = 1);
 void computeTune (Session&);

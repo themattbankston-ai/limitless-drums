@@ -814,21 +814,42 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
         ++R.hitsUsed;
     }
     // the sum of your mics on the hardest hits, after clean-up and before tone and shape
+    // (engine 2: every round robin of the hardest layer, up to twelve, as many as the reference may give; the median
+    // over them is what's compared, so one odd hit on either side moves nothing)
+    const size_t maxTop = v2 ? 12 : 6;
     std::vector<size_t> top;
-    for (size_t k = 0; k < S.onsets.size() && top.size() < 6; ++k) if (S.velOfHit (k) == S.det.V - 1) top.push_back (k);
-    if (top.empty()) for (size_t k = 0; k < S.onsets.size() && k < 6; ++k) top.push_back (k);
+    for (size_t k = 0; k < S.onsets.size() && top.size() < maxTop; ++k) if (S.velOfHit (k) == S.det.V - 1) top.push_back (k);
+    if (top.empty()) for (size_t k = 0; k < S.onsets.size() && k < maxTop; ++k) top.push_back (k);
     const long pre = (long) jsRound (S.det.prerollMs * S.sr / 1000), len = (long) jsRound (0.6 * S.sr);
+    // the stretch bandSpec listens to (300 ms and a frame), as energy
+    auto energy = [&] (const F32& x) { double e = 0; const size_t n = std::min (x.size(), (size_t) (0.3 * S.sr) + 4096); for (size_t q = 0; q < n; ++q) e += (double) x[q] * x[q]; return e; };
+    std::vector<std::vector<double>> held (B.size());   // engine 2: per band, the sum against its mics' powers added up (dB)
     for (size_t i : top)
     {
         F32 mm ((size_t) (len + pre), 0.0f);
+        F64 apart (B.size(), 0.0);
         for (size_t t = 0; t < S.tracks.size() && t < M.dn.size(); ++t)
+        {
+            F32 one (mm.size(), 0.0f);
             for (auto& c : M.dn[t])
             {
                 const auto y = renderSeg (c, (long) S.onsets[i] - pre, len + pre, S.tracks[t].lag, S.tracks[t].pol ? S.tracks[t].pol : 1, 1.0 / (double) M.dn[t].size(), true);
-                for (size_t q = 0; q < mm.size() && q < y.size(); ++q) mm[q] += y[q];
+                for (size_t q = 0; q < mm.size() && q < y.size(); ++q) { mm[q] += y[q]; one[q] += y[q]; }
             }
+            if (v2 && S.tracks.size() > 1)
+            {
+                const auto bt = bandSpec (one, pre, S.sr);   // (each spectrum comes back against its own total: put the level back)
+                const double e = energy (one);
+                for (size_t j = 0; j < B.size(); ++j) apart[j] += e * std::pow (10.0, bt[j] / 10);
+            }
+        }
         const auto b = bandSpec (mm, pre, S.sr);
         for (size_t j = 0; j < B.size(); ++j) mine[j].push_back (b[j]);
+        if (v2 && S.tracks.size() > 1)
+        {
+            const double e = energy (mm);
+            for (size_t j = 0; j < B.size(); ++j) held[j].push_back (10 * std::log10 (e * std::pow (10.0, b[j] / 10) + 1e-30) - 10 * std::log10 (apart[j] + 1e-30));
+        }
         addEnv (envM, envStats (mm, pre, S.sr));
     }
     if (! envT[0].empty() && ! envM[0].empty())
@@ -838,11 +859,36 @@ Reference loadReference (const Session& S, const MixRender& M, const juce::File&
     }
     F64 U (B.size()), D (B.size());
     std::vector<char> ok (B.size(), 0);   // engine 2: the bands there is evidence for
+    // engine 2, a tuned take: the match is applied before the tuning, which then moves it with everything else. So the
+    // band at g Hz is asked for what the reference has at g x ratio, where that band lands (RM05)
+    double ratio = 1;
+    if (v2 && S.tune.on && S.tinfo && ! S.tinfo->ratios.empty())
+    {
+        std::vector<double> rs;
+        for (double r : S.tinfo->ratios) if (std::isfinite (r) && r > 0) rs.push_back (r);
+        if (! rs.empty()) ratio = median (rs);
+    }
+    F64 TH (B.size());
+    for (size_t j = 0; j < B.size(); ++j) TH[j] = median (theirs[j]);
+    auto theirsAt = [&] (size_t j) -> double
+    {
+        if (std::abs (std::log2 (ratio)) < 1e-6) return TH[j];
+        const double f = B[j] * ratio;
+        if (f <= B.front()) return TH.front();
+        if (f >= B.back()) return TH.back();
+        size_t k = 0;
+        while (k + 2 < B.size() && B[k + 1] < f) ++k;
+        const double a = std::log2 (f / B[k]) / std::log2 (B[k + 1] / B[k]);
+        return std::isfinite (TH[k]) && std::isfinite (TH[k + 1]) ? TH[k] + a * (TH[k + 1] - TH[k]) : NAN;
+    };
     for (size_t j = 0; j < B.size(); ++j)
     {
-        U[j] = median (mine[j]); const double th = median (theirs[j]);
+        U[j] = median (mine[j]); const double th = v2 ? theirsAt (j) : TH[j];
         D[j] = B[j] < 60 || B[j] > 15000 || ! (th > -80) || ! std::isfinite (U[j]) ? 0 : th - U[j];
         ok[j] = B[j] >= 60 && B[j] <= 15000 && th > -60 && std::isfinite (U[j]) && U[j] > -80;
+        // engine 2: where your mics cancel each other (the sum 6 dB or more under their powers added up) the hole is a
+        // phase problem, not a tone to boost back: left alone (RM05)
+        if (v2 && ok[j] && ! held[j].empty() && median (held[j]) < -6) { ok[j] = 0; R.cancelled.push_back (B[j]); }
         if (v2 && ! ok[j]) D[j] = 0;
     }
     double sw = 0, sd = 0;
