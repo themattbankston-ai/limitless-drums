@@ -34,7 +34,7 @@ public:
     std::function<void()> onExport;         ///< the Export step's button (the shell picks the folder)
     std::function<void()> onLoadReference;  ///< the Tone step's reference (the shell picks the file)
     int currentStep() const { return step; }
-    void setStep (int s) { step = std::clamp (s, 0, 7); redraw(); }
+    void setStep (int s) { step = std::clamp (s, 0, 7); rowScroll = 0; redraw(); }
     void setExportProgress (float p) { exportProgress = p; redraw(); }
     std::string exportFolder;               ///< where the export goes (the shell sets it)
 
@@ -74,8 +74,9 @@ private:
     int dragTrack = -1;
     double dragFrom = 0;
     float dragY0 = 0, dragV0 = 0;
-    int popTrack = -1;                ///< the track whose fader is popped up
-    bool popPan = false;
+    float rowScroll = 0;              ///< how far the track rows are scrolled down (when they don't all fit)
+    void clipHits (size_t from, float top, float bottom);   ///< keep this frame's later targets inside a scrolled area
+    int ctlTrack = -1;                ///< the track whose fader or pan is being dragged
 
     // layout
     static constexpr float tbH = 52, auH = 50, sbH = 38, rulH = 22, headW = 268, inspW = 286, closeH = 168;
@@ -99,7 +100,7 @@ private:
     void drawTracks (visage::Canvas&);
     void drawInspector (visage::Canvas&);
     void drawCloseUp (visage::Canvas&);
-    void drawPopup (visage::Canvas&);
+    void drawTrackHeader (visage::Canvas&, int t, float y, float h, bool withPolarity);
 
     // the other steps (StepViews.cpp)
     void drawStep (visage::Canvas&);

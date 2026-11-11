@@ -292,53 +292,49 @@ void HitsView::drawAlign (Canvas& c)
     barEnd = x;
     // rows
     const float colW = 380, lx = headW, lw = std::max (200.0f, width() - headW - colW), y0 = top + sbH;
-    const float rowH = std::clamp ((height() - y0 - 40 - 24) / std::max (1, T), 54.0f, 120.0f);
-    c.setColor (ruler); c.fill (0, y0, width(), 24);
+    const float rowH = std::clamp ((height() - y0 - 40 - 24) / std::max (1, T), 78.0f, 120.0f);   // room for the whole header
     const auto& H = model.hits();
     const int hi = std::clamp (selHit < 0 ? 0 : selHit, 0, std::max (0, (int) H.size() - 1));
-    txt (c, H.empty() ? std::string ("No hits yet") : "Hit " + std::to_string (hi + 1) + " \xc2\xb7 from the lead's hit", bodyFont (11), ink3, 12, y0, headW - 12, 24);
-    txt (c, "\xe2\x88\x92" "2 ms", monoFont (10), ink3, lx + 4, y0, 60, 24);
-    txt (c, "+30 ms", monoFont (10), ink3, lx + lw - 64, y0, 60, 24, visage::Font::kRight);
-    txt (c, "Status", bodyFont (11), ink3, lx + lw + 12, y0, 100, 24);
-    txt (c, "Delay \xc2\xb7 \xc3\x98 \xc2\xb7 EQ", bodyFont (11), ink3, lx + lw + 120, y0, 120, 24);
-    txt (c, "Sums with the lead", bodyFont (11), ink3, lx + lw + 250, y0, 130, 24);
+    const float rowsTop = y0 + 24, rowsBot = height() - 34;
+    rowScroll = std::clamp (rowScroll, 0.0f, std::max (0.0f, T * rowH - (rowsBot - rowsTop)));   // rows that don't fit scroll
+    const size_t firstHit = hits.size();
+    auto columnHeads = [&]
+    {
+        c.setColor (ruler); c.fill (0, y0, width(), 24);
+        txt (c, H.empty() ? std::string ("No hits yet") : "Hit " + std::to_string (hi + 1) + " \xc2\xb7 from the lead's hit", bodyFont (11), ink3, 12, y0, headW - 12, 24);
+        txt (c, "\xe2\x88\x92" "2 ms", monoFont (10), ink3, lx + 4, y0, 60, 24);
+        txt (c, "+30 ms", monoFont (10), ink3, lx + lw - 64, y0, 60, 24, visage::Font::kRight);
+        txt (c, "Status", bodyFont (11), ink3, lx + lw + 12, y0, 100, 24);
+        txt (c, "Delay \xc2\xb7 \xc3\x98 \xc2\xb7 EQ", bodyFont (11), ink3, lx + lw + 120, y0, 120, 24);
+        txt (c, "Sums with the lead", bodyFont (11), ink3, lx + lw + 250, y0, 130, 24);
+    };
     const double sr = S->sr, T0 = -0.002, T1 = 0.030;
     const long on = H.empty() ? 0 : (long) std::llround (H[(size_t) hi].time * sr);
     const auto& leadCh = S->tracks[(size_t) S->refIdx].ch.get();
     float leadPk = 1e-6f;
     for (long n = on + (long) (T0 * sr); n < on + (long) (T1 * sr); ++n) if (n >= 0 && n < (long) leadCh[0].size()) leadPk = std::max (leadPk, std::abs (leadCh[0][(size_t) n]));
+    c.setClampBounds (0, rowsTop, width(), rowsBot - rowsTop);   // rows scrolled part-way stay inside their area
     for (int t = 0; t < T; ++t)
     {
-        const float y = y0 + 24 + t * rowH;
+        const float y = rowsTop + t * rowH - rowScroll;
+        if (y + rowH <= rowsTop || y >= rowsBot) continue;
         const auto& tr = S->tracks[(size_t) t];
-        const bool isLead = t == S->refIdx, sel = t == selMic;
-        c.setColor (sel ? headSel : head); c.fill (0, y, lx, rowH);
-        c.setColor (trackColour (model, t)); c.fill (0, y, 5, rowH);
-        c.setColor (line); c.fill (0, y + rowH - 1, width(), 1);
-        txt (c, model.tracks()[(size_t) t].name, boldFont (12), ink, 15, y + 8, lx - 120, 18);
-        const char* sm[3] = { "S", "M", "\xc3\x98" };
-        const bool smOn[3] = { model.solo (t), model.mute (t), tr.pol < 0 };
-        const unsigned smCol[3] = { 0xffe0c23c, 0xff5c9cff, gold };
-        for (int i = 0; i < 3; ++i)
-        {
-            const float bx = lx - 98 + i * 26;
-            c.setColor (smOn[i] ? smCol[i] : 0xff48484c); c.roundedRectangle (bx, y + 8, 22, 18, 2);
-            txt (c, sm[i], boldFont (10), smOn[i] ? 0xff1a1608 : 0xffe8e8ea, bx, y + 8, 22, 18, visage::Font::kCenter);
-            add (bx, y + 8, 22, 18, std::string (i == 0 ? "solo:" : i == 1 ? "mute:" : "flipm:") + std::to_string (t));
-        }
+        const bool isLead = t == S->refIdx;
+        drawTrackHeader (c, t, y, rowH, true);
+        c.setColor (line); c.fill (lx, y + rowH - 1, width() - lx, 1);
         if (! isLead)
         {
             const bool apOn = tr.apOn && ! tr.ap.empty();
-            c.setColor (apOn ? accentDark : 0xff3a3a3e); c.roundedRectangle (15, y + 32, 74, 18, 9);
-            txt (c, "Phase EQ", bodyFont (10), apOn ? accentInk : ink3, 15, y + 32, 74, 18, visage::Font::kCenter);
-            add (15, y + 32, 74, 18, "apeq:" + std::to_string (t));
-            c.setColor (0xff3a3a3e); c.roundedRectangleBorder (95, y + 32, 52, 18, 9, 1);
-            txt (c, "Reset", bodyFont (10), ink3, 95, y + 32, 52, 18, visage::Font::kCenter);
-            add (95, y + 32, 52, 18, "reset:" + std::to_string (t));
+            c.setColor (apOn ? accentDark : 0xff3a3a3e); c.roundedRectangle (13, y + 56, 74, 18, 9);
+            txt (c, "Phase EQ", bodyFont (10), apOn ? accentInk : ink2, 13, y + 56, 74, 18, visage::Font::kCenter);
+            add (13, y + 56, 74, 18, "apeq:" + std::to_string (t));
+            c.setColor (0xff3a3a3e); c.roundedRectangleBorder (93, y + 56, 52, 18, 9, 1);
+            txt (c, "Reset", bodyFont (10), ink2, 93, y + 56, 52, 18, visage::Font::kCenter);
+            add (93, y + 56, 52, 18, "reset:" + std::to_string (t));
         }
-        add (0, y, lx - 100, rowH, "row:" + std::to_string (t));
+        add (0, y, lx - 14, rowH, "row:" + std::to_string (t));   // the header's own controls are smaller, so they win
         // the overlay: the lead filled grey, this mic as recorded (dashed), where it sits now (its colour)
-        c.setClampBounds (lx, y, lw, rowH - 1);
+        { const float cy0 = std::max (y, rowsTop), cy1 = std::min (y + rowH - 1, rowsBot); c.setClampBounds (lx, cy0, lw, std::max (0.0f, cy1 - cy0)); }
         c.setColor (lane); c.fill (lx, y, lw, rowH - 1);
         const float mid = y + rowH / 2, amp = rowH * 0.42f;
         const auto& ch = tr.ch.get()[0];
@@ -382,7 +378,7 @@ void HitsView::drawAlign (Canvas& c)
                 py = yy;
             }
         }
-        c.setClampBounds (0, 0, width(), height());
+        c.setClampBounds (0, rowsTop, width(), rowsBot - rowsTop);
         // the columns
         const float cx = lx + lw;
         c.setColor (bar2); c.fill (cx, y, colW, rowH - 1);
@@ -418,6 +414,14 @@ void HitsView::drawAlign (Canvas& c)
                 txt (c, stale ? std::string ("\xe2\x80\xa6") : fmt ("%+.0f", v), monoFont (10), ink2, bx + bw + 4, by - 3, 30, 14);
             }
         }
+    }
+    c.setClampBounds (0, 0, width(), height());
+    clipHits (firstHit, rowsTop, rowsBot);
+    columnHeads();   // over any row scrolled part-way under them
+    if (T * rowH > rowsBot - rowsTop)
+    {
+        const float vh = rowsBot - rowsTop, th = vh * vh / (T * rowH);
+        c.setColor (0x66ffffff); c.roundedRectangle (lx - 3, rowsTop + (vh - th) * rowScroll / (T * rowH - vh), 3, th, 1.5f);
     }
     // legend
     const float ly = height() - 34;

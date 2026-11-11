@@ -47,14 +47,14 @@ void HitsView::tick()
 
 float HitsView::trackH (int t) const
 {
-    static const float mono[4] = { 40, 58, 84, 120 }, st[4] = { 58, 84, 120, 170 };
+    static const float mono[4] = { 58, 72, 96, 130 }, st[4] = { 58, 84, 120, 170 };   // never shorter than a full header
     const bool stereo = t < (int) model.tracks().size() && model.tracks()[(size_t) t].channels > 1;
     return (stereo ? st : mono)[heightIdx];
 }
 
 float HitsView::trackY (int t) const
 {
-    float y = laneTop();
+    float y = laneTop() - rowScroll;
     for (int i = 0; i < t; ++i) y += trackH (i);
     return y;
 }
@@ -122,7 +122,6 @@ void HitsView::draw (Canvas& c)
     drawStepBar (c);
     drawAudition (c);
     drawToolbar (c);
-    drawPopup (c);
     if (std::getenv ("LD_GALLERY")) gallery (c, 0, tbH + auH, width(), height() - tbH - auH);   // design review only
 }
 
@@ -339,61 +338,18 @@ void HitsView::drawTracks (Canvas& c)
         add (lx, laneTop(), lw, bottom - laneTop(), "open");
         return;
     }
+    // rows that don't fit scroll (wheel over the headers); every row keeps its whole header
+    float total = 0;
+    for (int t = 0; t < (int) T.size(); ++t) total += trackH (t);
+    rowScroll = std::clamp (rowScroll, 0.0f, std::max (0.0f, total - (bottom - laneTop())));
+    const size_t firstHit = hits.size();
     for (int t = 0; t < (int) T.size(); ++t)
     {
         const float y = trackY (t), h = trackH (t);
         if (y > bottom) break;
+        if (y + h <= laneTop()) continue;
         const auto& tr = T[(size_t) t];
-        // header
-        c.setColor (t == popTrack ? headSel : head); c.fill (0, y, lx, h);
-        c.setColor (tr.colour); c.fill (0, y, 5, h);
-        c.setColor (line); c.fill (0, y + h - 1, lx + lw, 1);
-        const float hy = y + std::max (4.0f, h / 2 - 22);
-        const float nameW = lx - 98 - 15 - (tr.channels > 1 ? 52 : 6);
-        txt (c, tr.name, boldFont (12), ink, 15, hy, nameW, 18);
-        if (tr.channels > 1)
-        {
-            const float sx = 15 + std::min (nameW, textWidth (boldFont (12), tr.name)) + 6;
-            c.setColor (0xff55555a); c.roundedRectangleBorder (sx, hy + 3, 42, 13, 2, 1);
-            txt (c, "STEREO", boldFont (8), 0xffb8b8bc, sx, hy + 3, 42, 13, visage::Font::kCenter);
-        }
-        const char* sm[3] = { "S", "M", "\xc3\x98" };
-        const bool smOn[3] = { model.solo (t), model.mute (t), model.flip (t) };
-        const unsigned smCol[3] = { 0xffe0c23c, 0xff5c9cff, gold };
-        for (int i = 0; i < 3; ++i)
-        {
-            const float bx = lx - 98 + i * 26;
-            c.setColor (smOn[i] ? smCol[i] : 0xff48484c); c.roundedRectangle (bx, hy, 22, 18, 2);
-            txt (c, sm[i], boldFont (10), smOn[i] ? 0xff1a1608 : 0xffe8e8ea, bx, hy, 22, 18, visage::Font::kCenter);
-            add (bx, hy, 22, 18, std::string (i == 0 ? "solo:" : i == 1 ? "mute:" : "flip:") + std::to_string (t));
-        }
-        if (h >= 52)
-        {
-            const float ry = hy + 26;
-            txt (c, "Mon", bodyFont (10), 0xff9c9ca1, 15, ry, 26, 18);
-            c.setColor (field); c.roundedRectangle (42, ry, 56, 18, 2);
-            c.setColor (popTrack == t && ! popPan ? accent : 0xff3c3c40); c.roundedRectangleBorder (42, ry, 56, 18, 2, 1);
-            txt (c, fmtDb (model.monDb (t)), monoFont (10), ink, 42, ry, 52, 18, visage::Font::kRight);
-            add (42, ry, 56, 18, "mon:" + std::to_string (t));
-            txt (c, "Pan", bodyFont (10), 0xff9c9ca1, 108, ry, 24, 18);
-            c.setColor (field); c.roundedRectangle (134, ry, 44, 18, 2);
-            c.setColor (popTrack == t && popPan ? accent : 0xff3c3c40); c.roundedRectangleBorder (134, ry, 44, 18, 2, 1);
-            const float p = model.pan (t);
-            const std::string ps = std::abs (p) < 0.01f ? "C" : (p < 0 ? "<" : "") + std::to_string ((int) std::lround (std::abs (p) * 100)) + (p > 0 ? ">" : "");
-            txt (c, ps, monoFont (10), ink2, 134, ry, 44, 18, visage::Font::kCenter);
-            add (134, ry, 44, 18, "pan:" + std::to_string (t));
-        }
-        // meter
-        c.setColor (well); c.fill (lx - 14, y, 14, h - 1);
-        const auto m = model.meter (t);
-        for (int ch = 0; ch < std::min (2, tr.channels); ++ch)
-        {
-            const float mw = tr.channels > 1 ? 4.0f : 8.0f, mx = lx - 11 + ch * 5, mh = h - 11;
-            const float lv = std::clamp ((ch ? m.second : m.first) + 60, 0.0f, 60.0f) / 60.0f;
-            c.setColor (0xff0f0f10); c.fill (mx, y + 5, mw, mh);
-            c.setColor (visage::Brush::vertical (visage::Gradient (visage::Color (0xffe0663c), visage::Color (0xffe0c23c), visage::Color (0xff2fbf6a), visage::Color (0xff2fbf6a))));
-            c.fill (mx, y + 5 + mh * (1 - lv), mw, mh * lv);
-        }
+        drawTrackHeader (c, t, y, h, false);
         // lane: a stereo track draws left above right
         c.setClampBounds (lx, y, lw, h - 1);
         c.setColor (lane); c.fill (lx, y, lw, h - 1);
@@ -427,6 +383,12 @@ void HitsView::drawTracks (Canvas& c)
         if (selB > selA) { c.setColor (0x29ffffff); c.fill (xOf (selA), y, xOf (selB) - xOf (selA), h - 1); }
         c.setClampBounds (0, 0, width(), height());
         add (lx, y, lw, h, "lane:" + std::to_string (t));
+    }
+    clipHits (firstHit, laneTop(), bottom);
+    if (total > bottom - laneTop())   // a scroll thumb between the headers and the lanes
+    {
+        const float vh = bottom - laneTop(), th = vh * vh / total;
+        c.setColor (0x66ffffff); c.roundedRectangle (lx - 3, laneTop() + (vh - th) * rowScroll / (total - vh), 3, th, 1.5f);
     }
     // playhead
     const float px = xOf (model.position());
@@ -531,43 +493,68 @@ void HitsView::drawCloseUp (Canvas& c)
     c.setColor (0xffff8a7a); c.fill (lx + lw - 2, y0, 2, closeH);
 }
 
-void HitsView::drawPopup (Canvas& c)
+/** One track's header, the same on every screen that shows tracks: name and mono/stereo, solo and mute, the monitor
+    fader with its gain, pan, and the meter. All of it is monitoring only: none of it reaches the exported samples.
+    Polarity is drawn only where it's edited (Align). */
+void HitsView::drawTrackHeader (Canvas& c, int t, float y, float h, bool withPolarity)
 {
-    if (popTrack < 0 || popTrack >= (int) model.tracks().size()) return;
-    const float x = popPan ? 120 : 34, y = trackY (popTrack) + 48, w = popPan ? 120 : 74, h = popPan ? 70 : 246;
-    c.setColor (0x8c000000); c.roundedRectangleShadow (x, y + 4, w, h, 4, 16);
-    c.setColor (0xff2a2a2d); c.roundedRectangle (x, y, w, h, 4);
-    c.setColor (0xff0b0b0c); c.roundedRectangleBorder (x, y, w, h, 4, 1);
-    add (x, y, w, h, "pop");
-    if (popPan)
+    const float lx = headW, W = lx - 14;
+    const auto& tr = model.tracks()[(size_t) t];
+    const bool held = ctlTrack == t && (drag == Drag::fader || drag == Drag::pan);
+    c.setColor (held || (step != 1 && t == selMic) ? headSel : head); c.fill (0, y, lx, h);
+    c.setColor (tr.colour); c.fill (0, y, 3, h);
+    c.setColor (line); c.fill (0, y + h - 1, lx, 1);
+    // identity: the name, then what it is in words
+    const int nb = withPolarity ? 3 : 2;
+    const float bw = 24, bx0 = W - 6 - nb * bw - (nb - 1) * 4, ya = y + 7;
+    const std::string role = tr.channels > 1 ? "STEREO" : "MONO";
+    const float roleW = tr.channels > 1 ? 44.0f : 36.0f, nameW = bx0 - 13 - roleW - 12;
+    txt (c, tr.name, boldFont (tok::tLabel), ink, 13, ya, nameW, 20);
+    const float rx = 13 + std::min (nameW, textWidth (boldFont (tok::tLabel), tr.name)) + 6;
+    c.setColor (tok::divider); c.roundedRectangleBorder (rx, ya + 4, roleW, 13, 2, 1);
+    txt (c, role, boldFont (8), tok::ink3, rx, ya + 4, roleW, 13, visage::Font::kCenter);
+    // solo, mute (and polarity where it's edited)
+    const char* lab[3] = { "S", "M", "\xc3\x98" };
+    const bool on[3] = { model.solo (t), model.mute (t), model.flip (t) };
+    const unsigned col[3] = { 0xffe0c23c, 0xff5c9cff, tok::coralFill };
+    const char* ids[3] = { "solo:", "mute:", step == 1 ? "flip:" : "flipm:" };
+    for (int i = 0; i < nb; ++i)
     {
-        const float p = model.pan (popTrack);
-        txt (c, "Pan", bodyFont (10), ink3, x, y + 6, w, 14, visage::Font::kCenter);
-        c.setColor (0xff121213); c.fill (x + 12, y + 34, w - 24, 4);
-        c.setColor (0xff4f9be8); c.fill (x + w / 2, y + 34, (w - 24) / 2 * p, 4);
-        const float kx = x + w / 2 + (w - 24) / 2 * p;
-        c.setColor (0xffd8d8da); c.roundedRectangle (kx - 6, y + 27, 12, 18, 2);
-        txt (c, "\xe2\x8c\xa5-click: centre", bodyFont (9), ink3, x, y + 50, w, 14, visage::Font::kCenter);
-        return;
+        const float bx = bx0 + i * (bw + 4);
+        c.setColor (on[i] ? col[i] : tok::control); c.roundedRectangle (bx, ya, bw, 20, 3);
+        txt (c, lab[i], boldFont (11), on[i] ? (i == 2 ? 0xffffffff : 0xff1a1608) : tok::ink, bx, ya, bw, 20, visage::Font::kCenter);
+        add (bx, ya, bw, 20, ids[i] + std::to_string (t));
     }
-    const float db = model.monDb (popTrack);
-    txt (c, fmtDb (db), monoFont (11), ink, x, y + 6, w, 16, visage::Font::kCenter);
-    const float ty = y + 30, th = h - 66;
-    const std::pair<const char*, float> marks[] = { { "+6", 6 }, { "0", 0 }, { "-5", -5 }, { "-10", -10 }, { "-20", -20 }, { "-40", -40 }, { "-inf", -100 } };
-    for (auto& [lab, v] : marks)
+    // the monitor fader, its gain, and pan
+    const float yb = y + 33, fx = 13, fw = W - 13 - 48 - 62 - 14, db = model.monDb (t), fp = faderPos (db);
+    c.setColor (tok::lane); c.roundedRectangle (fx, yb + 7, fw, 4, 2);
+    c.setColor (tok::ink4); c.fill (fx + fw * faderPos (0), yb + 3, 1, 12);   // 0 dB
+    c.setColor (model.mute (t) ? tok::ink4 : tok::mintFill); c.roundedRectangle (fx, yb + 7, fw * fp, 4, 2);
+    const float kx = fx + fw * fp;
+    c.setColor (visage::Brush::linear (visage::Color (0xfff2f2f4), visage::Color (0xffb4b4b8), visage::Point (0, yb), visage::Point (0, yb + 18)));
+    c.roundedRectangle (kx - 6, yb, 12, 18, 3);
+    c.setColor (0xff6a6a70); c.fill (kx, yb + 3, 1, 12);
+    add (fx - 6, yb - 2, fw + 12, 22, "mon:" + std::to_string (t));
+    const float gx = fx + fw + 8;
+    txt (c, db <= -90 ? std::string ("-inf") : draw::fmt ("%+.1f", db), monoFont (tok::tSmall), ink, gx, yb, 40, 18, visage::Font::kRight);
+    const float px = gx + 48, pw = 34, p = model.pan (t);
+    c.setColor (tok::lane); c.roundedRectangle (px, yb + 7, pw, 4, 2);
+    c.setColor (tok::mintFill); c.fill (p >= 0 ? px + pw / 2 : px + pw / 2 * (1 + p), yb + 7, pw / 2 * std::abs (p), 4);
+    c.setColor (0xffd8d8da); c.roundedRectangle (px + pw / 2 * (1 + p) - 3, yb + 2, 6, 14, 2);
+    const std::string ps = std::abs (p) < 0.01f ? "C" : (p < 0 ? "L" : "R") + std::to_string ((int) std::lround (std::abs (p) * 100));
+    txt (c, ps, monoFont (tok::tCaption), ink2, px + pw + 4, yb, 26, 18);
+    add (px - 4, yb - 2, pw + 34, 22, "pan:" + std::to_string (t));
+    // meter
+    c.setColor (well); c.fill (lx - 14, y, 14, h - 1);
+    const auto m = model.meter (t);
+    for (int ch = 0; ch < std::min (2, tr.channels); ++ch)
     {
-        const float yy = ty + th * (1 - faderPos (v));
-        txt (c, lab, monoFont (9), ink3, x + 4, yy - 7, 22, 14);
-        c.setColor (0xff5a5a5e); c.fill (x + 26, yy, 6, 1);
+        const float mw = tr.channels > 1 ? 4.0f : 8.0f, mx = lx - 11 + ch * 5, mh = h - 11;
+        const float lv = std::clamp ((ch ? m.second : m.first) + 60, 0.0f, 60.0f) / 60.0f;
+        c.setColor (0xff0f0f10); c.fill (mx, y + 5, mw, mh);
+        c.setColor (visage::Brush::vertical (visage::Gradient (visage::Color (0xffe0663c), visage::Color (0xffe0c23c), visage::Color (0xff2fbf6a), visage::Color (0xff2fbf6a))));
+        c.fill (mx, y + 5 + mh * (1 - lv), mw, mh * lv);
     }
-    c.setColor (0xff121213); c.roundedRectangle (x + 46, ty, 4, th, 2);
-    const float ky = ty + th * (1 - faderPos (db));
-    c.setColor (0xff4f9be8); c.roundedRectangle (x + 46, ky, 4, ty + th - ky, 2);
-    c.setColor (visage::Brush::linear (visage::Color (0xfff2f2f4), visage::Color (0xffb4b4b8), visage::Point (0, ky - 15), visage::Point (0, ky + 15)));
-    c.roundedRectangle (x + 37, ky - 15, 22, 30, 3);
-    c.setColor (0xff8a8a8f); c.fill (x + 39, ky, 18, 1);
-    txt (c, "Monitor only", bodyFont (9), ink3, x, y + h - 32, w, 13, visage::Font::kCenter);
-    txt (c, "\xe2\x8c\xa5-click: 0 dB", bodyFont (9), ink3, x, y + h - 18, w, 13, visage::Font::kCenter);
 }
 
 // ------------------------------------------------------------------------------------------------ input
@@ -581,18 +568,13 @@ void HitsView::mouseDown (const visage::MouseEvent& e)
 {
     requestKeyboardFocus();
     const auto* h = hitAt (e.position.x, e.position.y);
-    if (popTrack >= 0 && (h == nullptr || h->id != "pop"))
-    {
-        // a click outside the pop-up closes it (and does nothing else)
-        if (! (h && (h->id.rfind ("mon:", 0) == 0 || h->id.rfind ("pan:", 0) == 0))) { popTrack = -1; redraw(); return; }
-    }
     if (h) act (h->id, e);
 }
 
 void HitsView::act (const std::string& id, const visage::MouseEvent& e)
 {
     auto arg = [&] { return std::stoi (id.substr (id.find (':') + 1)); };
-    if (id.rfind ("step:", 0) == 0) { setStep (arg()); popTrack = -1; return; }
+    if (id.rfind ("step:", 0) == 0) { setStep (arg()); return; }
     if (step != 1 && actStep (id, e)) { redraw(); return; }
     if (id == "play") { model.isPlaying() ? model.stop() : playSelection(); }
     else if (id == "stop") { model.stop(); }
@@ -634,19 +616,15 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
     else if (id.rfind ("flip:", 0) == 0) model.setFlip (arg(), ! model.flip (arg()));
     else if (id.rfind ("mon:", 0) == 0 || id.rfind ("pan:", 0) == 0)
     {
+        // drag from where you grab (no jump); Shift for fine; Option-click resets
         const bool pan = id[0] == 'p';
         if (e.isAltDown()) { pan ? model.setPan (arg(), 0) : model.setMonDb (arg(), 0); }
-        else if (popTrack == arg() && popPan == pan) popTrack = -1;
-        else { popTrack = arg(); popPan = pan; }
-    }
-    else if (id == "pop")
-    {
-        if (e.isAltDown()) { popPan ? model.setPan (popTrack, 0) : model.setMonDb (popTrack, 0); }
         else
         {
-            drag = popPan ? Drag::pan : Drag::fader;
-            dragY0 = popPan ? e.position.x : e.position.y;
-            dragV0 = popPan ? model.pan (popTrack) : faderPos (model.monDb (popTrack));
+            ctlTrack = arg();
+            drag = pan ? Drag::pan : Drag::fader;
+            dragY0 = e.position.x;
+            dragV0 = pan ? model.pan (ctlTrack) : faderPos (model.monDb (ctlTrack));
         }
     }
     else if (id.rfind ("lane:", 0) == 0)
@@ -674,13 +652,13 @@ void HitsView::mouseDrag (const visage::MouseEvent& e)
         selA = std::min (dragFrom, t);
         selB = std::max (dragFrom, t);
     }
-    else if (drag == Drag::fader && popTrack >= 0)
+    else if (drag == Drag::fader && ctlTrack >= 0)
     {
-        const float p = std::clamp (dragV0 + (dragY0 - e.position.y) / 180.0f, 0.0f, 1.0f);
-        model.setMonDb (popTrack, faderDb (p));
+        const float fw = headW - 14 - 13 - 48 - 62 - 14;
+        model.setMonDb (ctlTrack, faderDb (std::clamp (dragV0 + (e.position.x - dragY0) / (e.isShiftDown() ? fw * 5 : fw), 0.0f, 1.0f)));
     }
-    else if (drag == Drag::pan && popTrack >= 0)
-        model.setPan (popTrack, std::clamp (dragV0 + (e.position.x - dragY0) / 48.0f, -1.0f, 1.0f));
+    else if (drag == Drag::pan && ctlTrack >= 0)
+        model.setPan (ctlTrack, std::clamp (dragV0 + (e.position.x - dragY0) / (e.isShiftDown() ? 170.0f : 34.0f), -1.0f, 1.0f));
     redraw();
 }
 
@@ -690,9 +668,22 @@ void HitsView::mouseUp (const visage::MouseEvent&)
     drag = Drag::none;
 }
 
+void HitsView::clipHits (size_t from, float top, float bottom)
+{
+    for (size_t i = hits.size(); i-- > from;)
+    {
+        auto& h = hits[i];
+        const float y0 = std::max (h.y, top), y1 = std::min (h.y + h.h, bottom);
+        if (y1 <= y0) hits.erase (hits.begin() + (long) i);
+        else { h.y = y0; h.h = y1 - y0; }
+    }
+}
+
 bool HitsView::mouseWheel (const visage::MouseEvent& e)
 {
-    if (e.isMainModifier()) zoomBy (e.wheel_delta_y > 0 ? 1.25 : 0.8);
+    if (step == 2 || (step == 1 && e.position.x < headW && ! e.isMainModifier()))
+        rowScroll -= e.wheel_delta_y * 40;   // clamped when drawn
+    else if (e.isMainModifier()) zoomBy (e.wheel_delta_y > 0 ? 1.25 : 0.8);
     else scroll = std::max (0.0, scroll - (e.wheel_delta_x != 0 ? e.wheel_delta_x : e.wheel_delta_y) * 60 / pps);
     redraw();
     return true;
@@ -726,7 +717,6 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
         else setStatus ("Nothing to undo.");
     }
     else if (k == K::O && e.isMainModifier()) { if (onOpen) onOpen(); }
-    else if (k == K::Escape) popTrack = -1;
     else if (k == K::Left || k == K::Right) selectHit (selHit + (k == K::Right ? 1 : -1), false);
     else return false;
     redraw();
