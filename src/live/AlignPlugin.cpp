@@ -1,3 +1,4 @@
+#include <limits>
 #include "AlignPlugin.h"
 
 namespace ld::live
@@ -74,7 +75,9 @@ void AlignPlugin::initialise (const te::PluginInitialisationInfo& info)
         const juce::SpinLock::ScopedLockType l (lock);
         audioSnap = pubSnap;
         audioTbl = pubTbl;
+        audCur = pubAud; audPrev = nullptr;
     }
+    audFadeLeft = 0; audFadeLen = std::max (1, (int) std::lround (0.008 * sampleRate)); audExpected = -1;
     auto s = audioSnap.s;
     s.advanceSamples = audioSnap.shiftMs * sampleRate / 1000.0;
     dsp.setTarget (s);
@@ -89,7 +92,12 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
     {
         // never waits: if the message thread is publishing this very moment, this block keeps the last snapshot
         const juce::SpinLock::ScopedTryLockType l (lock);
-        if (l.isLocked()) { audioSnap = pubSnap; audioTbl = pubTbl; }
+        if (l.isLocked())
+        {
+            audioSnap = pubSnap; audioTbl = pubTbl;
+            if (pubAud != audCur) { audPrev = audCur; audCur = pubAud; audFadeLeft = audFadeLen; }
+            else if (audFadeLeft == 0) audPrev = nullptr;
+        }
     }
     auto base = audioSnap.s;
     base.advanceSamples = audioSnap.shiftMs * sampleRate / 1000.0;
@@ -97,6 +105,10 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
     const int nch = std::min (2, b.getNumChannels());
     const auto* tbl = audioTbl;
     const bool jump = jumpNext.exchange (false);
+    if (jump) { audFadeLeft = 0; audExpected = -1; }
+    if (audCur != nullptr || (audPrev != nullptr && audFadeLeft > 0))
+        applyHitAudio (b, rc.bufferStartSample, rc.bufferNumSamples, nch, rc.editTime.getStart().inSeconds() + AlignDsp::latencySamples (sampleRate) / sampleRate);
+    else audFadeLeft = 0;
     if (tbl == nullptr || tbl->empty())
     {
         dsp.setTarget (base);
@@ -129,6 +141,76 @@ void AlignPlugin::applyToBuffer (const te::PluginRenderContext& rc)
         for (int c = 0; c < nch; ++c) ch[c] = b.getWritePointer (c, rc.bufferStartSample + done);
         dsp.process (ch, nch, seg);
         done += seg;
+    }
+}
+
+void AlignPlugin::applyHitAudio (juce::AudioBuffer<float>& b, int start, int num, int nch, double t0)
+{
+    // the timeline sample this block's first input sample sits on (blocks that follow on keep counting, so a
+    // rounding wobble in the reported time never repeats or skips a sample)
+    juce::int64 p0 = (juce::int64) std::llround (t0 * sampleRate);
+    if (audExpected >= 0 && std::abs (p0 - audExpected) <= 1) p0 = audExpected;
+    audExpected = p0 + num;
+    const auto usable = [this] (const AudioTable* t) { return t != nullptr && ! t->hits.empty() && std::abs (t->rate - sampleRate) < 1.0e-6 ? t : nullptr; };
+    const AudioTable* cur = usable (audCur);
+    const AudioTable* prev = audFadeLeft > 0 ? usable (audPrev) : nullptr;
+    if (cur == nullptr && prev == nullptr) { audFadeLeft = std::max (0, audFadeLeft - num); return; }
+    // the hit of a table that covers sample p (or none)
+    const auto find = [] (const AudioTable* t, juce::int64 p) -> const HitAudio*
+    {
+        if (t == nullptr) return nullptr;
+        auto it = std::upper_bound (t->hits.begin(), t->hits.end(), p, [] (juce::int64 x, const HitAudio& h) { return x < h.start; });
+        if (it == t->hits.begin()) return nullptr;
+        const auto& h = *std::prev (it);
+        return h.audio && ! h.audio->empty() && p - h.start < (juce::int64) (*h.audio)[0].size() ? &h : nullptr;
+    };
+    const HitAudio* hc = find (cur, p0);
+    const HitAudio* hp = find (prev, p0);
+    juce::int64 nextLook = p0;   // look the hits up again where one could start or end
+    for (int k = 0; k < num; ++k)
+    {
+        const juce::int64 p = p0 + k;
+        if (p >= nextLook)
+        {
+            hc = find (cur, p); hp = find (prev, p);
+            nextLook = std::numeric_limits<juce::int64>::max();
+            for (auto* t : { cur, prev })
+            {
+                if (t == nullptr) continue;
+                auto it = std::upper_bound (t->hits.begin(), t->hits.end(), p, [] (juce::int64 x, const HitAudio& h) { return x < h.start; });
+                if (it != t->hits.end()) nextLook = std::min (nextLook, it->start);
+            }
+            if (hc) nextLook = std::min (nextLook, hc->start + (juce::int64) (*hc->audio)[0].size());
+            if (hp) nextLook = std::min (nextLook, hp->start + (juce::int64) (*hp->audio)[0].size());
+        }
+        const bool fading = audFadeLeft > 0;
+        if (! hc && ! (fading && hp)) { if (fading) --audFadeLeft; continue; }
+        const float g = fading ? 1.0f - (float) audFadeLeft / (float) audFadeLen : 1.0f;
+        for (int c = 0; c < nch; ++c)
+        {
+            float* d = b.getWritePointer (c, start);
+            const float in = d[k];
+            const auto at = [&] (const HitAudio* h) { const auto& a = *h->audio; return a[(size_t) std::min (c, (int) a.size() - 1)][(size_t) (p - h->start)]; };
+            const float now = hc ? at (hc) : in;
+            d[k] = fading ? (hp ? at (hp) : in) * (1.0f - g) + now * g : now;
+        }
+        if (fading) --audFadeLeft;
+    }
+}
+
+void AlignPlugin::setHitAudio (std::vector<HitAudio> v, double rate)
+{
+    auto p = std::make_unique<AudioTable>();
+    p->rate = rate; p->hits = std::move (v);
+    std::vector<std::unique_ptr<AudioTable>> unused;
+    {
+        const juce::SpinLock::ScopedLockType l (lock);
+        pubAud = p->hits.empty() ? nullptr : p.get();
+        audTables.push_back (std::move (p));
+        // (as the hit table: only what's published or held by the audio thread stays)
+        for (auto& t : audTables)
+            if (t.get() != pubAud && t.get() != audCur && t.get() != audPrev) unused.push_back (std::move (t));
+        audTables.erase (std::remove (audTables.begin(), audTables.end(), nullptr), audTables.end());
     }
 }
 

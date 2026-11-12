@@ -71,11 +71,29 @@ private:
     std::shared_ptr<Chs> p;
 };
 
+/** A mic's mono sum, shared between copies of a session like the recording itself: every change copies the session
+    (for undo and for the background render), and a copy of every mic's audio each time is what made changes slow and
+    undo history huge. Read-only; assign a new one to replace it. */
+class SharedF32
+{
+public:
+    SharedF32() = default;
+    SharedF32 (F32 x) : p (std::make_shared<const F32> (std::move (x))) {}
+    SharedF32& operator= (F32 x) { p = std::make_shared<const F32> (std::move (x)); return *this; }
+    const F32& get() const { static const F32 none; return p ? *p : none; }
+    operator const F32&() const { return get(); }
+    size_t size() const { return get().size(); }
+    bool empty() const { return get().empty(); }
+    float operator[] (size_t i) const { return get()[i]; }
+private:
+    std::shared_ptr<const F32> p;
+};
+
 struct SessionTrack
 {
     std::string mic, name;
     SharedChs ch;                     ///< the recording (shared between session copies; mut() to change it)
-    F32 mono;
+    SharedF32 mono;
     long len = 0;
     std::string alignTo = "lead";
     std::string role;                 ///< what the sound says this mic is (sub, bottom, far, near)
@@ -254,6 +272,8 @@ class HitPreviewer
 {
 public:
     HitPreviewer (const Session&, const MixRender& base);
+    /** The same answer as valid(), without the set-up (cheap enough for the message thread). */
+    static bool possible (const Session&, const MixRender& base);
     bool valid() const { return ok; }
     Chs render (int t, long from, long to) const;
 private:

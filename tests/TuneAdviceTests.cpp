@@ -53,7 +53,7 @@ TEST_CASE ("Tuning advice")
                 float lp = 0;
                 for (size_t i = 0; i < c.size(); ++i) { lp += 0.08f * ((rnd.nextFloat() * 2 - 1) - lp); c[i] = std::abs (c[i]) > 1e-4f ? lp * 4 * std::abs (c[i]) : 0.0f; }
             }
-            for (size_t i = 0; i < tr.mono.size(); ++i) tr.mono[i] = tr.ch[0][i];
+            { ld::hl::F32 mn (tr.mono.size()); for (size_t i = 0; i < mn.size(); ++i) mn[i] = tr.ch[0][i]; tr.mono = std::move (mn); }
         }
         ld::hl::runPitch (S);
         int n = 0; for (auto& h : S.pitch.hits) if (h) ++n;

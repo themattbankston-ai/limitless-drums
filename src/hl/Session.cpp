@@ -747,26 +747,34 @@ std::vector<std::optional<MixRender::Scan>> scanTracks (const Session& S, const 
 }
 } // namespace
 
-HitPreviewer::HitPreviewer (const Session& s, const MixRender& b) : S (s), base (b)
+bool HitPreviewer::possible (const Session& S, const MixRender& base)
 {
     const int nT = (int) S.tracks.size();
-    if (S.mode == "kit" || S.onsets.empty() || base.dn.size() != (size_t) nT || base.cleanKey != cleanKeyOf (S)) return;
-    if (S.tone.repair || busLive (S) || roomLive (S)) return;
-    for (int t = 0; t < nT; ++t) if (insActive (S, t)) return;
+    if (S.mode == "kit" || S.onsets.empty() || base.dn.size() != (size_t) nT || base.cleanKey != cleanKeyOf (S)) return false;
+    if (S.tone.repair || busLive (S) || roomLive (S)) return false;
+    for (int t = 0; t < nT; ++t) if (insActive (S, t)) return false;
+    if (fxOn (S))
+    {
+        static const std::vector<std::optional<MixRender::Scan>> none;
+        ToneEngine E (S, none);
+        for (int t = 0; t < nT; ++t) if (E.moves (t).tame > 0) return false;   // linked across mics and across hits: not a per-hit job
+    }
+    return true;
+}
+
+HitPreviewer::HitPreviewer (const Session& s, const MixRender& b) : S (s), base (b)
+{
+    if (! possible (S, base)) return;
+    const int nT = (int) S.tracks.size();
     on.assign ((size_t) nT, 0);
     plans.resize ((size_t) nT);
     if (fxOn (S))
     {
-        ToneEngine probe (S, scans);
         bool kept = base.scanKey == scanKeyOf (S, base.cleanKey) && base.scan.size() == (size_t) nT;
         if (kept) for (auto& sc : base.scan) if (! sc) kept = false;
-        scans = kept ? base.scan : scanTracks (S, base.dn, probe.isCymbal());
+        { ToneEngine probe (S, scans); scans = kept ? base.scan : scanTracks (S, base.dn, probe.isCymbal()); }
         ToneEngine E (S, scans);
-        for (int t = 0; t < nT; ++t)
-        {
-            if (E.moves (t).tame > 0) return;   // linked across mics and across hits: not a per-hit job
-            if (trackFxOn (S, t)) { plans[(size_t) t] = E.plan (t); on[(size_t) t] = 1; }
-        }
+        for (int t = 0; t < nT; ++t) if (trackFxOn (S, t)) { plans[(size_t) t] = E.plan (t); on[(size_t) t] = 1; }
     }
     ok = true;
 }

@@ -530,7 +530,7 @@ void MainComponent::rerender()
     renderBusy = true; renderPending = false;
     const int gen = ++renderGeneration;
     auto copy = std::make_shared<hl::Session> (engineState->session);
-    if (copy->mode == "kit") for (auto& t : copy->tracks) hl::F32().swap (t.mono);   // a song's render doesn't read the monos: half a copy less
+    if (copy->mode == "kit") for (auto& t : copy->tracks) t.mono = hl::F32();   // a song's render doesn't read the monos: half a copy less
     memLog ("render start");
     std::thread ([copy, gen, st = engineState, sp = juce::Component::SafePointer<MainComponent> (this)]
     {

@@ -1513,3 +1513,62 @@ TEST_CASE ("Preview: one hit worked out on its own is the whole render's samples
     pumpUntilIdle (m);
     CHECK_FALSE (ld::hl::HitPreviewer (*m.session(), *m.mixRender()).valid());
 }
+
+namespace
+{
+void pumpUntilPreviewed (SampleModel& m)
+{
+    const auto t0 = juce::Time::getMillisecondCounter();
+    do juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+    while ((m.isPrepping() || m.isBusy() || m.previewRunning()) && juce::Time::getMillisecondCounter() - t0 < 120000);
+}
+double nullDb (const ld::hl::Chs& a, const ld::hl::Chs& b)
+{
+    double e = 0, r = 0;
+    for (size_t c = 0; c < a.size() && c < b.size(); ++c)
+        for (size_t n = 0; n < std::min (a[c].size(), b[c].size()); ++n) { const double d = (double) a[c][n] - b[c][n]; e += d * d; r += (double) b[c][n] * b[c][n]; }
+    return 10.0 * std::log10 ((e + 1e-30) / (r + 1e-30));
+}
+}
+
+TEST_CASE ("Preview: hits swapped in from memory play what the rendered files play, for tone and for tuning", "[preview]")
+{
+    const char* dir = std::getenv ("LD_TAKE");
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ dir ? juce::File (dir) : makeTake ("preview2", 3) }).isEmpty());
+    prep (m);
+    const double sr = m.session()->sr;
+    m.previewRateForTests = sr;
+    const int nT = (int) m.session()->tracks.size();
+    const size_t nH = m.session()->onsets.size();
+    auto all = [&] { std::vector<ld::hl::Chs> v; for (int t = 0; t < nT; ++t) v.push_back (m.renderTrackForTests (t, sr)); return v; };
+    REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.2; }, SampleModel::Redo::mix));
+    pumpUntilPreviewed (m);
+    CHECK (m.hitsPreviewed() == 0);          // nothing playing: the files took over
+    const auto filesA = all();
+
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        // as if playing: the change is heard from memory, the files on the tracks stay as they were
+        m.holdClipsForTests = true;
+        if (pass == 0) REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.9; S.tone.crack = 0.6; S.shape.atk = 0.5; }, SampleModel::Redo::mix));
+        else REQUIRE (m.change ([] (ld::hl::Session& S) { S.tuneAnyway = true; ld::hl::runPitch (S); S.tune.on = true; S.tune.cents = -35; }, SampleModel::Redo::tune));
+        pumpUntilPreviewed (m);
+        CHECK (m.hitsPreviewed() == (int) nH);
+        CHECK (m.clipsWaiting());
+        const auto heard = all();
+        // stopped: the files are laid on the tracks and the memory is let go
+        m.holdClipsForTests = false;
+        m.stop();
+        CHECK (m.hitsPreviewed() == 0);
+        CHECK_FALSE (m.clipsWaiting());
+        const auto files = all();
+        for (int t = 0; t < nT; ++t)
+        {
+            INFO ("pass " << pass << ", mic " << t << ": heard vs files " << nullDb (heard[(size_t) t], files[(size_t) t]) << " dB; files vs the settings before " << nullDb (files[(size_t) t], filesA[(size_t) t]) << " dB");
+            fprintf (stderr, "[preview] pass %d mic %d: heard vs files %.1f dB, files vs before %.1f dB\n", pass, t, nullDb (heard[(size_t) t], files[(size_t) t]), nullDb (files[(size_t) t], filesA[(size_t) t]));
+            CHECK (nullDb (heard[(size_t) t], files[(size_t) t]) < -100.0);
+        }
+        if (pass == 0) { double moved = -300; for (int t = 0; t < nT; ++t) moved = std::max (moved, nullDb (files[(size_t) t], filesA[(size_t) t])); CHECK (moved > -60.0); }
+    }
+}

@@ -139,6 +139,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     if (edit) edit->getTransport().stop (false, false);
     edit.reset();
     if (cacheDir.isDirectory()) cacheDir.deleteRecursively();
+    cancelPreview(); hitAudio.clear(); clipsStale = false; previewOk = false;
     state = st;
     name = folder;
     refAudio.clear(); refSource = refPlayFile = juce::File(); refName.clear(); refHits = refEngine = 0; refPrint.clear(); refAud = false; refCancelled.clear();
@@ -267,6 +268,7 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
             if (! *alivePtr) return;
             if (gen != takeGen) { releaseFreedMemory(); return; }   // another take was opened meanwhile
             prepping = false;
+            cancelPreview(); clearHitAudio(); clipsStale = false; previewOk = false;
             state = copy;
             undoStack.clear();
             redoStack.clear();
@@ -288,6 +290,7 @@ juce::String SampleModel::autoPrepNow()
     copy->prepared = hl::autoPrep (copy->session);
     if (! copy->prepared) copy->advice = hl::hitCountAdvice (copy->session);
     else renderAndMeasure (*copy);
+    cancelPreview(); clearHitAudio(); clipsStale = false; previewOk = false;
     state = copy;
     buildHits();
     applyAlignment();
@@ -349,10 +352,16 @@ bool SampleModel::change (const std::function<void (hl::Session&)>& f, Redo what
     if (what == Redo::align) applyAlignment();
     if (what == Redo::tune) { hl::computeTune (state->session); tuneLayoutWanted = true; }   // the tuned hits render in the background
     if (what == Redo::mix) wantMix = true;
+    const auto q0 = juce::Time::getMillisecondCounterHiRes();
     buildHits();
+    const auto q1 = juce::Time::getMillisecondCounterHiRes();
     if (! state->prepared) return true;
+    if (what == Redo::mix || what == Redo::tune || wantMix) { ++audioGen; startPreview(); }
+    const auto q2 = juce::Time::getMillisecondCounterHiRes();
     ++renderWanted;
-    startRender();
+    lastChangeMs = juce::Time::getMillisecondCounterHiRes();
+    renderSoon();
+    if (std::getenv ("LD_TIMING")) fprintf (stderr, "[timing] change(): before %.1f, buildHits %.1f, startPreview %.1f, startRender %.1f ms\n", q0 - now * 1000.0, q1 - q0, q2 - q1, juce::Time::getMillisecondCounterHiRes() - q2);
     return true;
 }
 
@@ -361,10 +370,14 @@ void SampleModel::reapply (bool mixToo)
     applyAlignment();
     if (state->session.tuneAnalyzed) hl::computeTune (state->session);
     buildHits();
-    layoutHits (false);   // tuned hits not rendered yet keep playing as they were until the render lands
+    ++audioGen;
+    // playing, with the hits previewed: they're swapped in one by one and the clips wait for playback to stop
+    if ((isPlaying() || holdClipsForTests) && state->prepared && state->mix && hl::HitPreviewer::possible (state->session, *state->mix)) clipsStale = true;
+    else layoutHits (false);   // tuned hits not rendered yet keep playing as they were until the render lands
     tuneLayoutWanted = true;
     if (! state->prepared) return;
     if (mixToo) wantMix = true;
+    startPreview();
     ++renderWanted;
     startRender();
 }
@@ -869,6 +882,8 @@ void SampleModel::startRender()
         juce::MessageManager::callAsync ([this, copy, base, alivePtr, ticket, mix, made, tm0, tm1, tm2]
         {
             if (! *alivePtr) return;
+            landRender ([this, copy, base, ticket, mix, made, tm0, tm1, tm2]
+            {
             const auto tm3 = juce::Time::getMillisecondCounterHiRes();
             struct Log { double a, b, c, d; bool mix; size_t n; ~Log() { if (std::getenv ("LD_TIMING")) fprintf (stderr, "[timing] %s: process %.0f ms, hit files %.0f ms (%zu), queue %.0f ms, land %.0f ms\n", mix ? "mix" : "levels", b - a, c - b, n, d - c, juce::Time::getMillisecondCounterHiRes() - d); } } log { tm0, tm1, tm2, tm3, mix, made->size() };
             rendering = false;
@@ -881,13 +896,163 @@ void SampleModel::startRender()
                 if (prepFor != state.get()) { prepFiles.clear(); hitFiles.clear(); prepFor = state.get(); }
                 bool newFiles = false;
                 for (auto& [k, f] : *made) if (! hitFiles.count (k)) { hitFiles[k] = f; newFiles = true; }
-                if (mix || newFiles || tuneLayoutWanted) layoutHits(); else updateHitGains();
+                const bool current = renderDone == renderWanted;
+                if (mix || newFiles || tuneLayoutWanted || clipsStale)
+                {
+                    // while something plays and the hits are being previewed, laying the files on the tracks would
+                    // rebuild playback for audio that's already heard: it waits for playback to stop
+                    if ((isPlaying() || holdClipsForTests) && previewOk) { clipsStale = true; updateHitGains(); }
+                    else { layoutHits(); clipsStale = false; if (current) clearHitAudio(); else publishHitAudio(); }
+                }
+                else updateHitGains();
+                // (a worker reading the render this replaced was stopped first: it carries on from the new one)
+                if (! hitAudio.empty() || clipsStale || ! current) startPreview();
                 tuneLayoutWanted = false;
             }
             releaseFreedMemory();
             if (onChanged) onChanged();
-            startRender();   // edits that came in meanwhile
+            renderSoon();   // edits that came in meanwhile
+            });
         });
+    }).detach();
+}
+
+void SampleModel::renderSoon()
+{
+    // the whole render waits until the knob has been still for a moment: while it moves, the previewed hits are what
+    // is heard, and they get the processor to themselves
+    if (rendering || renderDone == renderWanted || ! state) return;
+    const double wait = renderHoldMs - (juce::Time::getMillisecondCounterHiRes() - lastChangeMs);
+    if (wait <= 0 || ! previewOk) { startRender(); return; }
+    if (renderTimerSet) return;
+    renderTimerSet = true;
+    auto alivePtr = alive;
+    juce::Timer::callAfterDelay ((int) std::ceil (wait) + 1, [this, alivePtr] { if (! *alivePtr) return; renderTimerSet = false; renderSoon(); });
+}
+
+void SampleModel::landRender (std::function<void()> fn)
+{
+    if (previewWorkers == 0) { fn(); return; }
+    cancelPreview();
+    auto alivePtr = alive;
+    juce::Timer::callAfterDelay (2, [this, alivePtr, fn = std::move (fn)]() mutable { if (*alivePtr) landRender (std::move (fn)); });
+}
+
+void SampleModel::settleClips()
+{
+    if (! clipsStale || ! state || rendering || renderDone != renderWanted || isPlaying() || holdClipsForTests) return;
+    clipsStale = false;
+    layoutHits();
+    clearHitAudio();
+}
+
+void SampleModel::clearHitAudio()
+{
+    if (hitAudio.empty()) return;
+    hitAudio.clear();
+    if (! state || ! edit) return;
+    for (int t = 0; t < (int) state->session.tracks.size(); ++t)
+        if (auto* at = track (t)) if (auto* a = live::alignOn (*at)) a->setHitAudio ({}, 0);
+}
+
+void SampleModel::publishHitAudio()
+{
+    if (! state || ! edit || ! state->levels || ! state->levels->valid) return;
+    const int nT = (int) state->session.tracks.size();
+    if (playedRatio.size() != state->levels->regions.size()) playedRatio.assign (state->levels->regions.size(), 1.0);
+    for (auto& [i, h] : hitAudio) if (i < playedRatio.size()) playedRatio[i] = h.ratio;   // the ratio this hit is heard at
+    for (int t = 0; t < nT; ++t)
+    {
+        auto* at = track (t);
+        auto* a = at ? live::alignOn (*at) : nullptr;
+        if (a == nullptr) continue;
+        std::vector<live::AlignPlugin::HitAudio> v;
+        for (auto& [i, h] : hitAudio) if (t < (int) h.tracks.size() && h.tracks[(size_t) t]) v.push_back ({ h.start, h.tracks[(size_t) t] });
+        std::sort (v.begin(), v.end(), [] (auto& x, auto& y) { return x.start < y.start; });
+        a->setHitAudio (std::move (v), hitAudioRate);
+        a->setHitScales (scalesFor (t, nullptr));
+    }
+}
+
+void SampleModel::startPreview()
+{
+    cancelPreview();
+    previewOk = false;
+    if (! state || ! edit || prepping || ! state->prepared || ! state->mix || ! state->levels || ! state->levels->valid) { clearHitAudio(); return; }
+    if (! hl::HitPreviewer::possible (state->session, *state->mix)) { clearHitAudio(); return; }
+    const double rate = previewRateForTests > 0 ? previewRateForTests : engine.getDeviceManager().getSampleRate();
+    if (rate <= 0) { clearHitAudio(); return; }
+    if (rate != hitAudioRate) { clearHitAudio(); hitAudioRate = rate; }
+    previewOk = true;
+    const auto& S = state->session;
+    auto regions = std::make_shared<const std::vector<hl::Region>> (state->levels->regions);
+    const size_t nH = std::min (regions->size(), S.onsets.size());
+    // the hit under the playhead first, then on from there
+    const double now = edit->getTransport().getPosition().inSeconds() - kPad;
+    size_t first = 0;
+    for (size_t i = 0; i < nH; ++i) if ((double) (*regions)[i].start / S.sr <= now) first = i;
+    auto order = std::make_shared<std::vector<size_t>>();
+    for (size_t k = 0; k < nH; ++k)
+    {
+        const size_t i = (first + k) % nH;
+        auto it = hitAudio.find (i);
+        if (it == hitAudio.end() || it->second.gen != audioGen) order->push_back (i);
+    }
+    if (order->empty()) return;
+    auto copy = std::make_shared<const hl::Session> (S);
+    auto base = state;
+    auto alivePtr = alive;
+    auto gen = previewGen;
+    const int myGen = gen->load(), agen = audioGen;
+    ++previewWorkers;
+    std::thread ([this, copy, base, alivePtr, gen, myGen, agen, regions, order, rate, nH, running = Workers::start (workers)]
+    {
+        const auto& CS = *copy;
+        const int nT = (int) CS.tracks.size();
+        const double sr = CS.sr;
+        const auto startOf = [&] (size_t i) { return (juce::int64) std::llround (((double) (*regions)[i].start / sr + kPad) * rate); };
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        hl::HitPreviewer P (CS, *base->mix);
+        bool firstDone = false;
+        if (P.valid())
+            for (size_t i : *order)
+            {
+                if (gen->load() != myGen) break;
+                const auto& R = (*regions)[i];
+                double ratio = CS.tinfo && i < CS.tinfo->ratios.size() ? CS.tinfo->ratios[i] : 1.0;
+                if (! std::isfinite (ratio) || ratio <= 0) ratio = 1.0;
+                const double step = ratio * sr / rate, on = (double) CS.onsets[i];
+                const long len = R.end - R.start;
+                const long outLen = std::max (1L, (long) std::floor ((double) len / step + 0.5));
+                // each hit stops where the next starts
+                const long keep = i + 1 < nH ? (long) std::min<juce::int64> (outLen, std::max<juce::int64> (0, startOf (i + 1) - startOf (i))) : outLen;
+                const bool asIs = std::abs (ratio - 1.0) <= 1e-12 && rate == sr;
+                std::vector<std::shared_ptr<const hl::Chs>> bufs ((size_t) nT);
+                std::vector<std::thread> th;
+                for (int t = 0; t < nT; ++t)
+                    th.emplace_back ([&, t]
+                    {
+                        auto x = P.render (t, R.start, R.end);
+                        if (! asIs)
+                        {
+                            const long preOut = (long) std::floor ((on - (double) R.start) / step + 0.5);
+                            for (auto& c : x) c = hl::renderTuned (c, on - (double) R.start, preOut, outLen, 0.0, 1, 1.0, step, 0, len, 0, 64);
+                        }
+                        for (auto& c : x) if ((long) c.size() > keep) c.resize ((size_t) keep);
+                        bufs[(size_t) t] = std::make_shared<const hl::Chs> (std::move (x));
+                    });
+                for (auto& x : th) x.join();
+                if (! firstDone && std::getenv ("LD_TIMING")) fprintf (stderr, "[timing] preview: first hit ready %.0f ms after the change's worker started\n", juce::Time::getMillisecondCounterHiRes() - t0);
+                firstDone = true;
+                const juce::int64 start = startOf (i);
+                juce::MessageManager::callAsync ([this, alivePtr, base, gen, myGen, agen, i, ratio, start, bufs]
+                {
+                    if (! *alivePtr || gen->load() != myGen || state != base || agen != audioGen) return;
+                    hitAudio[i] = { agen, ratio, start, bufs };
+                    publishHitAudio();
+                });
+            }
+        juce::MessageManager::callAsync ([this, alivePtr] { if (*alivePtr) { --previewWorkers; if (onChanged) onChanged(); } });
     }).detach();
 }
 
@@ -1128,6 +1293,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
 {
     count = 0;
     if (auto why = exportBlocker(); why.isNotEmpty()) return why;
+    cancelPreview(); clearHitAudio();   // the export plays the rendered files, nothing held in memory
     // the destination first: a folder that can't be made or written is reported now, not after the whole render
     {
         const auto made = dir.createDirectory();
@@ -1356,8 +1522,8 @@ void SampleModel::setProcessed (bool b)
     applyMutes();
 }
 
-void SampleModel::play() { if (edit) { edit->getTransport().ensureContextAllocated(); edit->getTransport().play (false); } }
-void SampleModel::stop() { if (edit) edit->getTransport().stop (false, false); }
+void SampleModel::play() { if (edit) { settleClips(); edit->getTransport().ensureContextAllocated(); edit->getTransport().play (false); } }
+void SampleModel::stop() { if (edit) { edit->getTransport().stop (false, false); settleClips(); } }
 bool SampleModel::isPlaying() const { return edit && edit->getTransport().isPlaying(); }
 double SampleModel::position() const { return edit ? edit->getTransport().getPosition().inSeconds() - kPad : 0.0; }
 void SampleModel::setPosition (double s) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (kPad + std::max (0.0, s))); }

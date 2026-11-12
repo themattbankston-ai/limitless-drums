@@ -140,6 +140,14 @@ public:
 
     // for tests and tools
     te::Edit* getEdit() const { return edit.get(); }
+    /** How many hits currently play from memory, worked out for the settings as they are now (tests, the busy light). */
+    int hitsPreviewed() const { int n = 0; for (auto& [i, h] : hitAudio) if (h.gen == audioGen) ++n; return n; }
+    bool previewRunning() const { return previewWorkers > 0; }
+    bool clipsWaiting() const { return clipsStale; }
+    /** Tests: the rate previewed hits are made for (0: the audio device's), and one track rendered as it plays now. */
+    double previewRateForTests = 0;
+    bool holdClipsForTests = false;   ///< as if something were playing: the rendered files wait, the previewed hits are what's heard
+    hl::Chs renderTrackForTests (int t, double rate) { juce::String e; return renderB (t, rate, false, e); }
     const EngineState* engineState() const { return state.get(); }
 
     // monitoring: never part of what's exported
@@ -260,6 +268,26 @@ private:
         tuned region (export: the lists are chosen so no two overlap). */
     void layoutHitsFor (const std::vector<int>* only, double outRate = 0, bool renderMissing = true);   ///< outRate: the rate it renders at (0: the take's)
     bool tuneLayoutWanted = false;
+    // Hearing a change at once: the hits are worked out again one at a time, the one under the playhead first, and
+    // handed to the track's Align plugin, which plays them instead of the clips (a short crossfade, playback carries
+    // on). The whole render still runs behind it for the levels and the export; while something plays, its files
+    // aren't laid on the tracks (that rebuilds playback): the clips catch up when playback stops.
+    struct HitBuf { int gen = 0; double ratio = 1; juce::int64 start = 0; std::vector<std::shared_ptr<const hl::Chs>> tracks; };
+    std::map<size_t, HitBuf> hitAudio;      ///< per hit, every mic (kept until the clips hold the same audio)
+    double hitAudioRate = 0;
+    int audioGen = 0;                       ///< counts the changes to what the hits sound like
+    std::shared_ptr<std::atomic<int>> previewGen = std::make_shared<std::atomic<int>> (0);   ///< a worker stops when it moves on
+    int previewWorkers = 0;
+    bool previewOk = false, clipsStale = false;
+    void startPreview();
+    void renderSoon();                      ///< startRender once the last change is renderHoldMs old (at once when nothing is previewed)
+    double lastChangeMs = 0, renderHoldMs = 250;
+    bool renderTimerSet = false;
+    void cancelPreview() { ++*previewGen; }
+    void publishHitAudio();
+    void clearHitAudio();
+    void settleClips();                     ///< stopped and rendered: the clips take over from the previewed hits
+    void landRender (std::function<void()>);   ///< runs it once no preview worker reads the render it replaces
     std::vector<double> playedRatio;   ///< per hit, the ratio its clips play at now (the Align table follows it)
     hl::Chs renderB (int t, double srOut, bool stereo, juce::String& err);
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
