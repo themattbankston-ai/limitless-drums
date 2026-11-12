@@ -1,3 +1,4 @@
+#include <sstream>
 #include <mutex>
 #include "Session.h"
 #include "Detect.h"
@@ -691,14 +692,128 @@ static void runTame (const Session& S, const ToneEngine& E, MixRender& M, const 
     for (size_t j = 0; j < idx.size(); ++j) M.tone[(size_t) idx[j]] = std::move (on[j]);
 }
 
-MixRender renderMix (const Session& S)
+namespace
+{
+std::string cleanKeyOf (const Session& S)
+{
+    std::ostringstream k;
+    k.precision (17);
+    k << S.mode << '|' << S.dnOn << '|' << S.dnDb << '|' << S.sr << '|';
+    for (auto v : S.onsets) k << v << ',';
+    for (auto& tr : S.tracks)
+    {
+        const Chs& c = tr.ch;
+        k << '|' << (const void*) &c << ':' << c.size() << ':' << (c.empty() ? 0 : c[0].size()) << ':' << tr.lrLock;
+        if (tr.lr) k << ':' << tr.lr->lag << ':' << tr.lr->pol << ':' << tr.lr->kept;
+    }
+    return k.str();
+}
+std::string scanKeyOf (const Session& S, const std::string& cleanKey)
+{
+    std::ostringstream k;
+    k.precision (17);
+    k << cleanKey << "|scan|" << S.drum << '|' << S.maxLen() << '|' << (S.tinfo ? S.tinfo->medF : -1.0);
+    return k.str();
+}
+/** What the tone pass hears in each mic's cleaned audio (per hit: bands and envelope; per mic: its resonances). */
+std::vector<std::optional<MixRender::Scan>> scanTracks (const Session& S, const std::vector<Chs>& dn, bool cym)
+{
+    const int nT = (int) S.tracks.size();
+    const double sr = S.sr;
+    const auto ends = regionEnds (S);
+    std::vector<std::optional<MixRender::Scan>> out ((size_t) nT);
+    parallelFor ((size_t) nT, [&] (size_t ti)
+    {
+        const int t = (int) ti;
+        const auto x = fxMono (dn[(size_t) t]);
+        ResScanOptions o;
+        if (cym) { o.lo = 900; o.hi = 15000; o.lenMs = 900; o.skipMs = 20; o.consistency = 0.6; }
+        else
+        {
+            o.lo = S.drum == "kick" ? 180 : 250; o.hi = 14000; o.lenMs = 700; o.skipMs = 12; o.ring = true; o.autoProtect = true;
+            o.f0hi = S.drum == "kick" ? 120 : 400;
+            if (S.tinfo) o.protect = { S.tinfo->medF, 1.59 * S.tinfo->medF };
+        }
+        MixRender::Scan sc;
+        for (size_t k = 0; k < S.onsets.size(); ++k)
+        {
+            sc.bands.push_back (bandSpec (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k] + 64)));
+            sc.env.push_back (envStats (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k])));
+        }
+        sc.res = resScan (x, S.onsets, ends, sr, o);
+        out[(size_t) t] = std::move (sc);
+    });
+    return out;
+}
+} // namespace
+
+HitPreviewer::HitPreviewer (const Session& s, const MixRender& b) : S (s), base (b)
+{
+    const int nT = (int) S.tracks.size();
+    if (S.mode == "kit" || S.onsets.empty() || base.dn.size() != (size_t) nT || base.cleanKey != cleanKeyOf (S)) return;
+    if (S.tone.repair || busLive (S) || roomLive (S)) return;
+    for (int t = 0; t < nT; ++t) if (insActive (S, t)) return;
+    on.assign ((size_t) nT, 0);
+    plans.resize ((size_t) nT);
+    if (fxOn (S))
+    {
+        ToneEngine probe (S, scans);
+        bool kept = base.scanKey == scanKeyOf (S, base.cleanKey) && base.scan.size() == (size_t) nT;
+        if (kept) for (auto& sc : base.scan) if (! sc) kept = false;
+        scans = kept ? base.scan : scanTracks (S, base.dn, probe.isCymbal());
+        ToneEngine E (S, scans);
+        for (int t = 0; t < nT; ++t)
+        {
+            if (E.moves (t).tame > 0) return;   // linked across mics and across hits: not a per-hit job
+            if (trackFxOn (S, t)) { plans[(size_t) t] = E.plan (t); on[(size_t) t] = 1; }
+        }
+    }
+    ok = true;
+}
+
+Chs HitPreviewer::render (int t, long from, long to) const
+{
+    const auto& src = base.dn[(size_t) t];
+    const long L = src.empty() ? 0 : (long) src[0].size();
+    from = std::clamp (from, 0L, L); to = std::clamp (to, from, L);
+    Chs out;
+    if (! on[(size_t) t])
+    {
+        for (auto& x : src) out.emplace_back (x.begin() + from, x.begin() + to);
+        return out;
+    }
+    // the hits whose stretches reach into [from, to): a stretch starts within a few ms before its onset to 50 ms after
+    const auto& plan = plans[(size_t) t];
+    const auto& ons = plan.ons;
+    const int nH = (int) ons.size();
+    const long late = (long) std::ceil (0.06 * S.sr), early = (long) std::ceil (0.008 * S.sr);
+    int h0 = 0; for (int h = 0; h < nH; ++h) if (ons[(size_t) h] + late <= from) h0 = h;
+    int h1 = nH; for (int h = nH - 1; h > h0; --h) if (ons[(size_t) h] - early >= to) h1 = h;
+    const auto r = fxRenderRange (src, S.sr, plan, h0, h1);
+    for (auto& y : r.audio)
+    {
+        F32 o ((size_t) (to - from), 0.0f);
+        for (long n = std::max (from, r.start), e = std::min (to, r.start + (long) y.size()); n < e; ++n) o[(size_t) (n - from)] = y[(size_t) (n - r.start)];
+        out.push_back (std::move (o));
+    }
+    return out;
+}
+
+
+MixRender renderMix (const Session& S, const MixRender* prev)
 {
     MixRender M;
     const int nT = (int) S.tracks.size();
     const double sr = S.sr;
+    const bool tlog = std::getenv ("LD_TIMING") != nullptr;
+    double tl = juce::Time::getMillisecondCounterHiRes();
+    auto lap = [&] (const char* w) { if (! tlog) return; const double n = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "[timing]   %s %.0f ms\n", w, n - tl); tl = n; };
     M.scan.resize ((size_t) nT);
-    // clean-up
-    for (auto& tr : S.tracks) M.dn.push_back (baseCh (tr));
+    // clean-up (and what it was made from: turning a tone knob doesn't run it again)
+    M.cleanKey = cleanKeyOf (S);
+    const bool cleanKept = prev && S.mode != "kit" && prev->cleanKey == M.cleanKey && prev->dn.size() == S.tracks.size();
+    if (cleanKept) M.dn = prev->dn;
+    else for (auto& tr : S.tracks) M.dn.push_back (baseCh (tr));
     // Song mode: tightening and swing, every mic cut at the same places so phase is untouched
     if (S.mode == "kit" && S.song.an.done)
     {
@@ -712,11 +827,12 @@ MixRender renderMix (const Session& S)
     }
     const bool kit = S.mode == "kit";
     const auto& dnOns = kit ? S.kitOn : S.onsets;
-    if (S.dnOn && ! dnOns.empty())
+    if (! cleanKept && S.dnOn && ! dnOns.empty())
     {
         std::vector<F32*> chans; for (auto& c : M.dn) for (auto& x : c) chans.push_back (&x);
         parallelFor (chans.size(), [&] (size_t j) { auto& x = *chans[j]; const auto p = noisePrint (x, sr, dnOns); x = denoise (x, sr, p ? &*p : nullptr, S.dnDb); });
     }
+    lap ("clean-up");
     if (kit)
     {
         // whole kit: close mics can be gated against bleed from the rest of the kit; nothing else is touched
@@ -736,30 +852,16 @@ MixRender renderMix (const Session& S)
         {
             const auto ends = regionEnds (S);
             const bool cym = E.isCymbal();
-            parallelFor ((size_t) nT, [&] (size_t ti)
-            {
-                const int t = (int) ti;
-                const auto x = fxMono (M.dn[(size_t) t]);
-                ResScanOptions o;
-                if (cym) { o.lo = 900; o.hi = 15000; o.lenMs = 900; o.skipMs = 20; o.consistency = 0.6; }
-                else
-                {
-                    o.lo = S.drum == "kick" ? 180 : 250; o.hi = 14000; o.lenMs = 700; o.skipMs = 12; o.ring = true; o.autoProtect = true;
-                    o.f0hi = S.drum == "kick" ? 120 : 400;
-                    if (S.tinfo) o.protect = { S.tinfo->medF, 1.59 * S.tinfo->medF };
-                }
-                MixRender::Scan sc;
-                for (size_t k = 0; k < S.onsets.size(); ++k)
-                {
-                    sc.bands.push_back (bandSpec (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k] + 64)));
-                    sc.env.push_back (envStats (x, S.onsets[k], sr, (double) (ends[k] - S.onsets[k])));
-                }
-                sc.res = resScan (x, S.onsets, ends, sr, o);
-                M.scan[(size_t) t] = std::move (sc);
-            });
+            M.scanKey = scanKeyOf (S, M.cleanKey);
+            bool scanKept = prev && prev->scanKey == M.scanKey && prev->scan.size() == (size_t) nT;
+            if (scanKept) for (auto& sc : prev->scan) if (! sc) scanKept = false;
+            if (scanKept) M.scan = prev->scan;
+            else M.scan = scanTracks (S, M.dn, cym);
+            lap ("scan");
             std::vector<FxPlan> plans ((size_t) nT);
             for (int t = 0; t < nT; ++t) if (trackFxOn (S, t)) plans[(size_t) t] = E.plan (t);
             parallelFor ((size_t) nT, [&] (size_t t) { if (trackFxOn (S, (int) t)) M.tone[t] = fxRenderMulti (M.dn[t], sr, plans[t]); });
+            lap ("tone+shape");
             bool tame = false;
             for (int t = 0; t < nT; ++t) if (E.moves (t).tame > 0) tame = true;
             if (tame)
@@ -770,6 +872,7 @@ MixRender renderMix (const Session& S)
             }
         }
     }
+    lap ("tame");
     // channel inserts
     M.ins = M.tone;
     std::mutex grLock;
@@ -793,6 +896,7 @@ MixRender renderMix (const Session& S)
         const std::lock_guard<std::mutex> lk (grLock);
         for (auto& [k, c] : grs) M.gr[std::to_string (t) + ":" + std::to_string (k)] = std::move (c);
     });
+    lap ("inserts");
     // memory: tone isn't needed past the inserts, and ins only feeds the shared room; move rather than copy
     std::vector<Chs>().swap (M.tone);
     if (roomLive (S)) M.bus = M.ins; else M.bus = std::move (M.ins);
@@ -907,6 +1011,7 @@ MixRender renderMix (const Session& S)
     }
     // the in-between stages aren't read after the render: free them (each is a full copy of every mic)
     std::vector<Chs>().swap (M.tone); std::vector<Chs>().swap (M.ins);
+    lap ("bus, phase EQ, reverbs");
     return M;
 }
 

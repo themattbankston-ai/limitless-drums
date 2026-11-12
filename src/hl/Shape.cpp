@@ -357,13 +357,16 @@ Chs bleedGate (const Chs& chs, double sr, double depthDb)
     return res;
 }
 
-Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
+namespace
 {
-    if (plan.repair) for (auto& x : chs) repairClicks (x, sr, plan.ons);
+/** The tone and shape render for hits hFrom..hTo-1 (the whole plan: 0..its hit count). Returns their stretch of the
+    recording, from sample `off` on: the same samples the whole render gives there (a hit's processing depends on
+    nothing but the hit before it, which is worked out too when the range doesn't start at the first hit). */
+Chs fxRenderImpl (const Chs& chs, double sr, const FxPlan& plan, int hFrom, int hTo, long& off)
+{
     const long L = (long) chs[0].size();
     const int C = (int) chs.size(), K = plan.K, M = 4 * K;
     const long T = K - 1, c = K / 2 - 1, Hs = M - T + 1;
-    Chs ys ((size_t) C, F32 ((size_t) L, 0.0f));
     std::map<int, Spec> specs;
     auto spec = [&] (int id) -> const Spec*
     {
@@ -375,10 +378,18 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
     F64 re ((size_t) M), im ((size_t) M), r2 ((size_t) M), i2 ((size_t) M);
     auto ms = [&] (double v) { return (long) jsRound (v * sr / 1000); };
     F32 env1;
-    if (C == 1) env1 = chs[0];
-    else { env1.assign ((size_t) L, 0.0f); for (auto& x : chs) for (long n = 0; n < L; ++n) { const float v = x[(size_t) n] < 0 ? -x[(size_t) n] : x[(size_t) n]; if (v > env1[(size_t) n]) env1[(size_t) n] = v; } }
+    if (C == 1) env1 = F32();
+    else
+    {
+        // (only where the onset search looks: around each hit, not the whole take)
+        env1.assign ((size_t) L, 0.0f);
+        const long before = (long) jsRound (0.004 * sr) + 2, after = (long) jsRound (0.05 * sr) + 2;
+        for (long on : plan.ons)
+            for (auto& x : chs)
+                for (long n = std::max (0L, on - before), e = std::min (L, on + after); n < e; ++n) { const float v = x[(size_t) n] < 0 ? -x[(size_t) n] : x[(size_t) n]; if (v > env1[(size_t) n]) env1[(size_t) n] = v; }
+    }
     const int nH = (int) plan.ons.size();
-    const auto mons = fxOnsets (env1, sr, plan.ons, L);
+    const auto mons = fxOnsets (C == 1 ? chs[0] : env1, sr, plan.ons, L);
     std::vector<std::vector<long>> monsC;
     if (C == 1) monsC.push_back (mons);
     else for (auto& x : chs) monsC.push_back (fxOnsets (x, sr, plan.ons, L));
@@ -386,6 +397,11 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
     std::vector<long> bnd { 0 };
     for (int h = 1; h < nH; ++h) bnd.push_back (std::max (bnd[(size_t) h - 1] + 1, std::min (mons[(size_t) h] - ms (3), mons[(size_t) h])));
     bnd.push_back (L);
+    hFrom = std::clamp (hFrom, 0, nH); hTo = std::clamp (hTo, hFrom, nH);
+    const int hFirst = std::max (0, hFrom - 1);
+    off = nH == 0 || hFrom >= hTo ? 0 : bnd[(size_t) hFirst];
+    const long outEnd = nH == 0 ? L : (hFrom >= hTo ? 0 : bnd[(size_t) hTo]);
+    Chs ys ((size_t) C, F32 ((size_t) std::max (0L, outEnd - off), 0.0f));
     const bool haveEnv = ! plan.env.empty();
     const double envStep = (plan.envStepMs != 0 ? plan.envStepMs : 0.25) * sr / 1000, envT0 = plan.envT0 * sr / 1000;
     auto envAt = [&] (double d)
@@ -399,7 +415,7 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
     };
     const long fadeIn = ms (1.5), fadeOut = ms (3), tap = ms (3);
     F64 gPrev ((size_t) C, 1.0);
-    for (int h = 0; h < nH; ++h)
+    for (int h = hFirst; h < hTo; ++h)
     {
         const long a = bnd[(size_t) h], b = bnd[(size_t) h + 1];
         if (b <= a) continue;
@@ -407,7 +423,7 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
         const Spec* H2 = spec (plan.cut.empty() ? -1 : plan.cut[(size_t) h]);
         const double kh = plan.hitK.empty() ? 1 : plan.hitK[(size_t) h];
         const long mEnd = h + 1 < nH ? mons[(size_t) h + 1] : L;
-        if (! H1 && ! H2) for (int ci = 0; ci < C; ++ci) for (long n = a; n < b; ++n) ys[(size_t) ci][(size_t) n] = chs[(size_t) ci][(size_t) n];
+        if (! H1 && ! H2) for (int ci = 0; ci < C; ++ci) for (long n = a; n < b; ++n) ys[(size_t) ci][(size_t) (n - off)] = chs[(size_t) ci][(size_t) n];
         else
         {
             std::vector<std::pair<int, long>> blocks;
@@ -438,7 +454,7 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
                     for (auto blk : { A, Bk })
                     {
                         if (blk.first < 0) continue;
-                        for (long t = blk.second, e = std::min (b, blk.second + Hs); t < e; ++t) ys[(size_t) blk.first][(size_t) t] = chs[(size_t) blk.first][(size_t) t];
+                        for (long t = blk.second, e = std::min (b, blk.second + Hs); t < e; ++t) ys[(size_t) blk.first][(size_t) (t - off)] = chs[(size_t) blk.first][(size_t) t];
                     }
                     continue;
                 }
@@ -485,7 +501,7 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
                         }
                         double gt = cos01 ((double) (t - (mon - fadeIn)) / fadeIn);
                         if (h + 1 < nH) gt *= cos01 ((double) (b - t) / fadeOut);
-                        y[(size_t) t] = (float) (x[(size_t) t] + gt * (v1 - x[(size_t) t]));
+                        y[(size_t) (t - off)] = (float) (x[(size_t) t] + gt * (v1 - x[(size_t) t]));
                     }
                 };
                 emit (A, re, r2);
@@ -497,23 +513,38 @@ Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
             const auto& x = chs[(size_t) ci];
             auto& y = ys[(size_t) ci];
             const long mon = std::max (a, monsC[(size_t) ci][(size_t) h]);
-            if (haveEnv) for (long t = a; t < b; ++t) y[(size_t) t] = (float) (y[(size_t) t] * envAt ((double) (t - mon)));
+            if (haveEnv) for (long t = a; t < b; ++t) y[(size_t) (t - off)] = (float) (y[(size_t) (t - off)] * envAt ((double) (t - mon)));
             double g = 1;
             if (plan.hasComp)
             {
                 const long w0 = std::max (a, plan.ons[(size_t) h] + plan.compLag), w1 = std::min (b, w0 + plan.compWin);
                 double p = 0, qq = 0;
-                for (long n = w0; n < w1; ++n) { p += (double) x[(size_t) n] * x[(size_t) n]; qq += (double) y[(size_t) n] * y[(size_t) n]; }
+                for (long n = w0; n < w1; ++n) { p += (double) x[(size_t) n] * x[(size_t) n]; qq += (double) y[(size_t) (n - off)] * y[(size_t) (n - off)]; }
                 if (p > 1e-20 && qq > 1e-20) g = std::sqrt (p / qq);
             }
             const double e0 = haveEnv ? envAt (-1e9) : 1;
             const long gl = std::max (a + 1, mon - fadeIn), span = gl - a;
             const double from = gPrev[(size_t) ci] / (e0 != 0 ? e0 : 1);
-            for (long t = a; t < b; ++t) { double gg = g; if (t < gl) gg = from + (g - from) * cos01 ((double) (t - a) / span); y[(size_t) t] = (float) (y[(size_t) t] * gg); }
+            for (long t = a; t < b; ++t) { double gg = g; if (t < gl) gg = from + (g - from) * cos01 ((double) (t - a) / span); y[(size_t) (t - off)] = (float) (y[(size_t) (t - off)] * gg); }
             gPrev[(size_t) ci] = g * (haveEnv ? envAt ((double) (b - 1 - mon)) : 1);
         }
     }
     return ys;
+}
+} // namespace
+
+Chs fxRenderMulti (Chs chs, double sr, const FxPlan& plan)
+{
+    if (plan.repair) for (auto& x : chs) repairClicks (x, sr, plan.ons);
+    long off = 0;
+    return fxRenderImpl (chs, sr, plan, 0, (int) plan.ons.size(), off);
+}
+
+FxRange fxRenderRange (const Chs& chs, double sr, const FxPlan& plan, int h0, int h1)
+{
+    FxRange r;
+    r.audio = fxRenderImpl (chs, sr, plan, h0, h1, r.start);
+    return r;
 }
 
 // ------------------------------------------------------------------ linked resonance taming

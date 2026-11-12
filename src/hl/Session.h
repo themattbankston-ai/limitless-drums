@@ -191,6 +191,8 @@ struct MixRender
     std::map<std::string, F32> gr;
     struct Scan { std::vector<F64> bands; std::vector<EnvStats> env; ResScanResult res; };
     std::vector<std::optional<Scan>> scan;       ///< per track, when the tone pass listened to it
+    /** What the clean-up stage and the scans were made from: a later render with the same inputs reuses them. */
+    std::string cleanKey, scanKey;
 };
 
 /** The analysis Hitline's tone pass keeps per mic, and the curves it plans from it (public for the views). */
@@ -243,7 +245,28 @@ std::pair<ToneMoves, ShapeMoves> standardMoves (const Session&, const MixRender&
 juce::var verbParams (const VerbUnit&);
 
 /** Runs the whole chain (Hitline's runDenoise, runFx with tame, runIns with bus and room). */
-MixRender renderMix (const Session&);
+/** Any stretch of one mic as the chain leaves it before the phase EQ (clean-up, tone and shape), worked out from that
+    stretch's hits alone: the samples a whole render gives there, in the time one hit takes instead of the take. It
+    stands on a render of the same take with the same clean-up settings (`base`: its cleaned audio and its listening
+    are reused); valid() says whether that holds and whether the chain is one that can be cut per hit (no taming,
+    inserts, bus, room or click repair: those are heard when the whole render lands). */
+class HitPreviewer
+{
+public:
+    HitPreviewer (const Session&, const MixRender& base);
+    bool valid() const { return ok; }
+    Chs render (int t, long from, long to) const;
+private:
+    const Session& S;
+    const MixRender& base;
+    std::vector<std::optional<MixRender::Scan>> scans;
+    std::vector<FxPlan> plans;
+    std::vector<char> on;
+    bool ok = false;
+};
+
+/** prev: the last render of this take; stages whose inputs haven't changed are reused from it (same audio out). */
+MixRender renderMix (const Session&, const MixRender* prev = nullptr);
 
 /** Levels, measured on what gets exported (after the mix), as Hitline's computeAll. */
 LevelResult measureLevels (const Session&, const MixRender&);

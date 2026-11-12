@@ -1449,3 +1449,67 @@ TEST_CASE ("Reference in the app (RM06): load, undo, stale, audition, project an
     CHECK (m3.setReferenceAudition (true, 0.5).contains ("reference"));
     CHECK_FALSE (m3.referenceAudition());
 }
+
+TEST_CASE ("Timing: how long a change takes to be heard on a real take", "[.timing]")
+{
+    const char* dir = std::getenv ("LD_TAKE");
+    REQUIRE (dir != nullptr);
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ juce::File (dir) }).isEmpty());
+    prep (m);
+    auto timed = [&] (const char* what, std::function<void (ld::hl::Session&)> f, SampleModel::Redo r)
+    {
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        REQUIRE (m.change (f, r));
+        const auto t1 = juce::Time::getMillisecondCounterHiRes();
+        pumpUntilIdle (m);
+        fprintf (stderr, "[timing] %s: change() blocked %.0f ms, heard after %.0f ms\n", what, t1 - t0, juce::Time::getMillisecondCounterHiRes() - t0);
+    };
+    timed ("tone.bright", [] (ld::hl::Session& S) { S.tone.bright = 0.5; }, SampleModel::Redo::mix);
+    timed ("tone.bright again", [] (ld::hl::Session& S) { S.tone.bright = 0.6; }, SampleModel::Redo::mix);
+    timed ("levels only", [] (ld::hl::Session&) {}, SampleModel::Redo::levels);
+    timed ("tune", [] (ld::hl::Session&) {}, SampleModel::Redo::tune);
+    timed ("align", [] (ld::hl::Session&) {}, SampleModel::Redo::align);
+}
+
+TEST_CASE ("Preview: one hit worked out on its own is the whole render's samples", "[preview]")
+{
+    const char* dir = std::getenv ("LD_TAKE");
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ dir ? juce::File (dir) : makeTake ("preview1", 3) }).isEmpty());
+    prep (m);
+    REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.7; S.tone.crack = 0.5; S.shape.atk = 0.6; S.shape.sus = -0.4; }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    const auto& S = *m.session();
+    const auto& M = *m.mixRender();
+    const auto& R = m.engineState()->levels->regions;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    ld::hl::HitPreviewer P (S, M);
+    REQUIRE (P.valid());
+    const auto t1 = juce::Time::getMillisecondCounterHiRes();
+    double worst = 0, ms = 0; long differ = 0, n = 0;
+    for (size_t i = 0; i < R.size(); ++i)
+    {
+        const auto h0 = juce::Time::getMillisecondCounterHiRes();
+        for (int t = 0; t < (int) S.tracks.size(); ++t)
+        {
+            const auto& whole = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];
+            const auto got = P.render (t, R[i].start, R[i].end);
+            REQUIRE (got.size() == whole.size());
+            for (size_t c = 0; c < got.size(); ++c)
+                for (long q = R[i].start; q < R[i].end; ++q, ++n)
+                {
+                    const double d = std::abs ((double) got[c][(size_t) (q - R[i].start)] - (double) whole[c][(size_t) q]);
+                    if (d != 0) ++differ;
+                    worst = std::max (worst, d);
+                }
+        }
+        ms = std::max (ms, juce::Time::getMillisecondCounterHiRes() - h0);
+    }
+    fprintf (stderr, "[preview] %zu hits, %d mics: set-up %.0f ms, slowest hit %.0f ms, %ld of %ld samples differ, worst %.3g\n", R.size(), (int) S.tracks.size(), t1 - t0, ms, differ, n, worst);
+    CHECK (differ == 0);
+    // taming is linked across hits: no per-hit preview for it
+    REQUIRE (m.change ([] (ld::hl::Session& S2) { S2.tone.tame = 0.5; }, SampleModel::Redo::mix));
+    pumpUntilIdle (m);
+    CHECK_FALSE (ld::hl::HitPreviewer (*m.session(), *m.mixRender()).valid());
+}

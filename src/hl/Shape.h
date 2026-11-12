@@ -23,6 +23,11 @@ struct FxPlan
     bool repair = false;
 };
 Chs fxRenderMulti (Chs chs, double sr, const FxPlan&);
+/** fxRenderMulti for hits h0..h1-1 alone (no click repair): `audio` is the processed recording from sample `start`
+    on, and from hit h0's boundary to hit h1's it holds the very samples the whole render gives. What a preview of one
+    hit costs is that hit and the one before it, not the take. */
+struct FxRange { Chs audio; long start = 0; };
+FxRange fxRenderRange (const Chs& chs, double sr, const FxPlan&, int h0, int h1);
 std::vector<long> fxOnsets (const F32& x, double sr, const std::vector<long>& ons, long L);
 int repairClicks (F32& x, double sr, const std::vector<long>& ons);
 Chs bleedGate (const Chs& chs, double sr, double depthDb);

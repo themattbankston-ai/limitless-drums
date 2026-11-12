@@ -32,6 +32,6 @@ std::shared_ptr<EngineState> openTake (const std::vector<juce::File>& files, con
 /** openTake, then Auto prep. Blocking. */
 std::shared_ptr<EngineState> prepareTake (const std::vector<juce::File>& files, const juce::String& folderName, const TakeOptions& = {});
 /** Renders the processing chain and measures the levels on it. Blocking. */
-void renderAndMeasure (EngineState&);
+void renderAndMeasure (EngineState&, const hl::MixRender* prev = nullptr);
 
 } // namespace ld

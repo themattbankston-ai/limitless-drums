@@ -31,10 +31,10 @@ std::shared_ptr<EngineState> prepareTake (const std::vector<juce::File>& files, 
     return st;
 }
 
-void renderAndMeasure (EngineState& st)
+void renderAndMeasure (EngineState& st, const hl::MixRender* prev)
 {
     if (st.session.tracks.empty()) return;
-    st.mix = hl::renderMix (st.session);
+    st.mix = hl::renderMix (st.session, prev);
     if (st.session.mode != "kit") st.levels = hl::measureLevels (st.session, *st.mix);
 }
 

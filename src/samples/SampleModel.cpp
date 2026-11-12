@@ -845,8 +845,10 @@ void SampleModel::startRender()
     const int fileTag = ++toneVersion;
     std::thread ([this, copy, base, alivePtr, ticket, mix, dir, fileTag, running = Workers::start (workers)]
     {
-        if (mix) renderAndMeasure (*copy);
+        const auto tm0 = juce::Time::getMillisecondCounterHiRes();
+        if (mix) renderAndMeasure (*copy, base->mix ? &*base->mix : nullptr);
         else if (base->mix) copy->levels = hl::measureLevels (copy->session, *base->mix);
+        const auto tm1 = juce::Time::getMillisecondCounterHiRes();
         // every tuned hit of every mic, ready to play (rendered here, so the message thread never waits on it)
         auto made = std::make_shared<std::vector<std::pair<std::string, juce::File>>>();
         const auto& CS = copy->session;
@@ -863,9 +865,12 @@ void SampleModel::startRender()
                     if (writeFloatWav (f, renderHit (*copy, M, t, i, r, CS.sr), CS.sr)) made->push_back ({ key, f });
                 }
             }
-        juce::MessageManager::callAsync ([this, copy, base, alivePtr, ticket, mix, made]
+        const auto tm2 = juce::Time::getMillisecondCounterHiRes();
+        juce::MessageManager::callAsync ([this, copy, base, alivePtr, ticket, mix, made, tm0, tm1, tm2]
         {
             if (! *alivePtr) return;
+            const auto tm3 = juce::Time::getMillisecondCounterHiRes();
+            struct Log { double a, b, c, d; bool mix; size_t n; ~Log() { if (std::getenv ("LD_TIMING")) fprintf (stderr, "[timing] %s: process %.0f ms, hit files %.0f ms (%zu), queue %.0f ms, land %.0f ms\n", mix ? "mix" : "levels", b - a, c - b, n, d - c, juce::Time::getMillisecondCounterHiRes() - d); } } log { tm0, tm1, tm2, tm3, mix, made->size() };
             rendering = false;
             renderDone = ticket;
             if (state == base)
