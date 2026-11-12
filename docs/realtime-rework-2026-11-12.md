@@ -36,3 +36,20 @@ Level gains still update when the whole render lands.
    hits re-triggered off the timeline: the plugin's hit-audio table can carry them (needs overlapping voices).
 3. Hitline's tuning view and layers view (`50_inspector.js`, `55_panels.js`, `30_editor.js`), in the current look.
 4. The main track view's feel against Hitline's (`30_editor.js`): selecting, auditioning and listening.
+
+## Later the same night: Hitline's layout, auditions and views
+- **Layout** (Tune, Tone, Clean, Level): the tracks and the take stay in the middle; the step's controls sit in a
+  404 px panel down the right (`HitsView::drawWorkspace`). The middle switches between Waveforms, Grid and the step's
+  own picture (Pitches, Before / after, Tail, Levels). Hits, Align, Setup and Export are as they were.
+- **Grid**: Hitline's velocity x round robin cards (`drawGrid`): shape of each hit, export level, click to hear.
+- **Tune panel**: switch, tuner dial for the selected hit, "Sits at", target, fine, how, and the pitch map in cents.
+- **Auditions**: As shown (the timeline, as before), Layer, Sweep, Groove, Rudiments. The last four are phrases
+  (`HitsLogic.h` builds them as Hitline did; `SampleModel::playPhrase` plays them): hits held in memory, placed past
+  the take's end on the timeline and summed by the Align plugin, so every mic goes through its own alignment, phase
+  EQ and level. A knob moved while a phrase plays is heard in the phrase.
+- Captures: `docs/gui/2026-11-12-*.jpg`.
+
+## Still not instant (heard when the whole render lands)
+Taming, click repair, the clean-up amount, and the Level gains that follow a tone change. Phrases play the processed
+side only (A is silent there, so a phrase switches to B). Hitline's Mono and MIDI auditions and the velocity pads
+aren't back yet. The audition bar is still at the top (Hitline's was at the bottom).

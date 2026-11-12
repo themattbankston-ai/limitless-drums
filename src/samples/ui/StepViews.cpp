@@ -310,21 +310,6 @@ void HitsView::drawStep (Canvas& c)
     {
         case 0: drawSetup (c); break;
         case 2: drawAlign (c); break;
-        case 3: case 4: case 5: case 6:
-        {
-            // the tracks stay down the left with their live monitor controls; the step works in what's right of them
-            drawTrackColumn (c);
-            stepX = headW;
-            const size_t first = hits.size();
-            c.saveState();
-            c.setPosition (stepX, 0);
-            if (step == 3) drawTune (c); else if (step == 4) drawTone (c); else if (step == 5) drawClean (c); else drawLevel (c);
-            c.restoreState();
-            for (size_t i = first; i < hits.size(); ++i) hits[i].x += stepX;
-            barEnd += stepX;
-            stepX = 0;
-            break;
-        }
         case 7: drawExport (c); break;
         default: break;
     }
@@ -734,113 +719,268 @@ void HitsView::drawAlignDetails (Canvas& c, float x, float y, float w, float h)
     else txt (c, "flat: no phase EQ on this mic", bodyFont (tok::tSmall), tok::ink3, gx, gy, gw, gh, visage::Font::kCenter);
 }
 
+// ------------------------------------------------------------------------------------------------ the workspace
+/** Tune, Tone, Clean and Level, laid out as Hitline was: the tracks and the take stay in the middle (waveforms, or
+    the velocity x round robin grid, or the step's own picture), the step's controls sit down the right. */
+void HitsView::drawWorkspace (Canvas& c)
+{
+    const float top = tbH + auH, y0 = top + sbH;
+    static const char* own[4] = { "Pitches", "Before / after", "Tail", "Levels" };
+    if (centerView == 0) { drawTracks (c); drawRulers (c); drawCloseUp (c); }
+    else
+    {
+        drawTrackColumn (c);
+        c.setColor (ground); c.fill (headW, y0, laneW(), height() - y0);
+    }
+    // the bar: what the middle shows, and the zoom tools when it's the waveforms
+    c.setColor (bar3); c.fill (0, top, width(), sbH);
+    c.setColor (line); c.fill (0, top + sbH - 1, width(), 1);
+    txt (c, "TRACKS \xc2\xb7 monitoring only", boldFont (10), tok::ink3, 13, top, headW - 20, sbH);
+    float x = headW + 10;
+    const std::vector<std::string> views { "Waveforms", "Grid", own[step - 3] };
+    segmented (c, x, top + 4, views, centerView, "cview:", 26);
+    x += segmentedW (views) + 12;
+    if (centerView == 0)
+    {
+        const char* zl[4] = { "\xe2\x88\x92", "+", "\xe2\x86\x95\xe2\x88\x92", "\xe2\x86\x95+" };
+        const char* zid[4] = { "zoomout", "zoomin", "wavedown", "waveup" };
+        for (int i = 0; i < 4; ++i)
+        {
+            c.setColor (btn); c.roundedRectangle (x, top + 7, 30, 24, 3);
+            txt (c, zl[i], boldFont (12), ink, x, top + 7, 30, 24, visage::Font::kCenter);
+            add (x, top + 7, 30, 24, zid[i]);
+            x += 33;
+        }
+        txt (c, "Fit", bodyFont (12), ink2, x + 6, top + 7, 30, 24);
+        add (x + 6, top + 7, 30, 24, "fit");
+        x += 44;
+    }
+    barEnd = x;
+    // the step's panel
+    pX = width() - panelW; pY = y0; pW = panelW; pH = height() - y0;
+    dX = headW; dY = y0; dW = laneW(); dH = height() - y0;
+    c.setColor (bar2); c.fill (pX, pY, pW, pH);
+    c.setColor (tok::hairline); c.fill (pX, pY, 1, pH);
+    if (centerView == 1) drawGrid (c, dX, dY, dW, dH);
+    if (step == 3) drawTune (c); else if (step == 4) drawTone (c); else if (step == 5) drawClean (c); else drawLevel (c);
+    std::string st = status;
+    if (model.isRendering()) st = "Finishing the change on every hit\xe2\x80\xa6";
+    const float room = pX - 14 - (barEnd + 16);
+    if (room > 160) txt (c, st, bodyFont (12), 0xffffc78a, barEnd + 16, top, room, sbH, visage::Font::kRight);
+}
+
+/** Hitline's grid: every hit as a card, velocity layers up the side (hardest on top), round robins across. Each card
+    shows the hit's shape on the mic on show and the level it exports at. Click one to hear it. */
+void HitsView::drawGrid (Canvas& c, float x, float y, float w, float h)
+{
+    const auto* S = model.session();
+    const auto& H = model.hits();
+    if (! S || H.empty()) return;
+    const int V = std::max (1, layersOf (H));
+    int RR = 1;
+    for (auto& hh : H) RR = std::max (RR, hh.rr + 1);
+    if (viewMic >= (int) S->tracks.size()) viewMic = -1;
+    const int t = viewMic >= 0 ? viewMic : S->refIdx;
+    txt (c, "VELOCITY \xc3\x97 ROUND ROBIN", boldFont (13), ink, x + 18, y + 12, 400, 20);
+    txt (c, std::to_string (V) + " layers \xc3\x97 " + std::to_string (RR) + " round robins \xc2\xb7 " + model.tracks()[(size_t) t].name + " \xc2\xb7 level after processing \xc2\xb7 click to hear",
+         bodyFont (12), ink3, x + 18, y + 34, w - 36, 18);
+    const float gx = x + 86, gy = y + 84, gw = w - 86 - 18, gh = h - 84 - 16;
+    const float cw = std::min (190.0f, gw / RR), ch = std::clamp (gh / V, 34.0f, 76.0f);
+    for (int r = 0; r < RR; ++r) txt (c, "RR " + std::to_string (r + 1), boldFont (10), ink3, gx + r * cw, y + 62, cw - 6, 16, visage::Font::kCenter);
+    const auto* L = model.levelResult();
+    const auto& raw = L && L->valid && L->lvlRaw.size() > (size_t) t ? L->lvlRaw[(size_t) t] : hl::F64 {};
+    const auto& x0 = S->tracks[(size_t) t].ch.get()[0];
+    const double sr = S->sr;
+    float pk = 1e-6f;
+    for (auto& hh : H) pk = std::max (pk, std::pow (10.0f, hh.peakDb / 20.0f));
+    const int sel = selHit;
+    for (int v = 0; v < V; ++v)
+    {
+        const float ry = gy + (V - 1 - v) * ch;
+        if (ry + ch > y + h) continue;
+        const unsigned col = velColour[v % nVelColours] | 0xff000000;
+        txt (c, "V" + std::to_string (v + 1), boldFont (12), col, x + 18, ry + 6, 60, 16);
+        txt (c, std::to_string (v * 127 / V + 1) + "\xe2\x80\x93" + std::to_string ((v + 1) * 127 / V), monoFont (10), ink3, x + 18, ry + 22, 64, 14);
+        for (int r = 0; r < RR; ++r)
+        {
+            const int i = hitOf (H, v, r);
+            const float bx = gx + r * cw, bw = cw - 6, bh = ch - 6;
+            c.setColor (lane); c.roundedRectangle (bx, ry, bw, bh, 4);
+            if (i < 0) { txt (c, "\xe2\x80\x94", bodyFont (11), ink3, bx, ry, bw, bh, visage::Font::kCenter); continue; }
+            // the hit's envelope, filled (a fraction of a second: the shape, not the detail)
+            const long on = (long) std::llround (H[(size_t) i].time * sr), len = (long) (std::min (0.6, H[(size_t) i].end - H[(size_t) i].time) * sr);
+            const int cols = std::max (8, (int) bw - 8);
+            float mxAll = 1e-6f;
+            for (long n = on; n < on + len && n < (long) x0.size(); n += 4) mxAll = std::max (mxAll, std::abs (x0[(size_t) std::max (0L, n)]));
+            c.setColor (draw::withAlpha (col, 0.75f));
+            for (int k = 0; k < cols; ++k)
+            {
+                const long a = on + len * k / cols, b = on + len * (k + 1) / cols;
+                float m = 0;
+                for (long n = a; n < b && n < (long) x0.size(); n += 3) if (n >= 0) m = std::max (m, std::abs (x0[(size_t) n]));
+                const float hh2 = (bh - 22) * std::sqrt (m / mxAll);
+                c.fill (bx + 4 + k, ry + bh - 3 - hh2, 1, hh2);
+            }
+            txt (c, std::to_string (i + 1), monoFont (10), ink2, bx + 6, ry + 3, 40, 14);
+            if (i < (int) raw.size()) txt (c, fmt ("%.1f dB", raw[(size_t) i] + model.hitGainDb (t, (size_t) i)), monoFont (10), ink, bx, ry + 3, bw - 6, 14, visage::Font::kRight);
+            if (i == sel) { c.setColor (0xffffffff); c.roundedRectangleBorder (bx - 1, ry - 1, bw + 2, bh + 2, 5, 2); }
+            add (bx, ry, bw, bh, "hit:" + std::to_string (i));
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ 4 Tune
 void HitsView::drawTune (Canvas& c)
 {
     const auto* S = model.session();
     if (! S) return;
-    const float top = tbH + auH, y0 = top + sbH;
-    float x = 14;
-    c.setColor (S->tune.on ? accentDark : 0xff3a3a3e); c.roundedRectangle (x, top + 7, 90, 24, 12);
-    txt (c, S->tune.on ? "Tuning on" : "Tuning off", boldFont (12), S->tune.on ? accentInk : ink2, x, top + 7, 90, 24, visage::Font::kCenter);
-    add (x, top + 7, 90, 24, "tune:on"); x += 104;
-    segmented (c, x, top + 4, { "One ratio for the drum", "Even out round robins" }, S->tune.mode == "rr" ? 1 : 0, "tunemode:", 26);
-    x += segmentedW ({ "One ratio for the drum", "Even out round robins" }) + 14;
+    const float x0 = pX + 18, w = pW - 36;
+    float y = pY + 14;
+    txt (c, "TUNE", boldFont (15), ink, x0, y, 120, 22);
+    txt (c, "Pitch of every hit", bodyFont (12), ink3, x0, y + 22, 200, 16);
+    c.setColor (btn); c.roundedRectangle (x0 + w - 104, y + 4, 104, 26, 4);
+    txt (c, "Read again", boldFont (11), ink, x0 + w - 104, y + 4, 104, 26, visage::Font::kCenter);
+    add (x0 + w - 104, y + 4, 104, 26, "tune:measure");
+    y += 52;
+    // the switch
+    c.setColor (S->tune.on ? tok::mintDeep : 0xff3a3a3e); c.roundedRectangle (x0, y + 2, 40, 22, 11);
+    c.setColor (S->tune.on ? tok::mintInk : 0xff9c9ca1); c.circle (x0 + (S->tune.on ? 20 : 2), y + 4, 18);
+    txt (c, S->tune.on ? "Tuning it" : "Tune it", boldFont (13), ink, x0 + 50, y, 140, 26);
+    add (x0, y, 190, 26, "tune:on");
+    y += 36;
     const auto& ti = S->tuneInfo;
-    if (ti && ti->valid)
+    const bool have = S->tuneAnalyzed && ti && ti->valid;
+    // the tuner: where the selected hit sits against the target note (grey: as recorded; colour: where it lands)
+    const float gh = 118;
+    c.setColor (lane); c.roundedRectangle (x0, y, w, gh, 6);
     {
-        txt (c, "Target", bodyFont (12), ink3, x, top, 46, sbH); x += 50;
-        c.setColor (btn); c.roundedRectangle (x, top + 6, 26, 26, 3); txt (c, "\xe2\x88\x92", boldFont (12), ink, x, top + 6, 26, 26, visage::Font::kCenter); add (x, top + 6, 26, 26, "target:-1"); x += 30;
-        c.setColor (field); c.roundedRectangle (x, top + 6, 110, 26, 3);
-        txt (c, hl::noteName (ti->targetMidi) + fmt (" \xc2\xb7 %.1f Hz", ti->targetF), monoFont (11), ink, x, top + 6, 110, 26, visage::Font::kCenter); x += 114;
-        c.setColor (btn); c.roundedRectangle (x, top + 6, 26, 26, 3); txt (c, "+", boldFont (12), ink, x, top + 6, 26, 26, visage::Font::kCenter); add (x, top + 6, 26, 26, "target:1"); x += 34;
-        txt (c, S->tune.target == "nearest" ? "(nearest note)" : "back to nearest", bodyFont (11), ink3, x, top, 100, sbH);
-        add (x, top, 100, sbH, "target:0");
-        x += 100;
+        const float cx = x0 + 96, cy = y + gh - 22, rad = 70;
+        const auto ang = [] (double cents) { return (float) (std::clamp (cents, -50.0, 50.0) / 50.0 * 1.15); };   // radians from straight up
+        for (int k = -10; k <= 10; ++k)
+        {
+            const float a = ang (k * 5.0), r0 = k % 5 == 0 ? rad - 12 : rad - 7;
+            c.setColor (k == 0 ? 0xffffffff : (k % 5 == 0 ? 0xffb8b8bd : 0xff5a5a60));
+            c.segment (cx + std::sin (a) * r0, cy - std::cos (a) * r0, cx + std::sin (a) * rad, cy - std::cos (a) * rad, k == 0 ? 2.0f : 1.2f, true);
+        }
+        const auto& Hs = model.hits();
+        const int i = std::clamp (selHit < 0 ? 0 : selHit, 0, std::max (0, (int) Hs.size() - 1));
+        const bool hitOk = have && i < (int) ti->f.size() && std::isfinite (ti->f[(size_t) i]) && std::isfinite (ti->targetF) && ti->targetF > 0;
+        if (hitOk)
+        {
+            const double before = 1200 * std::log2 (ti->f[(size_t) i] / ti->targetF);
+            const double r = S->tune.on && i < (int) ti->ratios.size() ? ti->ratios[(size_t) i] : 1.0;
+            const double after = before + 1200 * std::log2 (r);
+            auto needle = [&] (double cents, unsigned col, float th) { const float a = ang (cents); c.setColor (col); c.segment (cx, cy, cx + std::sin (a) * (rad - 16), cy - std::cos (a) * (rad - 16), th, true); };
+            needle (before, 0xff8a8a90, 2.0f);
+            if (S->tune.on) needle (after, velColour[Hs[(size_t) i].vel % nVelColours] | 0xff000000, 3.0f);
+            c.setColor (0xffe8e8ea); c.circle (cx - 4, cy - 4, 8);
+            const float tx = x0 + 196;
+            txt (c, "Hit " + std::to_string (i + 1), bodyFont (11), ink3, tx, y + 14, w - 204, 16);
+            txt (c, hl::noteName (ti->targetMidi) + fmt (" %+.0f ct", S->tune.on ? after : before), boldFont (20), ink, tx, y + 32, w - 204, 28);
+            txt (c, fmt ("%.1f Hz as recorded", ti->f[(size_t) i]), monoFont (11), ink2, tx, y + 64, w - 204, 16);
+            if (S->tune.on) txt (c, fmt ("lands at %.1f Hz", ti->f[(size_t) i] * r), monoFont (11), ink2, tx, y + 82, w - 204, 16);
+        }
+        else txt (c, have ? "No clear pitch on this hit." : (hl::soundsLikeCymbal (*S) ? "A cymbal: no steady pitch to tune." : "No steady pitch found yet."), bodyFont (12), ink2, x0 + 196, y, w - 204, gh);
     }
-    button (c, x, top + 6, 70, 26, "Details", tuneDetails, tok::coralFill);
-    add (x, top + 6, 70, 26, "tunedetails"); x += 78;
-    barEnd = x;
-    const float sideW = tok::goldenMinor (stepW() - 42, 340.0f, 560.0f);   // golden split: pitches : the drum
-    const float pw = stepW() - 28 - sideW;
-    panel (c, 14, y0 + 14, pw, height() - y0 - 28, "Every hit's pitch");
-    const float sx = stepW() - sideW - 14;
-    panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "The drum");
-    if (! S->tuneAnalyzed || ! ti || ! ti->valid)
+    y += gh + 10;
+    if (! have)
     {
-        const bool cym = hl::soundsLikeCymbal (*S);
-        txt (c, cym ? "This sounds like a cymbal: it has no steady pitch to tune, so tuning is left off." : "No steady pitch was found on the lead mic yet.",
-             bodyFont (13), ink2, 34, y0 + 60, pw - 40, 22);
-        c.setColor (btn); c.roundedRectangle (34, y0 + 96, 150, 28, 4);
-        txt (c, "Measure the pitch", boldFont (12), ink, 34, y0 + 96, 150, 28, visage::Font::kCenter);
-        add (34, y0 + 96, 150, 28, "tune:measure");
+        txt (c, "Read again measures the pitch on the lead mic.", bodyFont (12), ink3, x0, y, w, 18);
+        if (showDetail) { panel (c, dX + 14, dY + 14, dW - 28, dH - 28, "Every hit's pitch"); txt (c, "Nothing measured yet.", bodyFont (13), ink2, dX + 34, dY + 60, dW - 60, 22); }
         return;
     }
-    // the chart: before (hollow) and after (filled) per hit, the target line
-    const float gx = 70, gy = y0 + 50, gw = pw - 80, gh = height() - y0 - 28 - 60 - 20;
+    txt (c, fmt ("Sits at %.1f Hz, ", ti->medF) + fmt ("%+.0f ct from ", (ti->medMidi - std::round (ti->medMidi)) * 100) + hl::noteName (ti->medMidi) + (S->tune.on ? "." : ". Flip the switch to move it."),
+         bodyFont (12), ink2, x0, y, w, 18);
+    y += 30;
+    txt (c, "TARGET", boldFont (10), tok::ink3, x0, y, 100, 14); y += 20;
+    {
+        float x = x0;
+        c.setColor (btn); c.roundedRectangle (x, y, 28, 28, 3); txt (c, "\xe2\x88\x92", boldFont (13), ink, x, y, 28, 28, visage::Font::kCenter); add (x, y, 28, 28, "target:-1"); x += 32;
+        c.setColor (field); c.roundedRectangle (x, y, 150, 28, 3);
+        txt (c, hl::noteName (ti->targetMidi) + fmt (" \xc2\xb7 %.1f Hz", ti->targetF), monoFont (12), ink, x, y, 150, 28, visage::Font::kCenter); x += 154;
+        c.setColor (btn); c.roundedRectangle (x, y, 28, 28, 3); txt (c, "+", boldFont (13), ink, x, y, 28, 28, visage::Font::kCenter); add (x, y, 28, 28, "target:1"); x += 38;
+        txt (c, S->tune.target == "nearest" ? "nearest note" : "back to nearest", bodyFont (11), ink3, x, y, 110, 28);
+        add (x, y, 110, 28, "target:0");
+    }
+    y += 40;
+    knobCtl (c, x0 + 34, y + 20 + tok::knobLg / 2, tok::knobLg, "Fine", "tune.cents");
+    txt (c, "HOW", boldFont (10), tok::ink3, x0 + 96, y, 100, 14);
+    segmented (c, x0 + 96, y + 20, { "Whole drum", "Even out round robins" }, S->tune.mode == "rr" ? 1 : 0, "tunemode:", 26);
+    txt (c, S->tune.mode == "rr" ? "Each hit gets its own ratio, the same on every mic." : "One ratio for the drum: harder hits keep ringing higher.", bodyFont (11), ink3, x0 + 96, y + 54, w - 96, 16);
+    txt (c, "Varispeed, like slowing tape: nothing gets stretched.", bodyFont (11), ink3, x0 + 96, y + 70, w - 96, 16);
+    y += 126;
+    // the pitch map: every hit in cents from the target, grey as recorded, colour where it lands
+    txt (c, "PITCH MAP", boldFont (10), tok::ink3, x0, y, 100, 14);
+    txt (c, "grey = as recorded", bodyFont (10), ink3, x0, y, w, 14, visage::Font::kRight);
+    y += 20;
+    const float mh = std::max (90.0f, pY + pH - y - 16);
+    c.setColor (lane); c.roundedRectangle (x0, y, w, mh, 6);
+    {
+        const int N = (int) ti->f.size();
+        double span = 25;
+        for (int i = 0; i < N; ++i)
+            if (std::isfinite (ti->f[(size_t) i]))
+            {
+                const double b = 1200 * std::log2 (ti->f[(size_t) i] / ti->targetF);
+                span = std::max ({ span, std::abs (b), std::abs (b + (i < (int) ti->ratios.size() ? 1200 * std::log2 (ti->ratios[(size_t) i]) : 0.0)) });
+            }
+        span = std::ceil (span / 25) * 25;
+        const float mx = x0 + 38, mw = w - 46, my = y + 8, mhh = mh - 16;
+        auto yOf = [&] (double cents) { return my + mhh * 0.5f - (float) (cents / span) * mhh * 0.5f; };
+        for (int k = -2; k <= 2; ++k)
+        {
+            const double cv = span * k / 2;
+            c.setColor (k == 0 ? tok::coral : 0xff333336); c.fill (mx, yOf (cv), mw, k == 0 ? 1.5f : 1.0f);
+            txt (c, fmt ("%+.0f", cv), monoFont (9), ink3, x0 + 2, yOf (cv) - 7, 32, 14, visage::Font::kRight);
+        }
+        for (int i = 0; i < N; ++i)
+        {
+            if (! std::isfinite (ti->f[(size_t) i])) continue;
+            const float px = mx + mw * (i + 0.5f) / N;
+            const double b = 1200 * std::log2 (ti->f[(size_t) i] / ti->targetF);
+            const double a = b + (S->tune.on && i < (int) ti->ratios.size() ? 1200 * std::log2 (ti->ratios[(size_t) i]) : 0.0);
+            const unsigned col = i < (int) model.hits().size() ? velColour[model.hits()[(size_t) i].vel % nVelColours] | 0xff000000 : ink2;
+            c.setColor (0xff77777d); c.circle (px - 2.5f, yOf (b) - 2.5f, 5);
+            if (S->tune.on) { c.setColor (col); c.circle (px - 3.5f, yOf (a) - 3.5f, 7); }
+            if (i == selHit) { c.setColor (0xffffffff); c.ring (px - 6, yOf (S->tune.on ? a : b) - 6, 12, 1.5f); }
+            add (px - std::max (3.0f, mw / N / 2), y, std::max (6.0f, mw / N), mh, "hit:" + std::to_string (i));
+        }
+    }
+    if (! showDetail) return;
+    // the middle, on Pitches: every hit in Hz, before (hollow) and after (filled), and what was read on each
+    const float tw = dW > 900 ? 380.0f : 0.0f, pw = dW - 28 - (tw > 0 ? tw + 14 : 0);
+    panel (c, dX + 14, dY + 14, pw, dH - 28, "Every hit's pitch");
+    const float gx = dX + 70, gy = dY + 50, gw = pw - 80, ghh = dH - 28 - 60 - 20;
     double lo = 1e9, hiF = 0;
-    for (size_t i = 0; i < ti->f.size(); ++i) if (std::isfinite (ti->f[i])) { lo = std::min (lo, ti->f[i]); hiF = std::max (hiF, ti->f[i]); if (i < ti->ratios.size()) { lo = std::min (lo, ti->f[i] * ti->ratios[i]); hiF = std::max (hiF, ti->f[i] * ti->ratios[i]); } }
+    const int N = (int) ti->f.size();
+    for (int i = 0; i < N; ++i) if (std::isfinite (ti->f[(size_t) i])) { lo = std::min (lo, ti->f[(size_t) i]); hiF = std::max (hiF, ti->f[(size_t) i]); if (i < (int) ti->ratios.size()) { lo = std::min (lo, ti->f[(size_t) i] * ti->ratios[(size_t) i]); hiF = std::max (hiF, ti->f[(size_t) i] * ti->ratios[(size_t) i]); } }
     if (std::isfinite (ti->targetF)) { lo = std::min (lo, ti->targetF); hiF = std::max (hiF, ti->targetF); }
-    if (hiF <= lo) { hiF = lo + 1; }
+    if (hiF <= lo) hiF = lo + 1;
     const double pad = (hiF - lo) * 0.15 + 0.5;
     lo -= pad; hiF += pad;
-    auto yOf = [&] (double f) { return gy + gh - (float) ((f - lo) / (hiF - lo)) * gh; };
-    const int N = (int) ti->f.size();
-    for (int v = 0; v < model.velocities(); ++v)
-    {
-        int a = N, b = -1;
-        for (int i = 0; i < N && i < (int) model.hits().size(); ++i) if (model.hits()[(size_t) i].vel == v) { a = std::min (a, i); b = std::max (b, i); }
-        if (b < 0) continue;
-        c.setColor (draw::withAlpha (velColour[v % nVelColours], 0.12f)); c.fill (gx + gw * a / N, gy, gw * (b - a + 1) / N, gh);
-        txt (c, "Vel " + std::to_string (v + 1), boldFont (10), velColour[v % nVelColours] | 0xff000000, gx + gw * a / N + 4, gy + 2, 60, 14);
-    }
+    auto yHz = [&] (double f) { return gy + ghh - (float) ((f - lo) / (hiF - lo)) * ghh; };
     for (int k = 0; k <= 4; ++k)
     {
         const double f = lo + (hiF - lo) * k / 4;
-        c.setColor (0xff333336); c.fill (gx, yOf (f), gw, 1);
-        txt (c, fmt ("%.1f Hz", f), monoFont (10), ink3, 20, yOf (f) - 8, 48, 16);
+        c.setColor (0xff333336); c.fill (gx, yHz (f), gw, 1);
+        txt (c, fmt ("%.1f Hz", f), monoFont (10), ink3, dX + 20, yHz (f) - 8, 48, 16);
     }
-    if (std::isfinite (ti->targetF)) { c.setColor (accent); c.fill (gx, yOf (ti->targetF), gw, 1.5f); }
+    if (std::isfinite (ti->targetF)) { c.setColor (accent); c.fill (gx, yHz (ti->targetF), gw, 1.5f); }
     for (int i = 0; i < N; ++i)
     {
         if (! std::isfinite (ti->f[(size_t) i])) continue;
         const float px = gx + gw * (i + 0.5f) / N;
         const bool sel = i == selHit;
-        const bool shown = inView (model.hits(), selHit < 0 ? 0 : selHit, playMode, i);   // outside the view: still there, dimmed
-        const visage::Color col = draw::withAlpha (i < (int) model.hits().size() ? velColour[model.hits()[(size_t) i].vel % nVelColours] | 0xff000000 : ink2, shown ? 1.0f : 0.25f);
-        c.setColor (draw::withAlpha (0xff8a8a90, shown ? 1.0f : 0.3f)); c.ring (px - 4, yOf (ti->f[(size_t) i]) - 4, 8, 1.2f);
+        const unsigned col = i < (int) model.hits().size() ? velColour[model.hits()[(size_t) i].vel % nVelColours] | 0xff000000 : ink2;
+        c.setColor (0xff8a8a90); c.ring (px - 4, yHz (ti->f[(size_t) i]) - 4, 8, 1.2f);
         if (i < (int) ti->ratios.size())
         {
-            const float ya = yOf (ti->f[(size_t) i] * ti->ratios[(size_t) i]);
+            const float ya = yHz (ti->f[(size_t) i] * ti->ratios[(size_t) i]);
             c.setColor (sel ? 0xffffffff : col); c.circle (px - (sel ? 6 : 4), ya - (sel ? 6 : 4), sel ? 12.f : 8.f);
         }
-        add (px - 6, gy, 12, gh, "hit:" + std::to_string (i));
+        add (px - 6, gy, 12, ghh, "hit:" + std::to_string (i));
     }
-    // the drum panel
-    float y = y0 + 48;
-    auto row = [&] (const std::string& k, const std::string& v) { txt (c, k, bodyFont (12), ink3, sx + 16, y, 150, 22); txt (c, v, monoFont (12), ink, sx + 150, y, 174, 22, visage::Font::kRight); y += 26; };
-    row ("Measured", fmt ("%.1f Hz", ti->medF) + " \xc2\xb7 " + hl::noteName (ti->medMidi) + fmt (" %+.0f ct", (ti->medMidi - std::round (ti->medMidi)) * 100));
-    row ("Target", hl::noteName (ti->targetMidi) + fmt (" \xc2\xb7 %.1f Hz", ti->targetF));
-    if (! ti->ratios.empty())
-    {
-        double rmin = 1e9, rmax = -1e9;
-        for (double r : ti->ratios) { rmin = std::min (rmin, r); rmax = std::max (rmax, r); }
-        row ("Shift", fmt ("%+.0f", 1200 * std::log2 (rmin)) + fmt (" .. %+.0f ct", 1200 * std::log2 (rmax)));
-    }
-    y += 6;
-    knobCtl (c, sx + 16 + tok::knobLg / 2 + 6, y + 22 + tok::knobLg / 2, tok::knobLg, "Fine tune", "tune.cents");
-    txt (c, "Varispeed, as a sampler does: pitch and length", bodyFont (11), ink3, sx + 110, y + 34, sideW - 126, 16);
-    txt (c, "move together. Best-quality sinc resampling.", bodyFont (11), ink3, sx + 110, y + 50, sideW - 126, 16);
-    y += 110;
-    scopeNote (c, sx + 16, y, sideW - 32, S->tune.mode == "rr" ? "Each hit gets its own ratio, the same on every mic." : "One ratio for the whole drum, on every mic.");
-    y += 28;
-    if (tuneDetails) { drawTuneDetails (c, sx + 16, y, sideW - 32, height() - 28 - y); return; }
-    if (selHit >= 0 && selHit < N && std::isfinite (ti->f[(size_t) selHit]))
-    {
-        txt (c, "Hit " + std::to_string (selHit + 1), boldFont (12), ink, sx + 16, y, 200, 20); y += 24;
-        row ("Measured", fmt ("%.2f Hz", ti->f[(size_t) selHit]));
-        if (selHit < (int) ti->ratios.size()) row ("Moves by", fmt ("%+.1f ct", 1200 * std::log2 (ti->ratios[(size_t) selHit])));
-    }
+    if (tw > 0) { panel (c, dX + dW - 14 - tw, dY + 14, tw, dH - 28, "What was read"); drawTuneDetails (c, dX + dW - 14 - tw + 16, dY + 48, tw - 32, dH - 28 - 48); }
 }
 
 /** Tune's details: the selected hit on the mic the pitch is read from, with the stretch that was listened to marked,
@@ -918,45 +1058,48 @@ void HitsView::drawTone (Canvas& c)
 {
     const auto* S = model.session();
     if (! S) return;
-    const float top = tbH + auH, y0 = top + sbH;
     const int T = (int) S->tracks.size();
-    float x = 14;
-    txt (c, "Applies to", bodyFont (12), ink3, x, top, 70, sbH); x += 74;
-    std::vector<std::string> scopes { "All mics" };
-    for (auto& tr : model.tracks()) scopes.push_back (tr.name);
+    const float x0 = pX + 18, w = pW - 36;
+    float y = pY + 14;
+    txt (c, "TONE", boldFont (15), ink, x0, y, 120, 22);
+    txt (c, "Tone and envelope of every hit", bodyFont (12), ink3, x0, y + 22, 240, 16);
+    c.setColor (btn); c.roundedRectangle (x0 + w - 56, y + 4, 56, 26, 4);
+    txt (c, "Flat", boldFont (11), ink, x0 + w - 56, y + 4, 56, 26, visage::Font::kCenter);
+    add (x0 + w - 56, y + 4, 56, 26, "tone:flat");
+    y += 52;
+    // which mics the knobs move (all of them, or one)
     if (selMic >= T) selMic = -1;
-    segmented (c, x, top + 4, scopes, selMic + 1, "scope:", 26);
-    x += segmentedW (scopes) + 14;
-    c.setColor (btn); c.roundedRectangle (x, top + 6, 56, 26, 3); txt (c, "Flat", boldFont (12), ink, x, top + 6, 56, 26, visage::Font::kCenter); add (x, top + 6, 56, 26, "tone:flat");
-    barEnd = x + 56;
-    // the controls
-    const float pw = tok::goldenMinor (stepW() - 42, 400.0f, 560.0f);   // golden split: controls : waveform
-    panel (c, 14, y0 + 14, pw, height() - y0 - 28, "");
-    float y = y0 + 26;
-    // five knobs to a row, phi apart in size from the small ones
-    const float kd = 55, col = (pw - 32) / 5;
+    txt (c, "APPLIES TO", boldFont (10), tok::ink3, x0, y, 100, 14); y += 20;
+    {
+        const int n = T + 1, cur = selMic + 1;
+        c.setColor (btn); c.roundedRectangle (x0, y, 28, 28, 3); txt (c, "\xe2\x80\xb9", boldFont (15), ink, x0, y, 28, 28, visage::Font::kCenter); add (x0, y, 28, 28, "scope:" + std::to_string ((cur + n - 1) % n));
+        c.setColor (field); c.roundedRectangle (x0 + 32, y, w - 64, 28, 3);
+        txt (c, selMic < 0 ? std::string ("All mics") : model.tracks()[(size_t) selMic].name, boldFont (12), ink, x0 + 32, y, w - 64, 28, visage::Font::kCenter);
+        c.setColor (btn); c.roundedRectangle (x0 + w - 28, y, 28, 28, 3); txt (c, "\xe2\x80\xba", boldFont (15), ink, x0 + w - 28, y, 28, 28, visage::Font::kCenter); add (x0 + w - 28, y, 28, 28, "scope:" + std::to_string ((cur + 1) % n));
+    }
+    y += 42;
+    const float kd = 48, col = w / 5;
     auto rowOf = [&] (const char* title, std::initializer_list<std::pair<const char*, const char*>> ks)
     {
-        txt (c, title, boldFont (10), tok::ink3, 30, y, 200, 16); y += 22;
+        txt (c, title, boldFont (10), tok::ink3, x0, y, 200, 16); y += 20;
         int i = 0;
-        for (auto& [label, key] : ks) knobCtl (c, 30 + col * (i++ + 0.5f), y + 18 + kd / 2, kd, label, key);
+        for (auto& [label, key] : ks) knobCtl (c, x0 + col * (i++ + 0.5f), y + 18 + kd / 2, kd, label, key);
         y += 18 + kd + 34;
     };
     rowOf ("TONE", { { "Enhance", "tone.match" }, { "Tone", "tone.bright" }, { "Crack", "tone.crack" }, { "Rings", "tone.smooth" }, { "Tame", "tone.tame" } });
     rowOf ("ENVELOPE", { { "Attack", "shape.atk" }, { "Decay", "shape.dec" }, { "Sustain", "shape.sus" }, { "Release", "shape.rel" }, { "Enhance", "shape.match" } });
-    txt (c, "REFERENCE MATCH", boldFont (10), 0xff9c9ca1, 30, y, 200, 16); y += 22;
-    c.setColor (btn); c.roundedRectangle (30, y, 120, 26, 3);
-    txt (c, S->tone.hasRef ? "Load another\xe2\x80\xa6" : "Load a reference\xe2\x80\xa6", boldFont (11), ink, 30, y, 120, 26, visage::Font::kCenter);
-    add (30, y, 120, 26, "ref:load");
+    txt (c, "REFERENCE MATCH", boldFont (10), tok::ink3, x0, y, 200, 16); y += 22;
+    c.setColor (btn); c.roundedRectangle (x0, y, 120, 26, 3);
+    txt (c, S->tone.hasRef ? "Load another\xe2\x80\xa6" : "Load a reference\xe2\x80\xa6", boldFont (11), ink, x0, y, 120, 26, visage::Font::kCenter);
+    add (x0, y, 120, 26, "ref:load");
     if (S->tone.hasRef)
     {
-        c.setColor (0xff3a3a3e); c.roundedRectangleBorder (158, y, 70, 26, 3, 1);
-        txt (c, "Remove", bodyFont (11), ink2, 158, y, 70, 26, visage::Font::kCenter);
-        add (158, y, 70, 26, "ref:remove");
-        // listen to it in place of the take (A and B are untouched and come back)
+        c.setColor (0xff3a3a3e); c.roundedRectangleBorder (x0 + 128, y, 70, 26, 3, 1);
+        txt (c, "Remove", bodyFont (11), ink2, x0 + 128, y, 70, 26, visage::Font::kCenter);
+        add (x0 + 128, y, 70, 26, "ref:remove");
         const bool hearing = model.referenceAudition();
-        button (c, 236, y, 96, 26, hearing ? "Playing it" : "Hear it", hearing, tok::coralFill);
-        add (236, y, 96, 26, "ref:hear");
+        button (c, x0 + 206, y, 96, 26, hearing ? "Playing it" : "Hear it", hearing, tok::coralFill);
+        add (x0 + 206, y, 96, 26, "ref:hear");
     }
     y += 32;
     if (S->tone.hasRef)
@@ -964,34 +1107,34 @@ void HitsView::drawTone (Canvas& c)
         const std::string who = model.referenceName().isEmpty() ? std::string ("A saved match") : model.referenceName().toStdString();
         if (model.referenceStale())
         {
-            txt (c, who + ": measured before the take last changed.", bodyFont (11), 0xffffc78a, 30, y, pw - 32, 16);
-            txt (c, "Load it again to match the sound you have now.", bodyFont (11), ink3, 30, y + 15, pw - 32, 16);
+            txt (c, who + ": measured before the take last changed.", bodyFont (11), 0xffffc78a, x0, y, w, 16);
+            txt (c, "Load it again to match the sound you have now.", bodyFont (11), ink3, x0, y + 15, w, 16);
         }
-        else txt (c, who + (model.referenceHits() > 0 ? " \xc2\xb7 " + std::to_string (model.referenceHits()) + (model.referenceHits() == 1 ? " hit measured" : " hits measured") : std::string()), bodyFont (11), ink3, 30, y, pw - 32, 16);
+        else txt (c, who + (model.referenceHits() > 0 ? " \xc2\xb7 " + std::to_string (model.referenceHits()) + (model.referenceHits() == 1 ? " hit measured" : " hits measured") : std::string()), bodyFont (11), ink3, x0, y, w, 16);
         y += 36;
-        knobCtl (c, 30 + col * 0.5f, y + 18 + kd / 2, kd, "Tone match", "ref.amt");
-        if (S->tone.hasRefEnv) knobCtl (c, 30 + col * 1.5f, y + 18 + kd / 2, kd, "Envelope", "ref.env");
+        knobCtl (c, x0 + col * 0.5f, y + 18 + kd / 2, kd, "Tone match", "ref.amt");
+        if (S->tone.hasRefEnv) knobCtl (c, x0 + col * 1.5f, y + 18 + kd / 2, kd, "Envelope", "ref.env");
     }
-    else txt (c, "A finished sample you like: the tone and envelope move toward it.", bodyFont (11), ink3, 30, y, pw - 32, 16);
-    // the selected hit, before and after, on the lead (or the mic the moves apply to)
-    const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
-    panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
-    if (viewMic >= (int) S->tracks.size()) viewMic = -1;
+    else txt (c, "A finished sample you like: the tone and envelope move toward it.", bodyFont (11), ink3, x0, y, w, 16);
+    scopeNote (c, x0, pY + pH - 30, w, selMic >= 0 ? "Every hit of " + model.tracks()[(size_t) selMic].name + "." : std::string ("Every hit of every mic."));
+    if (! showDetail) return;
+    // the middle, on Before / after: the selected hit on the mic on show, as recorded and with the moves
+    const float gx = dX + 14, gw = dW - 28;
+    panel (c, gx, dY + 14, gw, dH - 28, "");
+    if (viewMic >= T) viewMic = -1;
     const int t = viewMic >= 0 ? viewMic : selMic >= 0 ? selMic : S->refIdx;
     const auto& H = model.hits();
-    const int hi = std::clamp (selHit < 0 ? 0 : selHit, 0, std::max (0, (int) H.size() - 1));
-    hitStrip (c, gx + 14, y0 + 48, gw - 28);
-    scopeNote (c, 30, height() - 14 - 30, pw - 32, selMic >= 0 ? "Applies to every hit of " + model.tracks()[(size_t) selMic].name + ", whatever is on show." : std::string ("Applies to every hit of every mic, whatever is on show."));
-    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + ": as recorded (grey) and with the tone moves (" + std::string (model.isRendering() ? "rendering\xe2\x80\xa6" : "as it plays now") + ")",
-         bodyFont (12), ink2, gx + 14, y0 + 22, gw - 28, 20);
-    const auto* M = model.mixRender();
     if (H.empty()) return;
+    const int hi = std::clamp (selHit < 0 ? 0 : selHit, 0, (int) H.size() - 1);
+    hitStrip (c, gx + 14, dY + 48, gw - 28);
+    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + ": as recorded (grey) and with the tone moves (colour). Click a track to see that mic.", bodyFont (12), ink2, gx + 14, dY + 22, gw - 28, 20);
+    const auto* M = model.mixRender();
     const double sr = S->sr;
     const long on = (long) std::llround (H[(size_t) hi].time * sr), len = (long) (0.4 * sr), pre = (long) (0.006 * sr);
     const auto& orig = S->tracks[(size_t) t].ch.get()[0];
     const hl::F32* proc = nullptr;
     if (M && t < (int) M->proc.size()) { const auto& pr = M->bus[(size_t) t].empty() ? M->proc[(size_t) t] : M->bus[(size_t) t]; if (! pr.empty()) proc = &pr[0]; }
-    const float wx = gx + 14, ww = gw - 28, wy = y0 + 80, wh = (height() - y0 - 28 - 94) * 0.62f, mid = wy + wh / 2;
+    const float wx = gx + 14, ww = gw - 28, wy = dY + 80, wh = (dH - 28 - 94) * 0.62f, mid = wy + wh / 2;
     c.setColor (lane); c.fill (wx, wy, ww, wh);
     float pk = 1e-6f;
     for (long n = on - pre; n < on + len; ++n) if (n >= 0 && n < (long) orig.size()) { pk = std::max (pk, std::abs (orig[(size_t) n])); if (proc && n < (long) proc->size()) pk = std::max (pk, std::abs ((*proc)[(size_t) n])); }
@@ -1007,8 +1150,7 @@ void HitsView::drawTone (Canvas& c)
             c.fill (wx + i, mid - mxv / pk * wh * 0.46f, 1, std::max (1.0f, (mxv - mn) / pk * wh * 0.46f));
         }
     }
-    // the envelope in dB underneath
-    const float ey = wy + wh + 14, eh = height() - 14 - 14 - ey;
+    const float ey = wy + wh + 14, eh = dY + dH - 28 - ey;
     c.setColor (lane); c.fill (wx, ey, ww, eh);
     txt (c, "Envelope (dB)", bodyFont (10), ink3, wx + ww - 126, ey + 4, 120, 14, visage::Font::kRight);
     for (int pass = 0; pass < (proc ? 2 : 1); ++pass)
@@ -1034,38 +1176,42 @@ void HitsView::drawClean (Canvas& c)
 {
     const auto* S = model.session();
     if (! S) return;
-    const float top = tbH + auH, y0 = top + sbH;
-    txt (c, "Noise under the tails, taken down only where the tail has faded into it. Heard on B.", bodyFont (12), ink2, 14, top, 700, sbH);
-    barEnd = 14 + textWidth (bodyFont (12), "Noise under the tails, taken down only where the tail has faded into it. Heard on B.");
-    const float pw = tok::goldenMinor (stepW() - 42, 400.0f, 560.0f);   // golden split: controls : what it does
-    panel (c, 14, y0 + 14, pw, 170, "Noise");
-    c.setColor (S->dnOn ? accentDark : 0xff3a3a3e); c.roundedRectangle (pw - 60, y0 + 24, 56, 22, 11);
-    txt (c, S->dnOn ? "On" : "Off", boldFont (11), S->dnOn ? accentInk : ink2, pw - 60, y0 + 24, 56, 22, visage::Font::kCenter);
-    add (pw - 60, y0 + 24, 56, 22, "clean:on");
-    knobCtl (c, 30 + tok::knobLg / 2 + 6, y0 + 68 + tok::knobLg / 2, tok::knobLg, "Reduce by", "clean.db");
-    txt (c, "The hit itself is never touched; the noise floor", bodyFont (11), ink3, 124, y0 + 84, pw - 126, 16);
-    txt (c, "is measured on each mic between the hits.", bodyFont (11), ink3, 124, y0 + 100, pw - 126, 16);
-    // the tail of the selected hit, in dB: as recorded and cleaned
-    const float gx = 14 + pw + 14, gw = stepW() - gx - 14;
-    panel (c, gx, y0 + 14, gw, height() - y0 - 28, "");
+    const float x0 = pX + 18, w = pW - 36;
+    float y = pY + 14;
+    txt (c, "CLEAN", boldFont (15), ink, x0, y, 120, 22);
+    txt (c, "Noise under the tails", bodyFont (12), ink3, x0, y + 22, 240, 16);
+    y += 52;
+    c.setColor (S->dnOn ? tok::mintDeep : 0xff3a3a3e); c.roundedRectangle (x0, y + 2, 40, 22, 11);
+    c.setColor (S->dnOn ? tok::mintInk : 0xff9c9ca1); c.circle (x0 + (S->dnOn ? 20 : 2), y + 4, 18);
+    txt (c, S->dnOn ? "Cleaning the tails" : "Clean the tails", boldFont (13), ink, x0 + 50, y, 200, 26);
+    add (x0, y, 250, 26, "clean:on");
+    y += 44;
+    knobCtl (c, x0 + 34, y + 20 + tok::knobLg / 2, tok::knobLg, "Reduce by", "clean.db");
+    txt (c, "Taken down only where the tail has faded", bodyFont (11), ink3, x0 + 96, y + 26, w - 96, 16);
+    txt (c, "into the noise. The hit itself is never", bodyFont (11), ink3, x0 + 96, y + 42, w - 96, 16);
+    txt (c, "touched; the floor is measured on each", bodyFont (11), ink3, x0 + 96, y + 58, w - 96, 16);
+    txt (c, "mic between the hits. Heard on B.", bodyFont (11), ink3, x0 + 96, y + 74, w - 96, 16);
+    y += 120;
+    scopeNote (c, x0, y, w, "Every hit on every mic.");
+    if (! showDetail) return;
+    const float gx = dX + 14, gw = dW - 28;
+    panel (c, gx, dY + 14, gw, dH - 28, "");
     if (viewMic >= (int) S->tracks.size()) viewMic = -1;
     const int t = viewMic >= 0 ? viewMic : S->refIdx;
     const auto& H = model.hits();
     if (H.empty()) return;
-    hitStrip (c, gx + 14, y0 + 48, gw - 28);
-    scopeNote (c, 30, y0 + 150, pw - 32, "Applies to every hit on every mic, whatever is on show.");
+    hitStrip (c, gx + 14, dY + 48, gw - 28);
     const int hi = std::clamp (selHit < 0 ? 0 : selHit, 0, (int) H.size() - 1);
-    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + " \xc2\xb7 the whole tail in dB: as recorded (grey) and cleaned (colour). Click a track to look at another.",
-         bodyFont (12), ink2, gx + 14, y0 + 22, gw - 28, 20);
+    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 hit " + std::to_string (hi + 1) + " \xc2\xb7 the whole tail in dB: as recorded (grey) and cleaned (colour). Click a track to see that mic.", bodyFont (12), ink2, gx + 14, dY + 22, gw - 28, 20);
     const double sr = S->sr;
     const long on = (long) std::llround (H[(size_t) hi].time * sr), end = (long) std::llround ((H[(size_t) hi].end - 0.01) * sr);
     const auto& orig = S->tracks[(size_t) t].ch.get()[0];
     const auto* M = model.mixRender();
     const hl::F32* proc = nullptr;
     if (M && t < (int) M->proc.size()) { const auto& pr = M->bus[(size_t) t].empty() ? M->proc[(size_t) t] : M->bus[(size_t) t]; if (! pr.empty()) proc = &pr[0]; }
-    const float wx = gx + 14, ww = gw - 28, wy = y0 + 80, wh = height() - y0 - 28 - 94;
+    const float wx = gx + 54, ww = gw - 68, wy = dY + 80, wh = dH - 28 - 94;
     c.setColor (lane); c.fill (wx, wy, ww, wh);
-    for (int db = 0; db >= -90; db -= 20) { const float yy = wy + wh * (-db / 96.0f); c.setColor (0xff2e2e31); c.fill (wx, yy, ww, 1); txt (c, std::to_string (db) + " dB", monoFont (10), ink3, wx + 4, yy, 60, 14); }
+    for (int db = 0; db >= -90; db -= 20) { const float yy = wy + wh * (-db / 96.0f); c.setColor (0xff2e2e31); c.fill (wx, yy, ww, 1); txt (c, std::to_string (db) + " dB", monoFont (10), ink3, gx + 6, yy - 7, 44, 14, visage::Font::kRight); }
     float pk = 1e-6f;
     for (long n = on; n < end && n < (long) orig.size(); ++n) pk = std::max (pk, std::abs (orig[(size_t) n]));
     for (int pass = 0; pass < (proc ? 2 : 1); ++pass)
@@ -1091,47 +1237,35 @@ void HitsView::drawLevel (Canvas& c)
 {
     const auto* S = model.session();
     if (! S) return;
-    const float top = tbH + auH, y0 = top + sbH;
-    float x = 14;
-    segmented (c, x, top + 4, { "Each mic on its own", "Linked" }, S->lev.mode == "linked" ? 1 : 0, "levmode:", 26);
-    x += segmentedW ({ "Each mic on its own", "Linked" }) + 14;
+    const float x0 = pX + 18, w = pW - 36;
+    float y = pY + 14;
+    txt (c, "LEVEL", boldFont (15), ink, x0, y, 120, 22);
+    txt (c, "What the exported hits will be", bodyFont (12), ink3, x0, y + 22, 260, 16);
+    y += 52;
+    segmented (c, x0, y, { "Each mic on its own", "Linked" }, S->lev.mode == "linked" ? 1 : 0, "levmode:", 26);
+    y += 36;
     static const std::vector<std::string> curves { "midi", "even", "step", "range" };
     int ci = 0;
     for (size_t i = 0; i < curves.size(); ++i) if (S->lev.curve == curves[i]) ci = (int) i;
-    segmented (c, x, top + 4, { "Velocity curve", "Even steps", "Fixed step", "Range" }, ci, "levcurve:", 26);
-    barEnd = x + segmentedW ({ "Velocity curve", "Even steps", "Fixed step", "Range" });
+    segmented (c, x0, y, { "Curve", "Even steps", "Fixed step", "Range" }, ci, "levcurve:", 26);
+    y += 42;
     const auto* L = model.levelResult();
-    const float sideW = tok::goldenMinor (stepW() - 42, 360.0f, 560.0f);   // golden split: levels : layers
-    const float pw = stepW() - 28 - sideW;
-    panel (c, 14, y0 + 14, pw, height() - y0 - 28, "What the exported hits will be");
-    const float sx = stepW() - sideW - 14;
-    panel (c, sx, y0 + 14, sideW, height() - y0 - 28, "Layers");
-    if (! L || ! L->valid) { txt (c, "Run Auto Prep: the levels are measured once every hit is found.", bodyFont (13), ink2, 34, y0 + 60, pw - 40, 22); return; }
+    if (! L || ! L->valid) { txt (c, "Run Auto Prep: the levels are measured once every hit is found.", bodyFont (12), ink2, x0, y, w, 22); return; }
     if (viewMic >= (int) S->tracks.size()) viewMic = -1;
     const int t = viewMic >= 0 ? viewMic : S->refIdx;
-    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 grey: as played, colour: as exported. Click a bar to hear the hit.", bodyFont (11), ink3, 300, y0 + 24, pw - 300, 16, visage::Font::kRight);
-    const float gx = 70, gy = y0 + 56, gw = pw - 80, gh = height() - y0 - 28 - 80;
-    const double LO = -48;
-    auto yOf = [&] (double db) { return gy + (float) std::clamp (-db / -LO, 0.0, 1.0) * gh; };
-    for (int db = 0; db >= (int) LO; db -= 6) { c.setColor (0xff333336); c.fill (gx, yOf (db), gw, 1); txt (c, std::to_string (db) + " dB", monoFont (10), ink3, 20, yOf (db) - 8, 48, 16); }
     const auto& H = model.hits();
     const int N = (int) H.size();
     const auto& raw = L->lvlRaw.size() > (size_t) t ? L->lvlRaw[(size_t) t] : hl::F64 {};
-    for (int i = 0; i < N && i < (int) raw.size(); ++i)
     {
-        const double before = raw[(size_t) i], after = before + model.hitGainDb (t, (size_t) i);
-        const float slot = gw / N, bw = slot * 0.62f, bx = gx + i * slot + (slot - bw) / 2;
-        const unsigned col = velColour[H[(size_t) i].vel % nVelColours];
-        const bool shown = inView (H, selHit < 0 ? 0 : selHit, playMode, i);   // outside the view: still there, dimmed
-        c.setColor (shown ? 0x33ffffff : 0x14ffffff); c.fill (bx, yOf (before), bw, gy + gh - yOf (before));
-        c.setColor (i == selHit ? accent : draw::withAlpha (col | 0xff000000, shown ? 1.0f : 0.25f)); c.fill (bx + bw * 0.2f, yOf (after), bw * 0.6f, gy + gh - yOf (after));
-        add (bx, gy, bw, gh, "hit:" + std::to_string (i));
+        const float kd = 48, col = w / 3;
+        const std::pair<const char*, const char*> ks[3] = { { "Step", "lev.step" }, { "Range", "lev.range" }, { "Offset", "lev.offset" } };
+        for (int i = 0; i < 3; ++i) knobCtl (c, x0 + col * (i + 0.5f), y + 18 + kd / 2, kd, ks[i].first, ks[i].second);
+        y += 18 + kd + 40;
     }
-    // the layers
-    float y = y0 + 48;
-    txt (c, "Layer", bodyFont (11), ink3, sx + 16, y, 60, 16); txt (c, "Lands at", bodyFont (11), ink3, sx + 90, y, 90, 16); txt (c, "Spread before \xe2\x86\x92 after", bodyFont (11), ink3, sx + 190, y, 160, 16);
-    y += 22;
-    for (int v = 0; v < model.velocities(); ++v)
+    txt (c, "LAYERS \xc2\xb7 " + model.tracks()[(size_t) t].name, boldFont (10), tok::ink3, x0, y, w, 14); y += 20;
+    txt (c, "Lands at", bodyFont (11), ink3, x0 + 60, y, 90, 16); txt (c, "Spread before \xe2\x86\x92 after", bodyFont (11), ink3, x0 + 150, y, 200, 16);
+    y += 20;
+    for (int v = model.velocities() - 1; v >= 0; --v)
     {
         double sum = 0, lo0 = 1e9, hi0 = -1e9, lo1 = 1e9, hi1 = -1e9; int n = 0;
         for (int i = 0; i < N && i < (int) raw.size(); ++i)
@@ -1140,28 +1274,36 @@ void HitsView::drawLevel (Canvas& c)
                 const double b = raw[(size_t) i], a = b + model.hitGainDb (t, (size_t) i);
                 sum += a; ++n; lo0 = std::min (lo0, b); hi0 = std::max (hi0, b); lo1 = std::min (lo1, a); hi1 = std::max (hi1, a);
             }
-        if (n == 0) continue;
-        c.setColor (velColour[v % nVelColours] | 0xff000000); c.roundedRectangle (sx + 16, y + 3, 40, 18, 3);
-        txt (c, "V" + std::to_string (v + 1), boldFont (10), 0xff101011, sx + 16, y + 3, 40, 18, visage::Font::kCenter);
-        txt (c, fmt ("%.1f dB", sum / n), monoFont (11), ink, sx + 90, y, 90, 24);
-        txt (c, fmt ("\xc2\xb1%.1f", (hi0 - lo0) / 2) + fmt (" \xe2\x86\x92 \xc2\xb1%.1f dB", (hi1 - lo1) / 2), monoFont (11), ink2, sx + 190, y, 160, 24);
-        y += 26;
+        if (n == 0 || y + 24 > pY + pH - 96) continue;
+        c.setColor (velColour[v % nVelColours] | 0xff000000); c.roundedRectangle (x0, y + 3, 40, 18, 3);
+        txt (c, "V" + std::to_string (v + 1), boldFont (10), 0xff101011, x0, y + 3, 40, 18, visage::Font::kCenter);
+        txt (c, fmt ("%.1f dB", sum / n), monoFont (11), ink, x0 + 60, y, 90, 24);
+        txt (c, fmt ("\xc2\xb1%.1f", (hi0 - lo0) / 2) + fmt (" \xe2\x86\x92 \xc2\xb1%.1f dB", (hi1 - lo1) / 2), monoFont (11), ink2, x0 + 150, y, 200, 24);
+        y += 24;
     }
-    y += 12;
+    float by = pY + pH - 88;
+    scopeNote (c, x0, by, w, S->lev.mode == "linked" ? "Every hit, the mics moving together." : "Every hit, each mic on its own.");
+    by += 24;
+    txt (c, std::isfinite (L->peakMax) ? fmt ("Loudest hit after levelling: %.1f dBFS", L->peakMax + L->trimDb) : std::string(), bodyFont (12), ink2, x0, by, w, 20);
+    by += 22;
+    txt (c, "Mon and Pan never change these: the files come out as shown.", bodyFont (11), ink3, x0, by, w, 16);
+    if (! showDetail) return;
+    // the middle, on Levels: every hit as played (grey) and as exported (colour)
+    panel (c, dX + 14, dY + 14, dW - 28, dH - 28, "What the exported hits will be");
+    txt (c, model.tracks()[(size_t) t].name + " \xc2\xb7 grey: as played, colour: as exported. Click a bar to hear the hit.", bodyFont (11), ink3, dX + 300, dY + 24, dW - 330, 16, visage::Font::kRight);
+    const float gx = dX + 70, gy = dY + 56, gw = dW - 28 - 80, gh = dH - 28 - 80;
+    const double LO = -48;
+    auto yOf = [&] (double db) { return gy + (float) std::clamp (-db / -LO, 0.0, 1.0) * gh; };
+    for (int db = 0; db >= (int) LO; db -= 6) { c.setColor (0xff333336); c.fill (gx, yOf (db), gw, 1); txt (c, std::to_string (db) + " dB", monoFont (10), ink3, dX + 20, yOf (db) - 8, 44, 16, visage::Font::kRight); }
+    for (int i = 0; i < N && i < (int) raw.size(); ++i)
     {
-        const float kd = 55, col = (sideW - 32) / 3;
-        const std::pair<const char*, const char*> ks[3] = { { "Step", "lev.step" }, { "Range", "lev.range" }, { "Offset", "lev.offset" } };
-        for (int i = 0; i < 3; ++i) knobCtl (c, sx + 16 + col * (i + 0.5f), y + 22 + kd / 2, kd, ks[i].first, ks[i].second);
-        y += 22 + kd + 38;
+        const double before = raw[(size_t) i], after = before + model.hitGainDb (t, (size_t) i);
+        const float slot = gw / N, bw = slot * 0.62f, bx = gx + i * slot + (slot - bw) / 2;
+        const unsigned col = velColour[H[(size_t) i].vel % nVelColours];
+        c.setColor (0x33ffffff); c.fill (bx, yOf (before), bw, gy + gh - yOf (before));
+        c.setColor (i == selHit ? accent : (col | 0xff000000)); c.fill (bx + bw * 0.2f, yOf (after), bw * 0.6f, gy + gh - yOf (after));
+        add (bx, gy, bw, gh, "hit:" + std::to_string (i));
     }
-    scopeNote (c, sx + 16, y, sideW - 32, S->lev.mode == "linked" ? "Applies to every hit, the mics moving together." : "Applies to every hit, each mic on its own.");
-    y += 26;
-    double peakMax = -100;
-    for (double p : L->peakAfter) peakMax = std::max (peakMax, p);
-    txt (c, std::isfinite (L->peakMax) ? fmt ("Loudest hit after levelling: %.1f dBFS", L->peakMax + L->trimDb) : std::string(), bodyFont (12), ink2, sx + 16, y, 328, 20);
-    y += 22;
-    txt (c, "Mon and Pan never change these: the files", bodyFont (11), ink3, sx + 16, y, 328, 16);
-    txt (c, "come out exactly as shown.", bodyFont (11), ink3, sx + 16, y + 16, 328, 16);
 }
 
 // ------------------------------------------------------------------------------------------------ 8 Export
@@ -1262,6 +1404,7 @@ bool HitsView::actStep (const std::string& id, const visage::MouseEvent& e)
         return true;
     }
     if (has ("ed:")) { editKey = id.substr (3); editText.clear(); return true; }
+    if (has ("cview:")) { centerView = std::clamp (arg(), 0, 2); if (centerView == 0) needsFit = true; return true; }
     if (has ("scope:")) { selMic = arg() - 1; if (selMic >= 0) viewMic = selMic; return true; }
     if (has ("row:")) { if (step == 2) selMic = arg(); else viewMic = arg(); return true; }   // off Align, a row only changes what's shown
     if (has ("units:")) { alignUnits = arg(); return true; }

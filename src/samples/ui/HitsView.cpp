@@ -1,3 +1,4 @@
+#include <random>
 #include "HitsView.h"
 #include "HitsLogic.h"
 #include <tuple>
@@ -27,13 +28,21 @@ void HitsView::takeChanged (bool refit)
 
 void HitsView::tick()
 {
-    if (model.isPlaying() && followOn)
+    // a phrase shows the hit that's sounding; when it ends, the selection it borrowed comes back
+    if (model.phraseOn())
+    {
+        const int h = model.phraseHit();
+        if (h >= 0 && h != selHit) { selHit = h; redraw(); }
+        if (! model.isPlaying() && model.phraseHit() >= 0) model.stop();   // it rang out
+    }
+    else if (selBeforePhrase >= 0) { const int was = selBeforePhrase; selBeforePhrase = -1; selectHit (was, false); }
+    if (model.isPlaying() && followOn && ! model.phraseOn())
     {
         const double p = model.position();
         if (p < scroll || p > timeAt (laneX() + laneW()) - 0.2) scroll = std::max (0.0, p - 0.1 * laneW() / pps);
     }
     // A then B: each pass of the loop switches
-    if (ab == 2 && model.isPlaying())
+    if (ab == 2 && model.isPlaying() && ! model.phraseOn())
     {
         const double p = model.position();
         if (p + 0.05 < lastPos) model.setProcessed (! model.processed());
@@ -94,6 +103,29 @@ void HitsView::selectHit (int i, bool play, bool andRedraw)
     if (andRedraw) redraw();
 }
 
+void HitsView::playAudition()
+{
+    const auto& H = model.hits();
+    if (audMode == 0 || H.empty()) { playSelection(); return; }
+    static std::mt19937 rng { std::random_device{}() };
+    const int sel = std::clamp (selBeforePhrase >= 0 ? selBeforePhrase : selHit, 0, (int) H.size() - 1);
+    std::vector<PhraseNote> notes;
+    std::string name;
+    if (audMode == 1) { notes = layerPhrase (H, sel); name = "Layer"; }
+    else if (audMode == 2) { notes = sweepPhrase (H, sel); name = "Sweep"; }
+    else if (audMode == 3) { notes = groovePhrase (H, 90.0, rng); name = "Groove"; }
+    else { notes = rudimentPhrase (H, 100.0, rng); name = "Rudiments"; }
+    if (notes.empty()) return;
+    std::vector<SampleModel::PhraseEvent> ev;
+    for (auto& n : notes) ev.push_back ({ n.at, n.hit });
+    if (! model.phraseOn()) selBeforePhrase = sel;
+    if (ab == 0) ab = 1;   // a phrase plays the processed side
+    model.playPhrase (std::move (ev), name, loopOn);
+    static const char* what[5] = { "", "every round robin of this velocity, each ringing out", "this round robin from the softest layer to the hardest",
+                                   "quarter notes, then sixteenths climbing through every velocity and round robin", "paradiddles, ghost notes, a triplet build, flams and a roll" };
+    setStatus (name + ": " + what[audMode] + ".");
+}
+
 void HitsView::playSelection()
 {
     if (selB > selA) model.setLoop (selA, selB, loopOn);
@@ -116,6 +148,14 @@ void HitsView::draw (Canvas& c)
     }
     c.setColor (ground);
     c.fill (0, 0, width(), height());
+    if (workspace() && model.isOpen())
+    {
+        showDetail = centerView == 2;
+        drawWorkspace (c);
+        drawAudition (c);
+        drawToolbar (c);
+        return;
+    }
     if (step != 1)
     {
         drawStep (c);
@@ -189,7 +229,7 @@ void HitsView::drawToolbar (Canvas& c)
     // counter
     x += 36 * 3 + 46 + 10;
     c.setColor (0xff111113); c.roundedRectangle (x, 7, counterW, 38, tok::radius);
-    txt (c, fmtTime (model.position()), monoFont (17), tok::mint, x + 10, 7, 120, 38);
+    txt (c, fmtTime (model.phraseOn() ? std::max (0.0, model.position() - model.phraseStart()) : model.position()), monoFont (17), tok::mint, x + 10, 7, 120, 38);   // (a phrase counts from its own start)
     if (! compact)
     {
         txt (c, "Start " + fmtTime (selA), monoFont (9), ink3, x + 128, 9, 120, 12);
@@ -240,6 +280,23 @@ void HitsView::drawAudition (Canvas& c)
         bx += vw[i] + 2;
     }
     x += vw[0] + vw[1] + vw[2] + 8 + 12;
+    {
+        // what Play auditions
+        static const char* an[5] = { "As shown", "Layer", "Sweep", "Groove", "Rudiments" };   // As shown: the hit, layer or take the view is on, straight off the timeline
+        float gw = 4;
+        for (auto* n : an) gw += textWidth (boldFont (12), n) + 20 + 2;
+        c.setColor (tok::lane); c.roundedRectangle (x, y + 9, gw, 34, tok::radius);
+        float ax = x + 2;
+        for (int i = 0; i < 5; ++i)
+        {
+            const float w = textWidth (boldFont (12), an[i]) + 20;
+            const bool sounding = audMode == i && model.isPlaying() && (i == 0 ? ! model.phraseOn() : model.phraseOn());
+            button (c, ax, y + 11, w, 30, an[i], audMode == i, sounding ? tok::coralFill : tok::controlHi);
+            add (ax, y + 11, w, 30, "aud:" + std::to_string (i));
+            ax += w + 2;
+        }
+        x += gw + 12;
+    }
     c.setColor (tok::lane); c.roundedRectangle (x, y + 9, 128, 34, tok::radius);
     const char* abn[3] = { "A", "B", "A\xe2\x86\x92" "B" };
     for (int i = 0; i < 3; ++i)
@@ -634,7 +691,15 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
         return;
     }
     if (step != 1 && actStep (id, e)) { redraw(); return; }
-    if (id == "play") { model.isPlaying() ? model.stop() : playSelection(); }
+    if (id == "play") { model.isPlaying() ? model.stop() : playAudition(); }
+    else if (id.rfind ("aud:", 0) == 0)
+    {
+        // one play button, five auditions: the lit one is what Play and Space do; clicking one plays it (again: stops)
+        const int m = std::clamp (arg(), 0, 4);
+        const bool same = m == audMode && model.isPlaying();
+        audMode = m;
+        if (same) model.stop(); else { if (model.phraseOn() || model.isPlaying()) model.stop(); if (selBeforePhrase >= 0) { selHit = selBeforePhrase; selBeforePhrase = -1; } playAudition(); }
+    }
     else if (id == "stop") { model.stop(); }
     else if (id == "prev") { selectHit (selHit - 1, model.isPlaying()); }
     else if (id == "next") { selectHit (selHit + 1, model.isPlaying()); }
@@ -662,7 +727,12 @@ void HitsView::act (const std::string& id, const visage::MouseEvent& e)
     else if (id == "waveup") waveScale = std::min (16.0f, waveScale * 1.5f);
     else if (id == "height") heightIdx = (heightIdx + 1) % 4;
     else if (id == "fit") fitAll();
-    else if (id.rfind ("hit:", 0) == 0 || id.rfind ("slot:", 0) == 0) selectHit (arg(), true);
+    else if (id.rfind ("hit:", 0) == 0 || id.rfind ("slot:", 0) == 0)
+    {
+        // a click picks the hit and plays it; with Layer or Sweep lit, the phrase around it
+        if (model.phraseOn()) { model.stop(); selBeforePhrase = -1; }
+        if (audMode == 1 || audMode == 2) { selectHit (arg(), false); playAudition(); } else selectHit (arg(), true);
+    }
     else if (id.rfind ("pad:", 0) == 0)
     {
         std::vector<int> c;
@@ -784,7 +854,7 @@ bool HitsView::keyPress (const visage::KeyEvent& e)
         redraw();
         return true;
     }
-    if (k == K::Space) { model.isPlaying() ? model.stop() : playSelection(); }
+    if (k == K::Space) { model.isPlaying() ? model.stop() : playAudition(); }
     else if (k == K::Tab) selectHit (selHit + (e.isAltDown() || e.isShiftDown() ? -1 : 1), model.isPlaying());
     else if (k == K::R && ! e.isMainModifier()) zoomBy (0.5);
     else if (k == K::T) zoomBy (2.0);

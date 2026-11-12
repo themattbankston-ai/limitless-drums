@@ -35,7 +35,7 @@ public:
     std::function<void()> onExport;         ///< the Export step's button (the shell picks the folder)
     std::function<void()> onLoadReference;  ///< the Tone step's reference (the shell picks the file)
     int currentStep() const { return step; }
-    void setStep (int s) { step = std::clamp (s, 0, 7); rowScroll = 0; redraw(); }
+    void setStep (int s) { const float was = laneW(); step = std::clamp (s, 0, 7); rowScroll = 0; if (laneW() != was) needsFit = true; redraw(); }
     void setExportProgress (float p) { exportProgress = p; redraw(); }
     std::string exportFolder;               ///< where the export goes (the shell sets it)
 
@@ -55,6 +55,9 @@ private:
     bool needsFit = true;            ///< fit the take once the frame has its size
     double selA = 0, selB = 0;        ///< the selection, seconds
     int playMode = 0;                 ///< the view: 0 Hit, 1 Velocity layer, 2 All layers (also what Play auditions)
+    int audMode = 0;                  ///< what Play and Space audition: 0 what's on show, 1 Layer, 2 Sweep, 3 Groove, 4 Rudiments (phrases)
+    int selBeforePhrase = -1;         ///< the selection a phrase borrows to show the hit sounding
+    void playAudition();
     int viewMic = -1;                 ///< the mic Tune, Tone, Clean and Level show (-1: the lead); never an edit scope
     void hitStrip (visage::Canvas&, float x, float y, float w);
     void scopeNote (visage::Canvas&, float x, float y, float w, const std::string& text);
@@ -93,7 +96,10 @@ private:
     static constexpr float tbH = 52, auH = 50, sbH = 38, rulH = 22, headW = 268, inspW = 286, closeH = 168;
     float laneTop() const { return tbH + auH + sbH + 3 * rulH; }
     float laneX() const { return headW; }
-    float laneW() const { return std::max (100.0f, width() - headW - inspW); }
+    static constexpr float panelW = 404;
+    bool workspace() const { return step >= 3 && step <= 6; }   ///< Tune, Tone, Clean, Level: the take in the middle, the step's controls down the right
+    float rightW() const { return workspace() ? panelW : inspW; }
+    float laneW() const { return std::max (100.0f, width() - headW - rightW()); }
     float trackH (int t) const;
     float trackY (int t) const;
     double timeAt (float x) const { return scroll + (x - laneX()) / pps; }
@@ -118,6 +124,11 @@ private:
 
     // the other steps (StepViews.cpp)
     void drawStep (visage::Canvas&);
+    void drawWorkspace (visage::Canvas&);
+    void drawGrid (visage::Canvas&, float x, float y, float w, float h);
+    int centerView = 0;               ///< the workspace's middle: 0 waveforms, 1 the velocity x round robin grid, 2 the step's own picture
+    float pX = 0, pY = 0, pW = 0, pH = 0, dX = 0, dY = 0, dW = 0, dH = 0;   ///< this frame's panel and middle
+    bool showDetail = false;
     void drawSetup (visage::Canvas&);
     void drawAlign (visage::Canvas&);
     void drawTune (visage::Canvas&);

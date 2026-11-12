@@ -1,5 +1,6 @@
 // The sample build's model under the scenarios the 9 Nov audit reproduced (SA01-SA03, SA07, SA08, SA12, the
 // overlapping-export case) and the review that followed (CR01, CR03), plus the Hits screen's target and range logic (SA09, SA11). A small synthetic take (three mics, four hits) so it runs anywhere, CI included.
+#include <random>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <complex>
@@ -1617,4 +1618,29 @@ TEST_CASE ("Phrase: hits played off the timeline sound as they do in the take, o
         }
     m.stop();
     CHECK_FALSE (m.phraseOn());
+}
+
+TEST_CASE ("Audition phrases: layer, sweep, groove and rudiments pick the right hits", "[phrase]")
+{
+    struct H { double time, end; int vel, rr; };
+    std::vector<H> hits;
+    for (int v = 0; v < 4; ++v) for (int r = 0; r < 3; ++r) hits.push_back ({ hits.size() * 2.0, hits.size() * 2.0 + 2, v, r });
+    using namespace ld::samples;
+    const auto layer = layerPhrase (hits, 7);                 // hit 7: velocity 2, round robin 1
+    REQUIRE (layer.size() == 3);
+    for (auto& n : layer) CHECK (hits[(size_t) n.hit].vel == 2);
+    const auto sweep = sweepPhrase (hits, 7);
+    REQUIRE (sweep.size() == 4);
+    for (size_t k = 0; k < sweep.size(); ++k) { CHECK (hits[(size_t) sweep[k].hit].vel == (int) k); CHECK (hits[(size_t) sweep[k].hit].rr == 1); CHECK (sweep[k].at == Catch::Approx (0.5 * k)); }
+    std::mt19937 rng (7);
+    const auto groove = groovePhrase (hits, 90.0, rng);
+    REQUIRE (groove.size() == 8 + hits.size());              // two bars of quarters on the top layer, then every hit once
+    for (size_t k = 0; k < 8; ++k) CHECK (hits[(size_t) groove[k].hit].vel == 3);
+    std::vector<int> seen (hits.size(), 0);
+    for (size_t k = 8; k < groove.size(); ++k) { ++seen[(size_t) groove[k].hit]; if (k > 8) CHECK (hits[(size_t) groove[k].hit].vel >= hits[(size_t) groove[k - 1].hit].vel); }
+    for (int n : seen) CHECK (n == 1);
+    for (size_t k = 1; k < 8; ++k) CHECK (groove[k].hit != groove[k - 1].hit);   // never the same round robin twice running
+    const auto rudi = rudimentPhrase (hits, 100.0, rng);
+    CHECK (rudi.size() > 70);
+    for (size_t k = 1; k < rudi.size(); ++k) CHECK (rudi[k].at >= rudi[k - 1].at);
 }
