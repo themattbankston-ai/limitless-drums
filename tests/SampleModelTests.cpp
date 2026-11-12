@@ -1572,3 +1572,49 @@ TEST_CASE ("Preview: hits swapped in from memory play what the rendered files pl
         if (pass == 0) { double moved = -300; for (int t = 0; t < nT; ++t) moved = std::max (moved, nullDb (files[(size_t) t], filesA[(size_t) t])); CHECK (moved > -60.0); }
     }
 }
+
+TEST_CASE ("Phrase: hits played off the timeline sound as they do in the take, on every mic", "[preview][phrase]")
+{
+    const char* dir = std::getenv ("LD_TAKE");
+    SampleModel m (ldtest::engine());
+    REQUIRE (m.open ({ dir ? juce::File (dir) : makeTake ("phrase1", 3) }).isEmpty());
+    prep (m);
+    const double sr = m.session()->sr;
+    m.previewRateForTests = sr;
+    REQUIRE (m.change ([] (ld::hl::Session& S) { S.tone.bright = 0.6; }, SampleModel::Redo::mix));
+    pumpUntilPreviewed (m);
+    const int nT = (int) m.session()->tracks.size();
+    const auto& R = m.engineState()->levels->regions;
+    REQUIRE (R.size() >= 2);
+    const int hA = (int) R.size() - 1, hB = 0;
+    m.playPhrase ({ { 0.0, hA }, { 1.5, hB } }, "test", false);
+    pumpUntilPreviewed (m);
+    REQUIRE (m.phraseOn());
+    REQUIRE (m.hitsPreviewed() == (int) R.size());
+    m.getEdit()->getTransport().stop (false, false);   // (the phrase stays laid out: it's rendered offline here)
+    const double len = 0.25;
+    for (int t = 0; t < nT; ++t)
+        for (int k = 0; k < 2; ++k)
+        {
+            const int h = k == 0 ? hA : hB;
+            const double inTake = (double) R[(size_t) h].start / sr, inPhrase = m.phraseStart() + (k == 0 ? 0.0 : 1.5);
+            const auto a = m.renderTrackForTests (t, sr, inTake, inTake + len), b = m.renderTrackForTests (t, sr, inPhrase, inPhrase + len);
+            REQUIRE_FALSE (a.empty()); REQUIRE_FALSE (b.empty());
+            // the same audio, give or take where a sample boundary falls: best match within two samples
+            double best = -1, ea = 0, eb = 0;
+            for (float v : a[0]) ea += (double) v * v;
+            for (float v : b[0]) eb += (double) v * v;
+            for (int lag = -2; lag <= 2; ++lag)
+            {
+                double xy = 0;
+                for (size_t n = 8; n + 8 < std::min (a[0].size(), b[0].size()); ++n) xy += (double) a[0][n] * b[0][(size_t) ((long) n + lag)];
+                best = std::max (best, xy / std::sqrt (ea * eb + 1e-30));
+            }
+            INFO ("mic " << t << " event " << k << ": match " << best << ", level " << 10 * std::log10 ((eb + 1e-30) / (ea + 1e-30)) << " dB");
+            CHECK (ea > 1e-9);
+            CHECK (best > 0.98);
+            CHECK (std::abs (10 * std::log10 ((eb + 1e-30) / (ea + 1e-30))) < 0.5);
+        }
+    m.stop();
+    CHECK_FALSE (m.phraseOn());
+}

@@ -139,7 +139,7 @@ juce::String SampleModel::open (const juce::Array<juce::File>& items)
     if (edit) edit->getTransport().stop (false, false);
     edit.reset();
     if (cacheDir.isDirectory()) cacheDir.deleteRecursively();
-    cancelPreview(); hitAudio.clear(); clipsStale = false; previewOk = false; listening = nullptr;
+    cancelPreview(); hitAudio.clear(); clipsStale = false; previewOk = false; listening = nullptr; phrase.clear(); phraseWaiting = false; wantAllHits = false;
     state = st;
     name = folder;
     refAudio.clear(); refSource = refPlayFile = juce::File(); refName.clear(); refHits = refEngine = 0; refPrint.clear(); refAud = false; refCancelled.clear();
@@ -268,7 +268,7 @@ void SampleModel::autoPrep (std::function<void (juce::String)> done)
             if (! *alivePtr) return;
             if (gen != takeGen) { releaseFreedMemory(); return; }   // another take was opened meanwhile
             prepping = false;
-            cancelPreview(); clearHitAudio(); clipsStale = false; previewOk = false;
+            cancelPreview(); phrase.clear(); phraseWaiting = false; wantAllHits = false; clearHitAudio(); clipsStale = false; previewOk = false;
             state = copy;
             undoStack.clear();
             redoStack.clear();
@@ -291,7 +291,7 @@ juce::String SampleModel::autoPrepNow()
     copy->prepared = hl::autoPrep (copy->session);
     if (! copy->prepared) copy->advice = hl::hitCountAdvice (copy->session);
     else renderAndMeasure (*copy);
-    cancelPreview(); clearHitAudio(); clipsStale = false; previewOk = false;
+    cancelPreview(); phrase.clear(); phraseWaiting = false; wantAllHits = false; clearHitAudio(); clipsStale = false; previewOk = false;
     state = copy;
     buildHits();
     applyAlignment();
@@ -903,11 +903,12 @@ void SampleModel::startRender()
                     // while something plays and the hits are being previewed, laying the files on the tracks would
                     // rebuild playback for audio that's already heard: it waits for playback to stop
                     if ((isPlaying() || holdClipsForTests) && previewOk) { const bool was = clipsStale; clipsStale = true; updateHitGains(); if (! was && ! holdClipsForTests) watchClips(); }
-                    else { layoutHits(); clipsStale = false; if (current) clearHitAudio(); else publishHitAudio(); }
+                    else { layoutHits(); clipsStale = false; if (current) restHitAudio(); else publishHitAudio(); }
                 }
                 else updateHitGains();
                 // (a worker reading the render this replaced was stopped first: it carries on from the new one)
-                if (! hitAudio.empty() || clipsStale || ! current) startPreview();
+                if (wantAllHits && mix && ! previewOk) ++audioGen;   // (the hits in memory came from the render this one replaces)
+                if (! hitAudio.empty() || clipsStale || ! current || wantAllHits) startPreview();
                 warmPreview();
                 tuneLayoutWanted = false;
             }
@@ -965,6 +966,65 @@ void SampleModel::watchClips()
     juce::Timer::callAfterDelay (200, [this, alivePtr] { if (*alivePtr) watchClips(); });
 }
 
+void SampleModel::restHitAudio()
+{
+    if (wantAllHits) { publishHitAudio(); startPreview(); }
+    else clearHitAudio();
+}
+
+void SampleModel::playPhrase (std::vector<PhraseEvent> ev, const std::string& name, bool loop)
+{
+    if (! state || ! edit || prepping || ! state->prepared || ! state->levels || ! state->levels->valid || ev.empty()) return;
+    const auto& R = state->levels->regions;
+    for (auto& e : ev) if (e.hit < 0 || e.hit >= (int) R.size()) return;
+    edit->getTransport().stop (false, false);
+    phrase.clear();
+    settleClips();
+    std::sort (ev.begin(), ev.end(), [] (auto& a, auto& b) { return a.at < b.at; });
+    double end = 0;
+    for (auto& e : ev) end = std::max (end, e.at + (double) (R[(size_t) e.hit].end - R[(size_t) e.hit].start) / state->session.sr / std::max (0.25, hitRatio ((size_t) e.hit)));
+    phrase = std::move (ev);
+    phraseTitle = name;
+    phraseLen = end;
+    phraseLoop = loop;
+    phraseWaiting = true;
+    wantAllHits = true;
+    startPreview();
+    startPhraseWhenReady();
+    if (onChanged) onChanged();
+}
+
+void SampleModel::startPhraseWhenReady()
+{
+    if (! phraseWaiting || phrase.empty() || ! edit) return;
+    for (auto& e : phrase) { auto it = hitAudio.find ((size_t) e.hit); if (it == hitAudio.end() || it->second.gen != audioGen) return; }
+    phraseWaiting = false;
+    publishHitAudio();
+    setProcessed (true);
+    setLoop (phraseStart(), phraseStart() + phraseLen, phraseLoop);
+    setPosition (phraseStart());
+    edit->getTransport().ensureContextAllocated();
+    edit->getTransport().play (false);
+}
+
+void SampleModel::endPhrase()
+{
+    if (phrase.empty()) return;
+    phrase.clear();
+    phraseWaiting = false;
+    publishHitAudio();
+    if (onChanged) onChanged();
+}
+
+int SampleModel::phraseHit() const
+{
+    if (phrase.empty() || phraseWaiting) return -1;
+    const double p = position() - phraseStart();
+    int h = -1;
+    for (auto& e : phrase) if (e.at <= p + 0.01) h = e.hit;
+    return h;
+}
+
 void SampleModel::landRender (std::function<void()> fn)
 {
     if (previewWorkers == 0) { fn(); return; }
@@ -978,7 +1038,7 @@ void SampleModel::settleClips()
     if (! clipsStale || ! state || rendering || renderDone != renderWanted || isPlaying() || holdClipsForTests) return;
     clipsStale = false;
     layoutHits();
-    clearHitAudio();
+    restHitAudio();
 }
 
 void SampleModel::clearHitAudio()
@@ -996,6 +1056,7 @@ void SampleModel::publishHitAudio()
     const int nT = (int) state->session.tracks.size();
     if (playedRatio.size() != state->levels->regions.size()) playedRatio.assign (state->levels->regions.size(), 1.0);
     for (auto& [i, h] : hitAudio) if (i < playedRatio.size()) playedRatio[i] = h.ratio;   // the ratio this hit is heard at
+    if (phraseWaiting) startPhraseWhenReady();
     for (int t = 0; t < nT; ++t)
     {
         auto* at = track (t);
@@ -1003,9 +1064,24 @@ void SampleModel::publishHitAudio()
         if (a == nullptr) continue;
         std::vector<live::AlignPlugin::HitAudio> v;
         for (auto& [i, h] : hitAudio) if (t < (int) h.tracks.size() && h.tracks[(size_t) t]) v.push_back ({ h.start, h.tracks[(size_t) t] });
+        auto scales = scalesFor (t, nullptr);
+        if (! phrase.empty() && ! phraseWaiting)
+        {
+            // the phrase, past the take's end: each hit at its Level gain, its mics' offsets and phase EQ following its tuning
+            const double t0 = kPad + phraseStart();
+            scales.push_back ({ t0 - 1.0, 1.0, 0.0, 1.0 });
+            for (auto& e : phrase)
+            {
+                auto it = hitAudio.find ((size_t) e.hit);
+                if (it == hitAudio.end() || t >= (int) it->second.tracks.size() || ! it->second.tracks[(size_t) t]) continue;
+                v.push_back ({ (juce::int64) std::llround ((t0 + e.at) * hitAudioRate), it->second.tracks[(size_t) t], (float) std::pow (10.0, hitGainDb (t, (size_t) e.hit) / 20.0) });
+                scales.push_back ({ t0 + e.at - changeLead() - 0.002, 1.0 / it->second.ratio, 0.0, it->second.ratio });
+            }
+            std::sort (scales.begin(), scales.end(), [] (auto& x, auto& y) { return x.start < y.start; });
+        }
         std::sort (v.begin(), v.end(), [] (auto& x, auto& y) { return x.start < y.start; });
         a->setHitAudio (std::move (v), hitAudioRate);
-        a->setHitScales (scalesFor (t, nullptr));
+        a->setHitScales (std::move (scales));
     }
 }
 
@@ -1014,11 +1090,14 @@ void SampleModel::startPreview()
     cancelPreview();
     previewOk = false;
     if (! state || ! edit || prepping || ! state->prepared || ! state->mix || ! state->levels || ! state->levels->valid) { clearHitAudio(); return; }
-    if (! hl::HitPreviewer::possible (state->session, *state->mix)) { clearHitAudio(); return; }
+    // worked out hit by hit where the chain allows it; otherwise (and only when phrases need every hit in memory)
+    // cut from the last whole render
+    const bool exact = hl::HitPreviewer::possible (state->session, *state->mix);
+    if (! exact && ! wantAllHits) { clearHitAudio(); return; }
     const double rate = previewRateForTests > 0 ? previewRateForTests : engine.getDeviceManager().getSampleRate();
     if (rate <= 0) { clearHitAudio(); return; }
     if (rate != hitAudioRate) { clearHitAudio(); hitAudioRate = rate; }
-    previewOk = true;
+    previewOk = exact;
     const auto& S = state->session;
     auto regions = std::make_shared<const std::vector<hl::Region>> (state->levels->regions);
     const size_t nH = std::min (regions->size(), S.onsets.size());
@@ -1041,16 +1120,17 @@ void SampleModel::startPreview()
     auto heard = listening;
     const int myGen = gen->load(), agen = audioGen;
     ++previewWorkers;
-    std::thread ([this, copy, base, alivePtr, gen, myGen, agen, regions, order, rate, nH, heard, running = Workers::start (workers)]
+    std::thread ([this, copy, base, alivePtr, gen, myGen, agen, regions, order, rate, nH, heard, exact, running = Workers::start (workers)]
     {
         const auto& CS = *copy;
         const int nT = (int) CS.tracks.size();
         const double sr = CS.sr;
         const auto startOf = [&] (size_t i) { return (juce::int64) std::llround (((double) (*regions)[i].start / sr + kPad) * rate); };
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
-        hl::HitPreviewer P (CS, *base->mix, heard);
+        std::optional<hl::HitPreviewer> P;
+        if (exact) P.emplace (CS, *base->mix, heard);
         bool firstDone = false;
-        if (P.valid())
+        if (! exact || P->valid())
             for (size_t i : *order)
             {
                 if (gen->load() != myGen) break;
@@ -1068,7 +1148,14 @@ void SampleModel::startPreview()
                 for (int t = 0; t < nT; ++t)
                     th.emplace_back ([&, t]
                     {
-                        auto x = P.render (t, R.start, R.end);
+                        hl::Chs x;
+                        if (exact) x = P->render (t, R.start, R.end);
+                        else
+                        {
+                            const auto& M = *base->mix;
+                            const auto& pre = M.bus[(size_t) t].empty() ? M.proc[(size_t) t] : M.bus[(size_t) t];
+                            for (auto& c : pre) { const long L = (long) c.size(), a = std::clamp (R.start, 0L, L), b = std::clamp (R.end, a, L); x.emplace_back (c.begin() + a, c.begin() + b); }
+                        }
                         if (! asIs)
                         {
                             const long preOut = (long) std::floor ((on - (double) R.start) / step + 0.5);
@@ -1288,7 +1375,7 @@ void SampleModel::recomputeLevelMatch()
     setLevelMatch (levelMatchOn);
 }
 
-hl::Chs SampleModel::renderB (int t, double srOut, bool stereo, juce::String& err)
+hl::Chs SampleModel::renderB (int t, double srOut, bool stereo, juce::String& err, double from, double to)
 {
     juce::TemporaryFile temp (".wav");
     auto all = te::getAllTracks (*edit);
@@ -1299,7 +1386,7 @@ hl::Chs SampleModel::renderB (int t, double srOut, bool stereo, juce::String& er
     p.bitDepth = 32;
     p.sampleRateForAudio = srOut;
     p.blockSizeForAudio = 512;
-    p.time = te::TimeRange (te::TimePosition(), edit->getLength());
+    p.time = to > from ? te::TimeRange (te::TimePosition::fromSeconds (kPad + from), te::TimePosition::fromSeconds (kPad + to)) : te::TimeRange (te::TimePosition(), edit->getLength());
     p.tracksToDo = which;
     p.usePlugins = true;
     p.useMasterPlugins = false;
@@ -1313,7 +1400,7 @@ hl::Chs SampleModel::renderB (int t, double srOut, bool stereo, juce::String& er
     }
     juce::AudioFormatManager fm; fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (temp.getFile()));
-    const auto expect = (long) std::llround (edit->getLength().inSeconds() * srOut);
+    const auto expect = (long) std::llround ((to > from ? to - from : edit->getLength().inSeconds()) * srOut);
     if (! r || std::abs ((long) r->lengthInSamples - expect) > 2)
     {
         err = "The render of " + juce::String (info[(size_t) t].name) + " came back the wrong length.";
@@ -1329,7 +1416,7 @@ juce::String SampleModel::exportTo (const juce::File& dir, int& count, std::func
 {
     count = 0;
     if (auto why = exportBlocker(); why.isNotEmpty()) return why;
-    cancelPreview(); clearHitAudio();   // the export plays the rendered files, nothing held in memory
+    cancelPreview(); phrase.clear(); phraseWaiting = false; clearHitAudio();   // the export plays the rendered files, nothing held in memory
     // the destination first: a folder that can't be made or written is reported now, not after the whole render
     {
         const auto made = dir.createDirectory();
@@ -1558,8 +1645,8 @@ void SampleModel::setProcessed (bool b)
     applyMutes();
 }
 
-void SampleModel::play() { if (edit) { settleClips(); edit->getTransport().ensureContextAllocated(); edit->getTransport().play (false); } }
-void SampleModel::stop() { if (edit) { edit->getTransport().stop (false, false); settleClips(); } }
+void SampleModel::play() { if (edit) { endPhrase(); settleClips(); edit->getTransport().ensureContextAllocated(); edit->getTransport().play (false); } }
+void SampleModel::stop() { if (edit) { edit->getTransport().stop (false, false); endPhrase(); settleClips(); } }
 bool SampleModel::isPlaying() const { return edit && edit->getTransport().isPlaying(); }
 double SampleModel::position() const { return edit ? edit->getTransport().getPosition().inSeconds() - kPad : 0.0; }
 void SampleModel::setPosition (double s) { if (edit) edit->getTransport().setPosition (te::TimePosition::fromSeconds (kPad + std::max (0.0, s))); }

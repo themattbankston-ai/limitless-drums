@@ -58,8 +58,9 @@ public:
         as long as it runs (it goes through everything this plugin does, like the clip's audio would). It's how a
         change is heard at once: the hit is worked out again and swapped in under a short crossfade, while playback
         carries on. One channel plays on both sides. */
-    struct HitAudio { juce::int64 start = 0; std::shared_ptr<const std::vector<std::vector<float>>> audio; };
-    /** message thread; sorted by start, not overlapping; `rate`: the sample rate the starts and the audio are at
+    struct HitAudio { juce::int64 start = 0; std::shared_ptr<const std::vector<std::vector<float>>> audio; float gain = 1; };
+    /** message thread; sorted by start. Entries may overlap (an audition phrase lets every hit ring over the next):
+        they're summed. `rate`: the sample rate the starts and the audio are at
         (they're only heard while playback runs at that rate). An empty list goes back to the clips. */
     void setHitAudio (std::vector<HitAudio>, double rate);
     int hitAudioTablesHeld() const { const juce::SpinLock::ScopedLockType l (lock); return (int) audTables.size(); }
@@ -88,7 +89,7 @@ private:
     std::vector<std::unique_ptr<std::vector<HitScale>>> tables;    ///< owned by the message thread, freed under lock
 
     // the hit audio: the same hand-over as the hit table, with two held on the audio side while one fades into the other
-    struct AudioTable { double rate = 0; std::vector<HitAudio> hits; };
+    struct AudioTable { double rate = 0; juce::int64 longest = 0; std::vector<HitAudio> hits; };
     void applyHitAudio (juce::AudioBuffer<float>&, int start, int num, int nch, double t0);
     const AudioTable* pubAud = nullptr;                            ///< under lock
     const AudioTable* audCur = nullptr;                            ///< changed only by the audio thread, under lock

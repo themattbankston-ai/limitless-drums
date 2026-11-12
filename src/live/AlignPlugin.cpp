@@ -155,46 +155,55 @@ void AlignPlugin::applyHitAudio (juce::AudioBuffer<float>& b, int start, int num
     const AudioTable* cur = usable (audCur);
     const AudioTable* prev = audFadeLeft > 0 ? usable (audPrev) : nullptr;
     if (cur == nullptr && prev == nullptr) { audFadeLeft = std::max (0, audFadeLeft - num); return; }
-    // the hit of a table that covers sample p (or none)
-    const auto find = [] (const AudioTable* t, juce::int64 p) -> const HitAudio*
+    // the hits of each table that sound somewhere in this block (a phrase overlaps them: a handful at most)
+    struct Act { const HitAudio* h; juce::int64 s, e; };
+    constexpr int maxAct = 48;
+    Act ac[maxAct], ap[maxAct];
+    const auto gather = [&] (const AudioTable* t, Act* out)
     {
-        if (t == nullptr) return nullptr;
-        auto it = std::upper_bound (t->hits.begin(), t->hits.end(), p, [] (juce::int64 x, const HitAudio& h) { return x < h.start; });
-        if (it == t->hits.begin()) return nullptr;
-        const auto& h = *std::prev (it);
-        return h.audio && ! h.audio->empty() && p - h.start < (juce::int64) (*h.audio)[0].size() ? &h : nullptr;
+        int n = 0;
+        if (t == nullptr) return n;
+        auto it = std::lower_bound (t->hits.begin(), t->hits.end(), p0 - t->longest, [] (const HitAudio& h, juce::int64 x) { return h.start < x; });
+        for (; it != t->hits.end() && it->start < p0 + num && n < maxAct; ++it)
+        {
+            if (! it->audio || it->audio->empty()) continue;
+            const juce::int64 e = it->start + (juce::int64) (*it->audio)[0].size();
+            if (e > p0) out[n++] = { &*it, it->start, e };
+        }
+        return n;
     };
-    const HitAudio* hc = find (cur, p0);
-    const HitAudio* hp = find (prev, p0);
-    juce::int64 nextLook = p0;   // look the hits up again where one could start or end
+    const int nc = gather (cur, ac), np = gather (prev, ap);
+    if (nc == 0 && np == 0) { audFadeLeft = std::max (0, audFadeLeft - num); return; }
+    float* d[2] = { nullptr, nullptr };
+    for (int c = 0; c < nch; ++c) d[c] = b.getWritePointer (c, start);
+    // what a table plays at sample p: its hits summed, or the clip's audio where it has none
+    const auto value = [&] (const Act* a, int n, juce::int64 p, const float* in, float* out)
+    {
+        bool any = false;
+        float v[2] = { 0, 0 };
+        for (int k = 0; k < n; ++k)
+        {
+            if (p < a[k].s || p >= a[k].e) continue;
+            any = true;
+            const auto& au = *a[k].h->audio;
+            for (int c = 0; c < nch; ++c) v[c] += a[k].h->gain * au[(size_t) std::min (c, (int) au.size() - 1)][(size_t) (p - a[k].s)];
+        }
+        for (int c = 0; c < nch; ++c) out[c] = any ? v[c] : in[c];
+    };
     for (int k = 0; k < num; ++k)
     {
         const juce::int64 p = p0 + k;
-        if (p >= nextLook)
+        float in[2] = { 0, 0 }, now[2], was[2];
+        for (int c = 0; c < nch; ++c) in[c] = d[c][k];
+        value (ac, nc, p, in, now);
+        if (audFadeLeft > 0)
         {
-            hc = find (cur, p); hp = find (prev, p);
-            nextLook = std::numeric_limits<juce::int64>::max();
-            for (auto* t : { cur, prev })
-            {
-                if (t == nullptr) continue;
-                auto it = std::upper_bound (t->hits.begin(), t->hits.end(), p, [] (juce::int64 x, const HitAudio& h) { return x < h.start; });
-                if (it != t->hits.end()) nextLook = std::min (nextLook, it->start);
-            }
-            if (hc) nextLook = std::min (nextLook, hc->start + (juce::int64) (*hc->audio)[0].size());
-            if (hp) nextLook = std::min (nextLook, hp->start + (juce::int64) (*hp->audio)[0].size());
+            value (ap, np, p, in, was);
+            const float g = 1.0f - (float) audFadeLeft / (float) audFadeLen;
+            for (int c = 0; c < nch; ++c) d[c][k] = was[c] * (1.0f - g) + now[c] * g;
+            --audFadeLeft;
         }
-        const bool fading = audFadeLeft > 0;
-        if (! hc && ! (fading && hp)) { if (fading) --audFadeLeft; continue; }
-        const float g = fading ? 1.0f - (float) audFadeLeft / (float) audFadeLen : 1.0f;
-        for (int c = 0; c < nch; ++c)
-        {
-            float* d = b.getWritePointer (c, start);
-            const float in = d[k];
-            const auto at = [&] (const HitAudio* h) { const auto& a = *h->audio; return a[(size_t) std::min (c, (int) a.size() - 1)][(size_t) (p - h->start)]; };
-            const float now = hc ? at (hc) : in;
-            d[k] = fading ? (hp ? at (hp) : in) * (1.0f - g) + now * g : now;
-        }
-        if (fading) --audFadeLeft;
+        else for (int c = 0; c < nch; ++c) d[c][k] = now[c];
     }
 }
 
@@ -202,6 +211,7 @@ void AlignPlugin::setHitAudio (std::vector<HitAudio> v, double rate)
 {
     auto p = std::make_unique<AudioTable>();
     p->rate = rate; p->hits = std::move (v);
+    for (auto& h : p->hits) if (h.audio && ! h.audio->empty()) p->longest = std::max (p->longest, (juce::int64) (*h.audio)[0].size());
     std::vector<std::unique_ptr<AudioTable>> unused;
     {
         const juce::SpinLock::ScopedLockType l (lock);

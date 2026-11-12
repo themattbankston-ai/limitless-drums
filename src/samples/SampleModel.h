@@ -140,6 +140,17 @@ public:
 
     // for tests and tools
     te::Edit* getEdit() const { return edit.get(); }
+    /** An audition phrase: hits played off the timeline, each ringing over the next, as a sampler would play them
+        (a velocity sweep, a groove, rudiments). Every mic plays through its own alignment and level as in the take.
+        It plays the processed side. Stop, Play or another phrase ends it. */
+    struct PhraseEvent { double at = 0; int hit = 0; };
+    void playPhrase (std::vector<PhraseEvent>, const std::string& name, bool loop);
+    void endPhrase();
+    bool phraseOn() const { return ! phrase.empty(); }
+    const std::string& phraseName() const { return phraseTitle; }
+    int phraseHit() const;                ///< the hit sounding now (-1: none yet, or no phrase)
+    double phraseStart() const { return length() + 2.0; }   ///< where a phrase sits, past the take's end (seconds, as position())
+    double phraseLength() const { return phraseLen; }
     /** How many hits currently play from memory, worked out for the settings as they are now (tests, the busy light). */
     int hitsPreviewed() const { int n = 0; for (auto& [i, h] : hitAudio) if (h.gen == audioGen) ++n; return n; }
     bool previewRunning() const { return previewWorkers > 0; }
@@ -147,7 +158,7 @@ public:
     /** Tests: the rate previewed hits are made for (0: the audio device's), and one track rendered as it plays now. */
     double previewRateForTests = 0;
     bool holdClipsForTests = false;   ///< as if something were playing: the rendered files wait, the previewed hits are what's heard
-    hl::Chs renderTrackForTests (int t, double rate) { juce::String e; return renderB (t, rate, false, e); }
+    hl::Chs renderTrackForTests (int t, double rate, double from = 0, double to = 0) { juce::String e; return renderB (t, rate, false, e, from, to); }
     const EngineState* engineState() const { return state.get(); }
 
     // monitoring: never part of what's exported
@@ -279,6 +290,14 @@ private:
     std::shared_ptr<std::atomic<int>> previewGen = std::make_shared<std::atomic<int>> (0);   ///< a worker stops when it moves on
     int previewWorkers = 0;
     bool previewOk = false, clipsStale = false;
+    std::vector<PhraseEvent> phrase;        ///< the phrase playing (empty: none)
+    std::string phraseTitle;
+    double phraseLen = 0;
+    bool phraseWaiting = false;             ///< it starts once every hit it plays is in memory
+    bool phraseLoop = false;
+    bool wantAllHits = false;               ///< a phrase has been played on this take: every hit is kept in memory, ready for the next
+    void startPhraseWhenReady();
+    void restHitAudio();                    ///< the clips hold what's heard: the hits in memory go, unless phrases use them
     void startPreview();
     std::shared_ptr<const hl::Listening> listening;   ///< what the tone pass hears in this take, made ahead of the first knob touched
     bool listeningWanted = false;
@@ -293,7 +312,7 @@ private:
     void settleClips();                     ///< stopped and rendered: the clips take over from the previewed hits
     void landRender (std::function<void()>);   ///< runs it once no preview worker reads the render it replaces
     std::vector<double> playedRatio;   ///< per hit, the ratio its clips play at now (the Align table follows it)
-    hl::Chs renderB (int t, double srOut, bool stereo, juce::String& err);
+    hl::Chs renderB (int t, double srOut, bool stereo, juce::String& err, double from = 0, double to = 0);   ///< from/to: seconds as position() (0, 0: the whole take)
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 
     std::map<int, std::pair<te::LevelMeasurer*, std::unique_ptr<te::LevelMeasurer::Client>>> meters;
