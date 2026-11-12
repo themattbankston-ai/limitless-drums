@@ -762,7 +762,19 @@ bool HitPreviewer::possible (const Session& S, const MixRender& base)
     return true;
 }
 
-HitPreviewer::HitPreviewer (const Session& s, const MixRender& b) : S (s), base (b)
+std::string HitPreviewer::listeningKey (const Session& S, const MixRender& base) { return scanKeyOf (S, base.cleanKey); }
+
+std::shared_ptr<const Listening> HitPreviewer::listen (const Session& S, const MixRender& base)
+{
+    auto L = std::make_shared<Listening>();
+    L->key = listeningKey (S, base);
+    static const std::vector<std::optional<MixRender::Scan>> none;
+    ToneEngine probe (S, none);
+    L->scans = scanTracks (S, base.dn, probe.isCymbal());
+    return L;
+}
+
+HitPreviewer::HitPreviewer (const Session& s, const MixRender& b, std::shared_ptr<const Listening> known) : S (s), base (b)
 {
     if (! possible (S, base)) return;
     const int nT = (int) S.tracks.size();
@@ -772,7 +784,9 @@ HitPreviewer::HitPreviewer (const Session& s, const MixRender& b) : S (s), base 
     {
         bool kept = base.scanKey == scanKeyOf (S, base.cleanKey) && base.scan.size() == (size_t) nT;
         if (kept) for (auto& sc : base.scan) if (! sc) kept = false;
-        { ToneEngine probe (S, scans); scans = kept ? base.scan : scanTracks (S, base.dn, probe.isCymbal()); }
+        if (kept) scans = base.scan;
+        else if (known && known->key == listeningKey (S, base) && known->scans.size() == (size_t) nT) scans = known->scans;
+        else { ToneEngine probe (S, scans); scans = scanTracks (S, base.dn, probe.isCymbal()); }
         ToneEngine E (S, scans);
         for (int t = 0; t < nT; ++t) if (trackFxOn (S, t)) { plans[(size_t) t] = E.plan (t); on[(size_t) t] = 1; }
     }

@@ -268,10 +268,17 @@ juce::var verbParams (const VerbUnit&);
     stands on a render of the same take with the same clean-up settings (`base`: its cleaned audio and its listening
     are reused); valid() says whether that holds and whether the chain is one that can be cut per hit (no taming,
     inserts, bus, room or click repair: those are heard when the whole render lands). */
+/** What the tone pass heard in every mic of a take (its scans), and what it was heard in (`key`). */
+struct Listening { std::string key; std::vector<std::optional<MixRender::Scan>> scans; };
+
 class HitPreviewer
 {
 public:
-    HitPreviewer (const Session&, const MixRender& base);
+    /** known: a listening made earlier (used when it's of the same audio, so the first knob touched doesn't wait for it). */
+    HitPreviewer (const Session&, const MixRender& base, std::shared_ptr<const Listening> known = nullptr);
+    /** The listening a previewer of this take needs (a few hundred ms on a long take: for a background thread). */
+    static std::shared_ptr<const Listening> listen (const Session&, const MixRender& base);
+    static std::string listeningKey (const Session&, const MixRender& base);
     /** The same answer as valid(), without the set-up (cheap enough for the message thread). */
     static bool possible (const Session&, const MixRender& base);
     bool valid() const { return ok; }

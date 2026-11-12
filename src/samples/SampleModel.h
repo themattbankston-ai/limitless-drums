@@ -280,6 +280,10 @@ private:
     int previewWorkers = 0;
     bool previewOk = false, clipsStale = false;
     void startPreview();
+    std::shared_ptr<const hl::Listening> listening;   ///< what the tone pass hears in this take, made ahead of the first knob touched
+    bool listeningWanted = false;
+    void warmPreview();
+    void watchClips();
     void renderSoon();                      ///< startRender once the last change is renderHoldMs old (at once when nothing is previewed)
     double lastChangeMs = 0, renderHoldMs = 250;
     bool renderTimerSet = false;
